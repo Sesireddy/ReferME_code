@@ -20,7 +20,7 @@ const ROLES: { id: Role; title: string; subtitle: string; icon: any; color: stri
 
 export default function Signup() {
   const router = useRouter();
-  const [role, setRole] = useState<Role | null>(null);
+  const [role, setRole] = useState<Role | null>("student");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

@@ -24,11 +24,22 @@ export default function OtpScreen() {
   }, []);
 
   function update(i: number, val: string) {
-    const c = val.replace(/[^0-9]/g, "").slice(-1);
+    const cleaned = val.replace(/[^0-9]/g, "");
+    if (cleaned.length > 1) {
+      // Handle paste or fast typing: distribute digits across boxes
+      const next = [...digits];
+      for (let k = 0; k < cleaned.length && i + k < 6; k++) {
+        next[i + k] = cleaned[k];
+      }
+      setDigits(next);
+      const focusIdx = Math.min(i + cleaned.length, 5);
+      refs.current[focusIdx]?.focus();
+      return;
+    }
     const next = [...digits];
-    next[i] = c;
+    next[i] = cleaned.slice(-1);
     setDigits(next);
-    if (c && i < 5) refs.current[i + 1]?.focus();
+    if (cleaned && i < 5) refs.current[i + 1]?.focus();
   }
 
   function handleKey(i: number, key: string) {
