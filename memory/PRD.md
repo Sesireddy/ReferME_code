@@ -25,6 +25,20 @@ A three-sided marketplace mobile app (Expo React Native) connecting **Students**
 - **MOCK_OTP_MODE** — signup/forgot returns OTP in response (no SendGrid key set).
 - **MOCK_PAYMENTS_MODE** — Razorpay signature check skipped; instant credit on confirm.
 
+## How to switch from mock → live later (when keys are ready)
+Edit `/app/backend/.env`:
+1. **SendGrid (real OTP emails)**:
+   - Set `SENDGRID_API_KEY=SG.xxxxx`
+   - Set `SENDGRID_FROM_EMAIL=verified-sender@yourdomain.com`
+   - Get key: https://app.sendgrid.com/settings/api_keys (Mail Send permission)
+   - Verify sender: https://app.sendgrid.com/settings/sender_auth/senders
+2. **Razorpay (real INR checkout)**:
+   - Set `RAZORPAY_KEY_ID=rzp_test_xxxxx`
+   - Set `RAZORPAY_KEY_SECRET=xxxxx`
+   - Get from: https://dashboard.razorpay.com/app/keys
+   - After setting, restart backend: `sudo supervisorctl restart backend`
+   - Signature verification + real checkout will activate automatically.
+
 ## Tech Stack
 - **Frontend**: Expo Router, React Native, expo-linear-gradient, @expo/vector-icons (Ionicons), react-native-safe-area-context.
 - **Backend**: FastAPI + Motor (MongoDB), JWT (PyJWT), bcrypt password hashing, httpx for Emergent Google session exchange.

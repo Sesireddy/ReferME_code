@@ -189,6 +189,8 @@ class ProfileBody(BaseModel):
     education: Optional[str] = None
     skills: Optional[list[str]] = None
     resume_base64: Optional[str] = None
+    resume_filename: Optional[str] = None
+    resume_size: Optional[int] = None
     resume_score: Optional[int] = None
     # professional
     company: Optional[str] = None
@@ -477,7 +479,7 @@ async def update_profile(body: ProfileBody, u: dict = Depends(current_user)):
     if "name" in payload and payload["name"] is not None:
         update_fields["name"] = payload["name"]
     role_fields = {
-        "student": ["education", "skills", "resume_base64", "resume_score"],
+        "student": ["education", "skills", "resume_base64", "resume_filename", "resume_size", "resume_score"],
         "professional": ["company", "designation", "experience_years", "expertise"],
         "employer": ["company_name", "company_website", "company_size", "company_logo_base64", "bio"],
     }.get(role, [])
