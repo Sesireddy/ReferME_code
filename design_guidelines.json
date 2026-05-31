@@ -1,0 +1,133 @@
+{
+  "design_system": {
+    "theme": "Light",
+    "archetype": "Archetype 3+6 (Pastel & Soft + Vibrant Play for Gen Z)",
+    "description": "A mobile-first, visually rich, and reward-driven interface designed for Gen Z. Features bright saturated colors, bold expressive typography, and clear gamified progress cues.",
+    "colors": {
+      "background": "#FDFBF7",
+      "surface": "#FFFFFF",
+      "surface_alt": "#F3F4F6",
+      "primary": "#FF5A5F",
+      "primary_hover": "#FF3D43",
+      "secondary": "#D4FF00",
+      "accent": "#FFB347",
+      "text_primary": "#1A1A1A",
+      "text_secondary": "#6B7280",
+      "border": "#E5E7EB",
+      "success": "#10B981",
+      "error": "#EF4444"
+    },
+    "typography": {
+      "heading_font": "Outfit",
+      "body_font": "DM Sans",
+      "scales": {
+        "h1": "text-4xl tracking-tight leading-none font-bold",
+        "h2": "text-2xl tracking-tight font-semibold",
+        "h3": "text-xl font-medium",
+        "body": "text-base leading-relaxed",
+        "small": "text-sm",
+        "label": "text-xs tracking-[0.1em] uppercase font-bold"
+      }
+    },
+    "spacing_and_layout": {
+      "container_padding": "p-4 md:p-6",
+      "section_gap": "gap-6 md:gap-8",
+      "border_radius": {
+        "card": "rounded-2xl",
+        "button": "rounded-full",
+        "badge": "rounded-lg"
+      },
+      "shadows": {
+        "card": "shadow-[0_8px_30px_rgb(0,0,0,0.04)]",
+        "button_glow": "shadow-[0_0_15px_rgba(255,90,95,0.4)]"
+      }
+    }
+  },
+  "ui_components": {
+    "buttons": {
+      "primary": "bg-[#FF5A5F] text-white rounded-full font-semibold py-3 px-6 shadow-md active:opacity-80",
+      "secondary": "bg-[#D4FF00] text-[#1A1A1A] rounded-full font-bold py-3 px-6 shadow-md active:opacity-80",
+      "outline": "border-2 border-[#E5E7EB] text-[#1A1A1A] rounded-full font-semibold py-3 px-6"
+    },
+    "cards": {
+      "default": "bg-white rounded-2xl p-4 shadow-sm border border-gray-100",
+      "gamified": "bg-white rounded-2xl p-5 border-2 border-[#D4FF00] relative overflow-hidden"
+    },
+    "bottom_tabs": {
+      "style": "floating pill shape with 16px bottom margin, blurred background or solid white with soft shadow"
+    },
+    "inputs": {
+      "default": "bg-[#F3F4F6] rounded-xl px-4 py-3 text-[#1A1A1A] placeholder-[#6B7280] focus:border-[#FF5A5F] focus:border-2"
+    }
+  },
+  "screen_guidelines": [
+    {
+      "name": "Auth Flow",
+      "description": "Onboarding and Auth. Signup with role selection (Student/Pro/Employer).",
+      "key_elements": "Use the 'welcome_hero' image for the welcome screen. Use large, selectable cards for Role Selection. OTP screen with massive, bold input boxes."
+    },
+    {
+      "name": "Student Dashboard",
+      "description": "Central hub for students to see credits, leaderboard, apply for jobs, and book interviews.",
+      "key_elements": "Top bar: User avatar and Coin Wallet pill. Hero section: 'Apply Referral Job' and 'Book Mock Interview' bold CTA cards. Below: Current Leaderboard position widget showing 'gamification_badge'."
+    },
+    {
+      "name": "Professional Dashboard",
+      "description": "Hub for pros to manage interviews and refer students.",
+      "key_elements": "Stats bento grid: Credits Earned, Interviews Conducted, Referrals. 'Conduct Mock Interview' primary CTA. Leaderboard rank widget."
+    },
+    {
+      "name": "Employer Dashboard",
+      "description": "Dashboard to post jobs and view candidates.",
+      "key_elements": "Clean list view of posted jobs. Floating action button (FAB) or prominent 'Post Job' CTA. Candidate list view with easy status toggles."
+    },
+    {
+      "name": "Wallet & Subscription",
+      "description": "Credits wallet, transaction history, and subscription tiers.",
+      "key_elements": "Hero uses 'wallet_hero' image. Massive font for credit balance. Subscription cards (Free vs Paid ₹199) using Neo-Brutalist bright borders to highlight the paid tier."
+    },
+    {
+      "name": "Mock Interview & Referrals",
+      "description": "Booking calendars and job listings.",
+      "key_elements": "Clean horizontal scroll for date selection. Job cards with 'Apply' primary CTA. Badges on jobs to indicate 'High Match' or 'Hot Role'."
+    },
+    {
+      "name": "Leaderboards",
+      "description": "Gamified ranking screens.",
+      "key_elements": "Podium layout for top 3 users. List below. Highlight current user in a sticky bottom card."
+    },
+    {
+      "name": "Admin Dashboard",
+      "description": "Platform management.",
+      "key_elements": "Dense list layouts for users, credits, payouts. Clean action buttons for 'Approve' / 'Deny' payouts."
+    }
+  ],
+  "image_urls": {
+    "wallet_hero": {
+      "url": "https://static.prod-images.emergentagent.com/jobs/d2f455eb-160b-40ff-9a4e-1d583c1869b0/images/9e5ea04b28cbe7d19560f639172fa32c7ea2e010c38001356192231f7835193d.png",
+      "description": "3D rendered shiny coin stack for credit wallet."
+    },
+    "gamification_badge": {
+      "url": "https://static.prod-images.emergentagent.com/jobs/d2f455eb-160b-40ff-9a4e-1d583c1869b0/images/c7ebd51e366379c5f4ca342b327888d53457f32a01e0c5568f95e97b7d118c69.png",
+      "description": "Gold and coral glowing badge for leaderboards."
+    },
+    "welcome_hero": {
+      "url": "https://static.prod-images.emergentagent.com/jobs/d2f455eb-160b-40ff-9a4e-1d583c1869b0/images/a7d42b70a162d060c5cccdff45425f467967f3d394036f73402f239fdbbbe630.png",
+      "description": "3D characters high-fiving for the onboarding screen."
+    },
+    "student_placeholder": {
+      "url": "https://images.unsplash.com/photo-1649768453000-07c369a51b36?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Njl8MHwxfHNlYXJjaHwxfHx5b3VuZyUyMGNvbmZpZGVudCUyMHN0dWRlbnQlMjBzbWlsaW5nJTIwYnJpZ2h0fGVufDB8fHx8MTc4MDE5OTQ2N3ww&ixlib=rb-4.1.0&q=85",
+      "description": "Young confident student for profile avatars."
+    },
+    "employer_hero": {
+      "url": "https://images.unsplash.com/photo-1559136555-9303baea8ebd?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Nzd8MHwxfHNlYXJjaHwyfHxtb2Rlcm4lMjB0ZWNoJTIwcHJvZmVzc2lvbmFsJTIwb2ZmaWNlJTIwYnJpZ2h0fGVufDB8fHx8MTc4MDE5OTQ2N3ww&ixlib=rb-4.1.0&q=85",
+      "description": "Modern office for employer dashboard context."
+    }
+  },
+  "testing_and_accessibility": {
+    "test_id_rules": "All interactive elements MUST include a data-testid attribute in kebab-case. E.g., 'student-apply-job-button'.",
+    "contrast_rules": "Ensure text over primary buttons has high contrast. Avoid light grey text on white backgrounds.",
+    "motion": "Use React Native Reanimated or LayoutAnimation for smooth transitions between tabs and bottom sheets."
+  },
+  "instructions_to_main_agent": "Implement this design using React Native components for the Expo mobile app. The styling guidelines use standard Tailwind classes assuming the use of NativeWind, or map them mentally to React Native StyleSheets. Focus heavily on micro-interactions for the gamified elements. Use the provided Image URLs for heroes, badges, and avatars. Build out all 10 modules maintaining the vibrant Gen-Z aesthetic."
+}
