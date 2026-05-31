@@ -185,13 +185,20 @@ class GoogleSessionBody(BaseModel):
 
 class ProfileBody(BaseModel):
     name: Optional[str] = None
-    # student
-    education: Optional[str] = None
+    # student / job-seeker
+    education: Optional[str] = None  # e.g. "B.Tech" | "Degree" | "M.Tech" | "MBA" | "Others"
+    education_details: Optional[str] = None  # when education == "Others" or extra detail
+    passed_out_year: Optional[int] = None
+    current_location: Optional[str] = None
+    dob: Optional[str] = None  # YYYY-MM-DD
+    preferred_role: Optional[Literal["fresher", "experienced"]] = None
+    years_of_experience: Optional[int] = None  # for experienced
     skills: Optional[list[str]] = None
     resume_base64: Optional[str] = None
     resume_filename: Optional[str] = None
     resume_size: Optional[int] = None
-    resume_score: Optional[int] = None
+    resume_mime_type: Optional[str] = None  # "application/pdf" | "application/msword" | "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    resume_link: Optional[str] = None  # external URL alternative
     # professional
     company: Optional[str] = None
     designation: Optional[str] = None
@@ -205,6 +212,12 @@ class ProfileBody(BaseModel):
     bio: Optional[str] = None
 
 
+class InterviewSlotBody(BaseModel):
+    start_at: str  # ISO
+    end_at: str    # ISO
+    topic: Optional[str] = ""
+
+
 class DepositBody(BaseModel):
     amount_inr: int = Field(ge=1)
 
@@ -213,11 +226,6 @@ class VerifyPaymentBody(BaseModel):
     razorpay_order_id: str
     razorpay_payment_id: str
     razorpay_signature: str
-
-
-class InterviewSlotBody(BaseModel):
-    scheduled_at: str  # ISO
-    topic: Optional[str] = ""
 
 
 class BookInterviewBody(BaseModel):
@@ -469,33 +477,73 @@ async def get_me(u: dict = Depends(current_user)):
     return {"user": user_public(u), "profile": u.get("profile", {})}
 
 
+STUDENT_PROFILE_FIELDS = [
+    "education", "education_details", "passed_out_year", "current_location",
+    "dob", "preferred_role", "years_of_experience", "skills",
+    "resume_base64", "resume_filename", "resume_size", "resume_mime_type", "resume_link",
+]
+PRO_PROFILE_FIELDS = ["company", "designation", "experience_years", "expertise"]
+EMPLOYER_PROFILE_FIELDS = ["company_name", "company_website", "company_size", "company_logo_base64", "bio"]
+
+
+def compute_resume_score(user: dict) -> int:
+    """Resume score 0-100 driven by mock interviews attended + profile completeness."""
+    profile = user.get("profile", {}) or {}
+    attended = int(user.get("interviews_attended", 0) or 0)
+    fields = ["education", "passed_out_year", "current_location", "dob", "preferred_role", "skills"]
+    has_resume = bool(profile.get("resume_base64") or profile.get("resume_link"))
+    completeness = sum(1 for f in fields if profile.get(f))
+    score = (15 if has_resume else 0) + completeness * 3 + attended * 12
+    return max(0, min(100, int(score)))
+
+
+def is_student_complete(profile: dict) -> bool:
+    required = ["education", "passed_out_year", "current_location", "preferred_role", "skills"]
+    has_resume = bool(profile.get("resume_base64") or profile.get("resume_link"))
+    if not has_resume:
+        return False
+    for r in required:
+        if not profile.get(r):
+            return False
+    if profile.get("preferred_role") == "experienced" and not profile.get("years_of_experience"):
+        return False
+    if profile.get("education") == "Others" and not profile.get("education_details"):
+        return False
+    return True
+
+
 # ------------------- Profile -------------------
 @api.put("/profile")
 async def update_profile(body: ProfileBody, u: dict = Depends(current_user)):
-    profile = u.get("profile", {})
+    profile = dict(u.get("profile", {}) or {})
     update_fields: dict[str, Any] = {}
     role = u["role"]
     payload = body.model_dump(exclude_unset=True)
     if "name" in payload and payload["name"] is not None:
         update_fields["name"] = payload["name"]
     role_fields = {
-        "student": ["education", "skills", "resume_base64", "resume_filename", "resume_size", "resume_score"],
-        "professional": ["company", "designation", "experience_years", "expertise"],
-        "employer": ["company_name", "company_website", "company_size", "company_logo_base64", "bio"],
+        "student": STUDENT_PROFILE_FIELDS,
+        "professional": PRO_PROFILE_FIELDS,
+        "employer": EMPLOYER_PROFILE_FIELDS,
     }.get(role, [])
     for k in role_fields:
-        if k in payload and payload[k] is not None:
-            profile[k] = payload[k]
-    update_fields["profile"] = profile
+        if k in payload:
+            profile[k] = payload[k]  # allow None to clear
+
     # Auto compute completion
     if role == "student":
-        complete = bool(profile.get("education") and profile.get("skills") and profile.get("resume_base64"))
+        complete = is_student_complete(profile)
+        # auto-update resume_score from interviews attended
+        merged_user = {**u, "profile": profile}
+        profile["resume_score"] = compute_resume_score(merged_user)
     elif role == "professional":
-        complete = bool(profile.get("company") and profile.get("designation") and (profile.get("experience_years") or 0) >= 0 and profile.get("expertise"))
+        complete = bool(profile.get("company") and profile.get("designation") and profile.get("expertise"))
     elif role == "employer":
         complete = bool(profile.get("company_name") and profile.get("company_size"))
     else:
         complete = True
+
+    update_fields["profile"] = profile
     update_fields["profile_complete"] = complete
     await db.users.update_one({"id": u["id"]}, {"$set": update_fields})
     u2 = await db.users.find_one({"id": u["id"]}, {"_id": 0})
@@ -630,11 +678,43 @@ async def list_professionals(u: dict = Depends(current_user)):
 
 @api.post("/interviews/slots")
 async def create_slot(body: InterviewSlotBody, u: dict = Depends(require_role(["professional"]))):
+    try:
+        start = datetime.fromisoformat(body.start_at.replace("Z", "+00:00"))
+        end = datetime.fromisoformat(body.end_at.replace("Z", "+00:00"))
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid date format")
+    if end <= start:
+        raise HTTPException(status_code=400, detail="End time must be after start time")
+    if (end - start).total_seconds() < 15 * 60:
+        raise HTTPException(status_code=400, detail="Slot must be at least 15 minutes")
+    if start <= datetime.now(timezone.utc):
+        raise HTTPException(status_code=400, detail="Slot must be in the future")
+
+    # Conflict check: any existing non-cancelled slot for this pro overlapping?
+    existing = await db.interview_slots.find(
+        {"pro_id": u["id"], "status": {"$in": ["available", "booked"]}},
+        {"_id": 0},
+    ).to_list(500)
+    for s in existing:
+        try:
+            es = datetime.fromisoformat(s["start_at"].replace("Z", "+00:00"))
+            ee = datetime.fromisoformat(s["end_at"].replace("Z", "+00:00"))
+        except Exception:
+            continue
+        if start < ee and end > es:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Conflicts with existing slot {es.strftime('%d %b %H:%M')} – {ee.strftime('%H:%M')}",
+            )
+
     slot = {
         "id": new_id(),
         "pro_id": u["id"],
         "pro_name": u.get("name") or u["email"].split("@")[0],
-        "scheduled_at": body.scheduled_at,
+        "start_at": body.start_at,
+        "end_at": body.end_at,
+        # Keep legacy alias for any clients still reading scheduled_at
+        "scheduled_at": body.start_at,
         "topic": body.topic or "",
         "status": "available",
         "student_id": None,
@@ -654,7 +734,7 @@ async def list_slots(pro_id: Optional[str] = Query(None), u: dict = Depends(curr
         q["pro_id"] = u["id"]
     elif u["role"] == "student" and not pro_id:
         q["status"] = "available"
-    slots = await db.interview_slots.find(q, {"_id": 0}).sort("scheduled_at", 1).to_list(200)
+    slots = await db.interview_slots.find(q, {"_id": 0}).sort("start_at", 1).to_list(200)
     return slots
 
 
@@ -692,11 +772,25 @@ async def complete_interview(slot_id: str, u: dict = Depends(require_role(["prof
         raise HTTPException(status_code=400, detail="Slot not booked")
     await db.interview_slots.update_one({"id": slot_id}, {"$set": {"status": "completed", "completed_at": now_iso()}})
     await _credit_user(u["id"], INTERVIEW_PRO_REWARD, "interview_conducted", {"slot_id": slot_id})
-    # increment student interviews_attended counter for leaderboard
-    await db.users.update_one({"id": slot["student_id"]}, {"$inc": {"interviews_attended": 1}})
+    # Increment student interviews_attended and refresh resume score
+    student = await db.users.find_one_and_update(
+        {"id": slot["student_id"]},
+        {"$inc": {"interviews_attended": 1}},
+        return_document=True,
+        projection={"_id": 0},
+    )
+    if student:
+        new_score = compute_resume_score(student)
+        new_profile = {**(student.get("profile", {}) or {}), "resume_score": new_score}
+        await db.users.update_one({"id": student["id"]}, {"$set": {"profile": new_profile}})
+        await push_notification(
+            student["id"],
+            "Interview completed 🎓",
+            f"Your resume score is now {new_score}/100. Keep going!",
+            "success",
+        )
     await db.users.update_one({"id": u["id"]}, {"$inc": {"interviews_conducted": 1}})
     await push_notification(u["id"], "Earned +25 credits 🎯", "Interview marked completed.", "success")
-    await push_notification(slot["student_id"], "Interview completed", "Hope it was helpful!", "success")
     return {"message": "Completed", "earned": INTERVIEW_PRO_REWARD}
 
 
@@ -728,6 +822,13 @@ async def list_jobs(u: dict = Depends(current_user)):
     else:
         q["status"] = "open"
     jobs = await db.jobs.find(q, {"_id": 0}).sort("created_at", -1).to_list(200)
+    # Annotate `applied` flag for students
+    if u["role"] == "student" and jobs:
+        my_apps = await db.applications.find({"student_id": u["id"]}, {"_id": 0, "job_id": 1, "status": 1}).to_list(1000)
+        by_job = {a["job_id"]: a["status"] for a in my_apps}
+        for j in jobs:
+            j["applied"] = j["id"] in by_job
+            j["application_status"] = by_job.get(j["id"])
     return jobs
 
 
@@ -804,6 +905,40 @@ async def list_applications(u: dict = Depends(current_user)):
         q = {}
     apps = await db.applications.find(q, {"_id": 0}).sort("created_at", -1).to_list(200)
     return apps
+
+
+@api.get("/applications/pool")
+async def applications_pool(_: dict = Depends(require_role(["professional"]))):
+    """All applicants across the platform — pros browse to refer candidates."""
+    apps = await db.applications.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    # Hydrate with student profile snippet
+    student_ids = list({a["student_id"] for a in apps})
+    students = await db.users.find(
+        {"id": {"$in": student_ids}},
+        {"_id": 0, "password_hash": 0},
+    ).to_list(1000)
+    sm = {s["id"]: s for s in students}
+    out = []
+    for a in apps:
+        s = sm.get(a["student_id"], {})
+        profile = s.get("profile", {}) or {}
+        out.append({
+            **a,
+            "student_profile": {
+                "education": profile.get("education"),
+                "education_details": profile.get("education_details"),
+                "passed_out_year": profile.get("passed_out_year"),
+                "current_location": profile.get("current_location"),
+                "preferred_role": profile.get("preferred_role"),
+                "years_of_experience": profile.get("years_of_experience"),
+                "skills": profile.get("skills", []),
+                "resume_score": profile.get("resume_score", 0),
+                "resume_filename": profile.get("resume_filename"),
+                "resume_link": profile.get("resume_link"),
+            },
+            "interviews_attended": s.get("interviews_attended", 0),
+        })
+    return out
 
 
 @api.post("/applications/hire")

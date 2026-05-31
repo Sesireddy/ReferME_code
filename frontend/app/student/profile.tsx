@@ -8,21 +8,55 @@ import { Txt } from "@/src/components/Txt";
 import { Card } from "@/src/components/Card";
 import { Button } from "@/src/components/Button";
 import { Input } from "@/src/components/Input";
+import { Picker } from "@/src/components/Picker";
 import { colors, radius } from "@/src/theme/tokens";
 import { api, clearSession } from "@/src/lib/api";
 
-const MAX_RESUME_BYTES = 5 * 1024 * 1024; // 5 MB
+const MAX_RESUME_BYTES = 5 * 1024 * 1024;
+
+const EDUCATION_OPTIONS = [
+  { value: "B.Tech", label: "B.Tech" },
+  { value: "Degree", label: "Degree (B.A / B.Com / B.Sc)" },
+  { value: "M.Tech", label: "M.Tech" },
+  { value: "MBA", label: "MBA" },
+  { value: "Others", label: "Others" },
+];
+
+const PREFERRED_ROLE_OPTIONS = [
+  { value: "fresher", label: "Fresher" },
+  { value: "experienced", label: "Experienced" },
+];
+
+const RESUME_TABS = [
+  { id: "file", label: "Upload file" },
+  { id: "link", label: "Paste link" },
+] as const;
+
+type ResumeTab = (typeof RESUME_TABS)[number]["id"];
 
 export default function StudentProfile() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
+
+  // Form state
   const [name, setName] = useState("");
-  const [education, setEducation] = useState("");
+  const [education, setEducation] = useState<string | null>(null);
+  const [educationDetails, setEducationDetails] = useState("");
+  const [passedOutYear, setPassedOutYear] = useState("");
+  const [currentLocation, setCurrentLocation] = useState("");
+  const [dob, setDob] = useState("");
+  const [preferredRole, setPreferredRole] = useState<string | null>(null);
+  const [yearsExp, setYearsExp] = useState("");
   const [skills, setSkills] = useState("");
+
+  // Resume state
+  const [resumeTab, setResumeTab] = useState<ResumeTab>("file");
   const [resumeBase64, setResumeBase64] = useState("");
   const [resumeName, setResumeName] = useState("");
   const [resumeSize, setResumeSize] = useState(0);
-  const [score, setScore] = useState("");
+  const [resumeMime, setResumeMime] = useState("");
+  const [resumeLink, setResumeLink] = useState("");
+
   const [saving, setSaving] = useState(false);
   const [picking, setPicking] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -33,12 +67,21 @@ export default function StudentProfile() {
       const me = await api<{ user: any; profile: any }>("/auth/me");
       setUser(me.user);
       setName(me.user.name || "");
-      setEducation(me.profile?.education || "");
-      setSkills((me.profile?.skills || []).join(", "));
-      setResumeBase64(me.profile?.resume_base64 || "");
-      setResumeName(me.profile?.resume_filename || "");
-      setResumeSize(me.profile?.resume_size || 0);
-      setScore(String(me.profile?.resume_score || ""));
+      const p = me.profile || {};
+      setEducation(p.education || null);
+      setEducationDetails(p.education_details || "");
+      setPassedOutYear(p.passed_out_year ? String(p.passed_out_year) : "");
+      setCurrentLocation(p.current_location || "");
+      setDob(p.dob || "");
+      setPreferredRole(p.preferred_role || null);
+      setYearsExp(p.years_of_experience ? String(p.years_of_experience) : "");
+      setSkills((p.skills || []).join(", "));
+      setResumeBase64(p.resume_base64 || "");
+      setResumeName(p.resume_filename || "");
+      setResumeSize(p.resume_size || 0);
+      setResumeMime(p.resume_mime_type || "");
+      setResumeLink(p.resume_link || "");
+      if (!p.resume_base64 && p.resume_link) setResumeTab("link");
     } catch {}
     setRefreshing(false);
   }, []);
@@ -49,7 +92,11 @@ export default function StudentProfile() {
     setPicking(true);
     try {
       const res = await DocumentPicker.getDocumentAsync({
-        type: ["application/pdf"],
+        type: [
+          "application/pdf",
+          "application/msword", // .doc
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // .docx
+        ],
         copyToCacheDirectory: true,
         multiple: false,
       });
@@ -59,15 +106,13 @@ export default function StudentProfile() {
         Alert.alert("File too large", "Resume must be under 5 MB.");
         return;
       }
-      // Convert to base64 via fetch → blob → FileReader (works on web & native)
       const response = await fetch(file.uri);
       const blob = await response.blob();
       const base64: string = await new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onloadend = () => {
-          const result = reader.result as string;
-          // Strip "data:application/pdf;base64,"
-          resolve(result.includes(",") ? result.split(",")[1] : result);
+          const r = reader.result as string;
+          resolve(r.includes(",") ? r.split(",")[1] : r);
         };
         reader.onerror = () => reject(new Error("Read failed"));
         reader.readAsDataURL(blob);
@@ -75,6 +120,8 @@ export default function StudentProfile() {
       setResumeBase64(base64);
       setResumeName(file.name);
       setResumeSize(file.size || blob.size || 0);
+      setResumeMime(file.mimeType || blob.type || "");
+      setResumeLink(""); // clear link if a file is picked
     } catch (e: any) {
       Alert.alert("Could not pick file", e.message || String(e));
     } finally {
@@ -82,13 +129,18 @@ export default function StudentProfile() {
     }
   }
 
-  function clearResume() {
+  function clearResumeFile() {
     setResumeBase64("");
     setResumeName("");
     setResumeSize(0);
+    setResumeMime("");
   }
 
   async function save() {
+    if (!education) return Alert.alert("Missing", "Select your education.");
+    if (education === "Others" && !educationDetails.trim()) return Alert.alert("Missing", "Enter your education details.");
+    if (!preferredRole) return Alert.alert("Missing", "Select your preferred role.");
+    if (preferredRole === "experienced" && !yearsExp) return Alert.alert("Missing", "Enter your years of experience.");
     setSaving(true);
     try {
       const res = await api<any>("/profile", {
@@ -96,14 +148,21 @@ export default function StudentProfile() {
         body: {
           name,
           education,
+          education_details: education === "Others" ? educationDetails : null,
+          passed_out_year: passedOutYear ? parseInt(passedOutYear, 10) : null,
+          current_location: currentLocation || null,
+          dob: dob || null,
+          preferred_role: preferredRole,
+          years_of_experience: preferredRole === "experienced" ? parseInt(yearsExp || "0", 10) : null,
           skills: skills.split(",").map((s) => s.trim()).filter(Boolean),
-          resume_base64: resumeBase64 || null,
-          resume_filename: resumeName || null,
-          resume_size: resumeSize || null,
-          resume_score: parseInt(score || "0", 10) || 0,
+          resume_base64: resumeTab === "file" ? (resumeBase64 || null) : null,
+          resume_filename: resumeTab === "file" ? (resumeName || null) : null,
+          resume_size: resumeTab === "file" ? (resumeSize || null) : null,
+          resume_mime_type: resumeTab === "file" ? (resumeMime || null) : null,
+          resume_link: resumeTab === "link" ? (resumeLink || null) : null,
         },
       });
-      Alert.alert("Saved", res.user.profile_complete ? "Profile complete!" : "Keep going to complete.");
+      Alert.alert("Saved", res.user.profile_complete ? "Profile complete!" : "Almost there. Fill any missing fields.");
       setUser(res.user);
     } catch (e: any) {
       Alert.alert("Save failed", e.message);
@@ -127,54 +186,126 @@ export default function StudentProfile() {
       </View>
 
       <Card style={{ marginTop: 16 }}>
-        <Txt variant="label">Email</Txt>
-        <Txt variant="h3">{user?.email}</Txt>
-        <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 4 }}>
-          Profile completion: {user?.profile_complete ? "100%" : "in progress"}
+        <View style={{ flexDirection: "row", alignItems: "center" }}>
+          <View style={{ flex: 1 }}>
+            <Txt variant="label">Email</Txt>
+            <Txt variant="h3">{user?.email}</Txt>
+          </View>
+          <View style={{ alignItems: "flex-end" }}>
+            <Txt variant="label" style={{ color: colors.primary }}>Resume score</Txt>
+            <Txt variant="h2" testID="resume-score">{user?.profile?.resume_score ?? 0}/100</Txt>
+            <Txt variant="small" style={{ color: colors.textSecondary }}>auto-updated</Txt>
+          </View>
+        </View>
+        <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 8 }}>
+          Each completed mock interview boosts your score. Complete the form to add more points.
         </Txt>
       </Card>
 
       <View style={{ marginTop: 16 }}>
         <Input testID="profile-name" label="Full name" value={name} onChangeText={setName} placeholder="Your name" />
-        <Input testID="profile-education" label="Education" value={education} onChangeText={setEducation} placeholder="B.Tech CS — IIT Delhi, 2026" />
+
+        <Picker
+          testID="profile-education"
+          label="Education"
+          placeholder="Select highest education"
+          options={EDUCATION_OPTIONS}
+          value={education}
+          onChange={(v) => setEducation(v as string)}
+        />
+
+        {education === "Others" ? (
+          <Input
+            testID="profile-education-details"
+            label="Education details"
+            placeholder="e.g. PG Diploma in Data Science"
+            value={educationDetails}
+            onChangeText={setEducationDetails}
+          />
+        ) : null}
+
+        <Input testID="profile-passed-out" label="Passed out year" placeholder="2026" keyboardType="number-pad" maxLength={4} value={passedOutYear} onChangeText={setPassedOutYear} />
+        <Input testID="profile-location" label="Current location" placeholder="Bengaluru" value={currentLocation} onChangeText={setCurrentLocation} />
+        <Input testID="profile-dob" label="Date of birth" placeholder="YYYY-MM-DD" value={dob} onChangeText={setDob} />
+
+        <Picker
+          testID="profile-preferred-role"
+          label="Preferred role"
+          placeholder="Fresher or experienced?"
+          options={PREFERRED_ROLE_OPTIONS}
+          value={preferredRole}
+          onChange={(v) => setPreferredRole(v as string)}
+        />
+
+        {preferredRole === "experienced" ? (
+          <Input testID="profile-years-exp" label="Years of experience" placeholder="3" keyboardType="number-pad" value={yearsExp} onChangeText={setYearsExp} />
+        ) : null}
+
         <Input testID="profile-skills" label="Skills (comma-separated)" value={skills} onChangeText={setSkills} placeholder="React, Python, ML" />
 
-        <Txt variant="label" style={{ marginBottom: 6 }}>Resume (PDF)</Txt>
-        {resumeBase64 ? (
-          <View testID="resume-picked" style={styles.fileBox}>
-            <View style={styles.fileIcon}>
-              <Ionicons name="document-text" size={22} color={colors.primary} />
-            </View>
-            <View style={{ flex: 1, marginLeft: 10 }}>
-              <Txt style={{ fontWeight: "600" }} numberOfLines={1}>{resumeName || "Resume.pdf"}</Txt>
-              <Txt variant="small" style={{ color: colors.textSecondary }}>
-                {resumeSize ? `${(resumeSize / 1024).toFixed(0)} KB` : "uploaded"}
-              </Txt>
-            </View>
-            <TouchableOpacity testID="resume-replace" onPress={pickResume} hitSlop={10} style={{ marginRight: 10 }}>
-              <Ionicons name="refresh" size={20} color={colors.textSecondary} />
-            </TouchableOpacity>
-            <TouchableOpacity testID="resume-remove" onPress={clearResume} hitSlop={10}>
-              <Ionicons name="close-circle" size={22} color={colors.error} />
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <TouchableOpacity testID="resume-pick" onPress={pickResume} activeOpacity={0.85} disabled={picking}>
-            <View style={[styles.fileBox, styles.fileBoxEmpty]}>
-              {picking ? (
-                <ActivityIndicator color={colors.primary} />
-              ) : (
-                <>
-                  <Ionicons name="cloud-upload-outline" size={22} color={colors.primary} />
-                  <Txt style={{ marginLeft: 10, fontWeight: "600", color: colors.primary }}>Upload resume (PDF · max 5MB)</Txt>
-                </>
-              )}
-            </View>
-          </TouchableOpacity>
-        )}
-        <View style={{ height: 14 }} />
+        <Txt variant="label" style={{ marginTop: 4, marginBottom: 8 }}>Resume</Txt>
+        <View style={styles.tabs}>
+          {RESUME_TABS.map((t) => {
+            const active = resumeTab === t.id;
+            return (
+              <TouchableOpacity
+                key={t.id}
+                testID={`resume-tab-${t.id}`}
+                onPress={() => setResumeTab(t.id)}
+                style={[styles.tab, active && styles.tabActive]}
+              >
+                <Txt style={{ fontWeight: "700", color: active ? "#fff" : colors.textPrimary }}>{t.label}</Txt>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
 
-        <Input testID="profile-score" label="Resume score (0-100)" value={score} onChangeText={setScore} keyboardType="number-pad" />
+        {resumeTab === "file" ? (
+          resumeBase64 ? (
+            <View testID="resume-picked" style={styles.fileBox}>
+              <View style={styles.fileIcon}>
+                <Ionicons name="document-text" size={22} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1, marginLeft: 10 }}>
+                <Txt style={{ fontWeight: "600" }} numberOfLines={1}>{resumeName || "Resume"}</Txt>
+                <Txt variant="small" style={{ color: colors.textSecondary }}>
+                  {resumeSize ? `${(resumeSize / 1024).toFixed(0)} KB` : "uploaded"} · {resumeMime?.includes("word") ? "Word" : "PDF"}
+                </Txt>
+              </View>
+              <TouchableOpacity testID="resume-replace" onPress={pickResume} hitSlop={10} style={{ marginRight: 10 }}>
+                <Ionicons name="refresh" size={20} color={colors.textSecondary} />
+              </TouchableOpacity>
+              <TouchableOpacity testID="resume-remove" onPress={clearResumeFile} hitSlop={10}>
+                <Ionicons name="close-circle" size={22} color={colors.error} />
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity testID="resume-pick" onPress={pickResume} activeOpacity={0.85} disabled={picking}>
+              <View style={[styles.fileBox, styles.fileBoxEmpty]}>
+                {picking ? (
+                  <ActivityIndicator color={colors.primary} />
+                ) : (
+                  <>
+                    <Ionicons name="cloud-upload-outline" size={22} color={colors.primary} />
+                    <Txt style={{ marginLeft: 10, fontWeight: "600", color: colors.primary }}>Upload resume (PDF / Word · max 5MB)</Txt>
+                  </>
+                )}
+              </View>
+            </TouchableOpacity>
+          )
+        ) : (
+          <Input
+            testID="resume-link"
+            label=""
+            placeholder="https://drive.google.com/... or LinkedIn URL"
+            value={resumeLink}
+            onChangeText={setResumeLink}
+            autoCapitalize="none"
+            keyboardType="url"
+          />
+        )}
+
+        <View style={{ height: 14 }} />
         <Button testID="save-profile" title="Save profile" onPress={save} loading={saving} />
       </View>
 
@@ -188,6 +319,9 @@ export default function StudentProfile() {
 }
 
 const styles = StyleSheet.create({
+  tabs: { flexDirection: "row", backgroundColor: colors.surfaceAlt, borderRadius: 999, padding: 4, marginBottom: 12 },
+  tab: { flex: 1, paddingVertical: 8, alignItems: "center", borderRadius: 999 },
+  tabActive: { backgroundColor: colors.primary },
   fileBox: {
     flexDirection: "row",
     alignItems: "center",

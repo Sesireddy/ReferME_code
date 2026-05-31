@@ -13,7 +13,7 @@ import { api, setSession } from "@/src/lib/api";
 type Role = "student" | "professional" | "employer";
 
 const ROLES: { id: Role; title: string; subtitle: string; icon: any; color: string }[] = [
-  { id: "student", title: "I'm a Student", subtitle: "Get referred & book mock interviews", icon: "school", color: colors.primary },
+  { id: "student", title: "I'm a Job Seeker", subtitle: "Get referred & book mock interviews", icon: "school", color: colors.primary },
   { id: "professional", title: "I'm a Professional", subtitle: "Conduct interviews & earn credits", icon: "briefcase", color: "#7C3AED" },
   { id: "employer", title: "I'm an Employer", subtitle: "Post jobs & hire great talent", icon: "business", color: "#2563EB" },
 ];

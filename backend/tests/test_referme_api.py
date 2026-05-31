@@ -1,12 +1,15 @@
 """Comprehensive backend tests for ReferME API.
 Covers: health, auth, profile, wallet, interviews, jobs, referrals,
 leaderboards, payouts, admin, disputes, notifications, RBAC.
+Iteration 3: + slot start_at/end_at + overlap, applied flag on /jobs,
+profile new fields, /applications/pool, resume_score auto-compute.
 """
 import os
 import time
 import uuid
 import requests
 import pytest
+from datetime import datetime, timedelta, timezone
 from conftest import API, auth_headers
 
 
@@ -75,11 +78,25 @@ class TestAuth:
 # ---------- Profile ----------
 class TestProfile:
     def test_student_profile_completion(self, session, student):
-        body = {"name": "S One", "education": "B.Tech CSE", "skills": ["Python"], "resume_base64": "data:application/pdf;base64,xx", "resume_score": 78}
+        # Iteration 3: required fields are education, passed_out_year, current_location,
+        # preferred_role, skills, and resume_base64 OR resume_link
+        body = {
+            "name": "S One",
+            "education": "B.Tech",
+            "passed_out_year": 2024,
+            "current_location": "Bangalore",
+            "dob": "2001-05-12",
+            "preferred_role": "fresher",
+            "skills": ["Python"],
+            "resume_base64": "data:application/pdf;base64,xx",
+            "resume_mime_type": "application/pdf",
+        }
         r = session.put(f"{API}/profile", json=body, headers=auth_headers(student["token"]))
         assert r.status_code == 200, r.text
         assert r.json()["user"]["profile_complete"] is True
-        assert r.json()["profile"]["resume_score"] == 78
+        # resume_score is server-computed (not client-set)
+        assert isinstance(r.json()["profile"]["resume_score"], int)
+        assert 0 <= r.json()["profile"]["resume_score"] <= 100
 
     def test_pro_profile_completion(self, session, professional):
         body = {"company": "Acme", "designation": "SDE", "experience_years": 5, "expertise": ["Backend"]}
@@ -129,10 +146,14 @@ class TestWallet:
 # ---------- Interviews ----------
 class TestInterviews:
     def test_full_interview_flow(self, session, professional, student):
-        # pro creates slot
-        r = session.post(f"{API}/interviews/slots", json={"scheduled_at": "2026-06-01T10:00:00Z", "topic": "DSA"}, headers=auth_headers(professional["token"]))
+        # pro creates slot in the future
+        future_start = (datetime.now(timezone.utc) + timedelta(days=2)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        future_end = (datetime.now(timezone.utc) + timedelta(days=2, minutes=45)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        r = session.post(f"{API}/interviews/slots", json={"start_at": future_start, "end_at": future_end, "topic": "DSA"}, headers=auth_headers(professional["token"]))
         assert r.status_code == 200, r.text
         slot = r.json()
+        assert slot["start_at"] == future_start
+        assert slot["end_at"] == future_end
         slot_id = slot["id"]
         # student books (free)
         r2 = session.post(f"{API}/interviews/book", json={"slot_id": slot_id}, headers=auth_headers(student["token"]))
@@ -145,9 +166,16 @@ class TestInterviews:
         # pro wallet has 25
         w = session.get(f"{API}/wallet", headers=auth_headers(professional["token"])).json()
         assert w["credits"] == 25
+        # Student interviews_attended incremented and resume_score recomputed.
+        # `interviews_attended` is not exposed in user_public; confirm via student leaderboard.
+        lb = session.get(f"{API}/leaderboard/students", headers=auth_headers(student["token"])).json()
+        me = next((x for x in lb if x.get("id") == student["user"]["id"]), None)
+        assert me is not None and me.get("interviews_attended", 0) >= 1
 
     def test_student_cannot_create_slot(self, session, student):
-        r = session.post(f"{API}/interviews/slots", json={"scheduled_at": "2026-06-01T10:00:00Z"}, headers=auth_headers(student["token"]))
+        future_start = (datetime.now(timezone.utc) + timedelta(days=2)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        future_end = (datetime.now(timezone.utc) + timedelta(days=2, minutes=45)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        r = session.post(f"{API}/interviews/slots", json={"start_at": future_start, "end_at": future_end}, headers=auth_headers(student["token"]))
         assert r.status_code == 403
 
 
@@ -284,3 +312,182 @@ def test_missing_token(session):
 def test_invalid_token(session):
     r = session.get(f"{API}/auth/me", headers={"Authorization": "Bearer invalid.token"})
     assert r.status_code == 401
+
+
+# ============================================================
+# Iteration 3 specific tests
+# ============================================================
+
+def _future(minutes_offset: int, duration_min: int = 30):
+    s = datetime.now(timezone.utc) + timedelta(minutes=minutes_offset)
+    e = s + timedelta(minutes=duration_min)
+    s = s.replace(microsecond=0)
+    e = e.replace(microsecond=0)
+    return s.isoformat().replace("+00:00", "Z"), e.isoformat().replace("+00:00", "Z")
+
+
+# ---- Iteration 3: Profile new fields & completeness rules ----
+class TestProfileIteration3:
+    def test_others_education_requires_details(self, session, student):
+        body = {
+            "education": "Others",
+            "passed_out_year": 2024,
+            "current_location": "Pune",
+            "preferred_role": "fresher",
+            "skills": ["JS"],
+            "resume_link": "https://example.com/r.pdf",
+        }
+        r = session.put(f"{API}/profile", json=body, headers=auth_headers(student["token"]))
+        assert r.status_code == 200, r.text
+        # missing education_details -> profile NOT complete
+        assert r.json()["user"]["profile_complete"] is False
+        # supply education_details now
+        r2 = session.put(f"{API}/profile", json={**body, "education_details": "BBA Marketing"}, headers=auth_headers(student["token"]))
+        assert r2.json()["user"]["profile_complete"] is True
+        assert r2.json()["profile"]["education_details"] == "BBA Marketing"
+
+    def test_experienced_requires_years_of_experience(self, session, student):
+        body = {
+            "education": "B.Tech",
+            "passed_out_year": 2020,
+            "current_location": "Mumbai",
+            "preferred_role": "experienced",
+            "skills": ["Java"],
+            "resume_link": "https://example.com/r.pdf",
+        }
+        r = session.put(f"{API}/profile", json=body, headers=auth_headers(student["token"]))
+        assert r.json()["user"]["profile_complete"] is False
+        r2 = session.put(f"{API}/profile", json={**body, "years_of_experience": 4}, headers=auth_headers(student["token"]))
+        assert r2.json()["user"]["profile_complete"] is True
+        assert r2.json()["profile"]["years_of_experience"] == 4
+
+    def test_resume_link_alone_satisfies_resume(self, session, student):
+        body = {
+            "education": "MBA",
+            "passed_out_year": 2023,
+            "current_location": "Delhi",
+            "preferred_role": "fresher",
+            "skills": ["Excel"],
+            "resume_link": "https://example.com/cv.pdf",
+        }
+        r = session.put(f"{API}/profile", json=body, headers=auth_headers(student["token"]))
+        assert r.status_code == 200
+        assert r.json()["user"]["profile_complete"] is True
+
+    def test_resume_score_is_server_computed(self, session, student):
+        # Even if client sends resume_score, it's ignored
+        body = {
+            "education": "B.Tech",
+            "passed_out_year": 2024,
+            "current_location": "Bangalore",
+            "dob": "2001-04-01",
+            "preferred_role": "fresher",
+            "skills": ["Python"],
+            "resume_link": "https://example.com/cv.pdf",
+        }
+        r = session.put(f"{API}/profile", json=body, headers=auth_headers(student["token"]))
+        score = r.json()["profile"]["resume_score"]
+        # has_resume(15) + 6 fields (education, passed_out_year, current_location, dob, preferred_role, skills) * 3 = 18 ; 0 interviews
+        assert score == 33, f"expected 33, got {score}"
+
+
+# ---- Iteration 3: Interview slot start_at/end_at + conflict ----
+class TestSlotIteration3:
+    def test_slot_invalid_format(self, session, professional):
+        r = session.post(f"{API}/interviews/slots", json={"start_at": "not-a-date", "end_at": "also-bad"}, headers=auth_headers(professional["token"]))
+        assert r.status_code == 400
+
+    def test_slot_end_before_start(self, session, professional):
+        s, e = _future(60, 30)
+        r = session.post(f"{API}/interviews/slots", json={"start_at": e, "end_at": s}, headers=auth_headers(professional["token"]))
+        assert r.status_code == 400
+
+    def test_slot_past(self, session, professional):
+        s = (datetime.now(timezone.utc) - timedelta(hours=2)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        e = (datetime.now(timezone.utc) - timedelta(hours=1)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        r = session.post(f"{API}/interviews/slots", json={"start_at": s, "end_at": e}, headers=auth_headers(professional["token"]))
+        assert r.status_code == 400
+
+    def test_slot_too_short(self, session, professional):
+        s, e = _future(60, 5)
+        r = session.post(f"{API}/interviews/slots", json={"start_at": s, "end_at": e}, headers=auth_headers(professional["token"]))
+        assert r.status_code == 400
+        assert "15" in r.json().get("detail", "")
+
+    def test_slot_overlap_rejected_adjacent_allowed(self, session, professional):
+        s1, e1 = _future(120, 30)
+        r1 = session.post(f"{API}/interviews/slots", json={"start_at": s1, "end_at": e1}, headers=auth_headers(professional["token"]))
+        assert r1.status_code == 200, r1.text
+        # overlapping: starts inside [s1,e1]
+        s_over = (datetime.fromisoformat(s1.replace("Z", "+00:00")) + timedelta(minutes=10)).isoformat().replace("+00:00", "Z")
+        e_over = (datetime.fromisoformat(s1.replace("Z", "+00:00")) + timedelta(minutes=40)).isoformat().replace("+00:00", "Z")
+        r2 = session.post(f"{API}/interviews/slots", json={"start_at": s_over, "end_at": e_over}, headers=auth_headers(professional["token"]))
+        assert r2.status_code == 400
+        assert "onflict" in r2.json().get("detail", "") or "verlap" in r2.json().get("detail", "").lower() or "Conflicts" in r2.json().get("detail", "")
+        # adjacent (back-to-back, no overlap) should succeed
+        r3 = session.post(f"{API}/interviews/slots", json={"start_at": e1, "end_at": (datetime.fromisoformat(e1.replace("Z", "+00:00")) + timedelta(minutes=30)).isoformat().replace("+00:00", "Z")}, headers=auth_headers(professional["token"]))
+        assert r3.status_code == 200, r3.text
+
+    def test_list_slots_sorted(self, session, professional):
+        # Create two slots; verify sort by start_at
+        s1, e1 = _future(180, 30)
+        s2, e2 = _future(240, 30)
+        session.post(f"{API}/interviews/slots", json={"start_at": s2, "end_at": e2}, headers=auth_headers(professional["token"]))
+        session.post(f"{API}/interviews/slots", json={"start_at": s1, "end_at": e1}, headers=auth_headers(professional["token"]))
+        r = session.get(f"{API}/interviews/slots", headers=auth_headers(professional["token"]))
+        assert r.status_code == 200
+        slots = r.json()
+        starts = [x["start_at"] for x in slots]
+        assert starts == sorted(starts)
+        for s in slots:
+            assert "start_at" in s and "end_at" in s
+
+
+# ---- Iteration 3: Jobs annotated with applied flag ----
+class TestJobsAppliedFlag:
+    def test_jobs_annotated_for_student(self, session, student):
+        jobs = session.get(f"{API}/jobs", headers=auth_headers(student["token"])).json()
+        assert all("applied" in j for j in jobs)
+        # All unapplied initially
+        assert all(j["applied"] is False for j in jobs)
+        # Apply to first
+        target = jobs[0]
+        r = session.post(f"{API}/jobs/apply", json={"job_id": target["id"]}, headers=auth_headers(student["token"]))
+        assert r.status_code == 200, r.text
+        jobs2 = session.get(f"{API}/jobs", headers=auth_headers(student["token"])).json()
+        matched = next(j for j in jobs2 if j["id"] == target["id"])
+        assert matched["applied"] is True
+        assert matched["application_status"] == "applied"
+
+
+# ---- Iteration 3: Applications pool (pro only) ----
+class TestApplicationsPool:
+    def test_pool_requires_professional(self, session, student):
+        r = session.get(f"{API}/applications/pool", headers=auth_headers(student["token"]))
+        assert r.status_code == 403
+
+    def test_pool_blocked_for_employer(self, session, employer):
+        r = session.get(f"{API}/applications/pool", headers=auth_headers(employer["token"]))
+        assert r.status_code == 403
+
+    def test_pool_hydrates_student_profile(self, session, professional, student, employer):
+        # Set student profile and apply
+        session.put(f"{API}/profile", json={
+            "education": "B.Tech", "passed_out_year": 2024, "current_location": "Bangalore",
+            "preferred_role": "fresher", "skills": ["Python"], "resume_link": "https://x.io/cv.pdf",
+        }, headers=auth_headers(student["token"]))
+        r = session.post(f"{API}/jobs", json={"title": "TEST pool", "description": "d", "bulk_openings": 1}, headers=auth_headers(employer["token"]))
+        job_id = r.json()["id"]
+        session.post(f"{API}/jobs/apply", json={"job_id": job_id}, headers=auth_headers(student["token"]))
+        r2 = session.get(f"{API}/applications/pool", headers=auth_headers(professional["token"]))
+        assert r2.status_code == 200, r2.text
+        pool = r2.json()
+        ours = [a for a in pool if a["student_id"] == student["user"]["id"] and a["job_id"] == job_id]
+        assert ours, "expected our application in pool"
+        a = ours[0]
+        assert "student_profile" in a
+        sp = a["student_profile"]
+        for k in ["education", "skills", "resume_score", "preferred_role", "current_location"]:
+            assert k in sp
+        assert sp["education"] == "B.Tech"
+        assert "interviews_attended" in a

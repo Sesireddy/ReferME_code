@@ -113,7 +113,16 @@ export default function StudentJobs() {
                   ))}
                 </View>
               ) : null}
-              <Button testID={`apply-${j.id}`} title="Apply" onPress={() => apply(j.id)} style={{ marginTop: 12 }} />
+              {j.applied ? (
+                <View style={[styles.appliedPill, { marginTop: 12 }]}>
+                  <Ionicons name="checkmark-circle" size={18} color={colors.success} />
+                  <Txt style={{ color: colors.success, fontWeight: "700", marginLeft: 6, textTransform: "capitalize" }}>
+                    {j.application_status || "Applied"}
+                  </Txt>
+                </View>
+              ) : (
+                <Button testID={`apply-${j.id}`} title="Apply" onPress={() => apply(j.id)} style={{ marginTop: 12 }} />
+              )}
             </Card>
           ))}
         </View>
@@ -175,8 +184,13 @@ export default function StudentJobs() {
               {slots.map((s) => (
                 <TouchableOpacity key={s.id} testID={`slot-${s.id}`} onPress={() => bookSlot(s.id)}>
                   <Card style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-                    <View>
-                      <Txt variant="h3">{new Date(s.scheduled_at).toLocaleString()}</Txt>
+                    <View style={{ flex: 1 }}>
+                      <Txt variant="h3">{new Date(s.start_at || s.scheduled_at).toLocaleString()}</Txt>
+                      {s.end_at ? (
+                        <Txt variant="small" style={{ color: colors.textSecondary }}>
+                          → {new Date(s.end_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        </Txt>
+                      ) : null}
                       {s.topic ? <Txt variant="small" style={{ color: colors.textSecondary }}>{s.topic}</Txt> : null}
                     </View>
                     <Ionicons name="arrow-forward-circle" size={28} color={colors.primary} />
@@ -204,6 +218,7 @@ const styles = StyleSheet.create({
   tabActive: { backgroundColor: colors.primary },
   badge: { backgroundColor: "#FFE4E5", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
   chip: { backgroundColor: colors.surfaceAlt, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
+  appliedPill: { flexDirection: "row", alignItems: "center", backgroundColor: "#E6F9F0", paddingHorizontal: 14, paddingVertical: 10, borderRadius: 999, alignSelf: "flex-start" },
   avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: "#EDE9FE", alignItems: "center", justifyContent: "center" },
   statusPill: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
   modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
