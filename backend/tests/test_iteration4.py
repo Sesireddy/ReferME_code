@@ -299,11 +299,12 @@ class TestLeaderboardIteration4:
         r = session.get(f"{API}/leaderboard/students", headers=auth_headers(student["token"]))
         assert r.status_code == 200
         lb = r.json()
-        assert isinstance(lb, list)
-        if lb:
-            row = lb[0]
+        assert isinstance(lb, dict) and "items" in lb, "leaderboard should be paginated {items, total, page, page_size}"
+        rows = lb["items"]
+        if rows:
+            row = rows[0]
             for k in ["rank", "name", "category", "skills", "current_location", "resume_score",
-                      "interviews_attended", "rating", "total_credits_earned", "jobs_applied", "referrals_received"]:
+                      "interviews_attended", "rating", "jobs_applied", "referrals_received"]:
                 assert k in row, f"missing field {k} in leaderboard row: {row}"
 
     def test_leaderboard_filters(self, session, student):
@@ -313,14 +314,15 @@ class TestLeaderboardIteration4:
             "resume_link": "https://x.io/cv.pdf",
         }, headers=auth_headers(student["token"]))
         # filter by location matches
-        r = session.get(f"{API}/leaderboard/students?location=Bangalore&skill=Python&category=fresher", headers=auth_headers(student["token"]))
+        r = session.get(f"{API}/leaderboard/students?location=Bangalore&skill=Python&category=fresher&page_size=100", headers=auth_headers(student["token"]))
         assert r.status_code == 200
-        me = next((x for x in r.json() if x["id"] == student["user"]["id"]), None)
+        items = r.json()["items"]
+        me = next((x for x in items if x["id"] == student["user"]["id"]), None)
         assert me is not None
         # filter excluding our student returns no match
         r2 = session.get(f"{API}/leaderboard/students?location=Nowhereville", headers=auth_headers(student["token"]))
         assert r2.status_code == 200
-        assert not any(x["id"] == student["user"]["id"] for x in r2.json())
+        assert not any(x["id"] == student["user"]["id"] for x in r2.json()["items"])
 
 
 # ---------- Admin: stats, wallet refund, job/interview delete ----------

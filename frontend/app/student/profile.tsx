@@ -41,6 +41,7 @@ export default function StudentProfile() {
 
   // Form state
   const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
   const [education, setEducation] = useState<string | null>(null);
   const [educationDetails, setEducationDetails] = useState("");
   const [passedOutYear, setPassedOutYear] = useState("");
@@ -77,9 +78,10 @@ export default function StudentProfile() {
         api<{ user: any; profile: any }>("/auth/me"),
         api<any>("/wallet"),
       ]);
-      setUser(me.user);
+      setUser({ ...me.user, profile: me.profile || {} });
       setName(me.user.name || "");
       const p = me.profile || {};
+      setPhone(p.phone || "");
       setEducation(p.education || null);
       setEducationDetails(p.education_details || "");
       setPassedOutYear(p.passed_out_year ? String(p.passed_out_year) : "");
@@ -160,6 +162,7 @@ export default function StudentProfile() {
         method: "PUT",
         body: {
           name,
+          phone,
           education,
           education_details: education === "Others" ? educationDetails : null,
           passed_out_year: passedOutYear ? parseInt(passedOutYear, 10) : null,
@@ -175,8 +178,9 @@ export default function StudentProfile() {
           resume_link: resumeTab === "link" ? (resumeLink || null) : null,
         },
       });
+      // Merge fresh profile (with new resume_score) back onto user so the header re-renders
+      setUser((prev: any) => ({ ...(prev || {}), ...res.user, profile: res.profile || {} }));
       Alert.alert("Saved", res.user.profile_complete ? "Profile complete!" : "Almost there. Fill any missing fields.");
-      setUser(res.user);
     } catch (e: any) {
       Alert.alert("Save failed", e.message);
     } finally {
@@ -251,6 +255,7 @@ export default function StudentProfile() {
 
       <View style={{ marginTop: 16 }}>
         <Input testID="profile-name" label="Full name" value={name} onChangeText={setName} placeholder="Your name" />
+        <Input testID="profile-phone" label="Mobile number" value={phone} onChangeText={setPhone} placeholder="+91 98765 43210" keyboardType="phone-pad" />
 
         <Picker
           testID="profile-education"
@@ -397,6 +402,7 @@ const styles = StyleSheet.create({
 });
 
 function WalletHistory({ transactions }: { transactions: any[] }) {
+  const [expanded, setExpanded] = useState(false);
   const [filter, setFilter] = useState<"all" | "purchase" | "usage">("all");
   const purchases = transactions.filter((t) => t.delta > 0 && (t.reason || "").toLowerCase().includes("deposit"));
   const usage = transactions.filter((t) => t.delta < 0);
@@ -405,11 +411,21 @@ function WalletHistory({ transactions }: { transactions: any[] }) {
 
   return (
     <View>
-      <View style={styles.historyHeader}>
-        <Txt variant="h3">Credit history</Txt>
-        <Txt variant="small" style={{ color: colors.textSecondary }}>{transactions.length} entries</Txt>
-      </View>
-      <View style={styles.historyTabs}>
+      <TouchableOpacity
+        testID="credit-history-toggle"
+        activeOpacity={0.85}
+        onPress={() => setExpanded((p) => !p)}
+        style={styles.historyHeader}
+      >
+        <Txt variant="h3">Credit History</Txt>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <Txt variant="small" style={{ color: colors.textSecondary }}>{transactions.length} entries</Txt>
+          <Ionicons name={expanded ? "chevron-up" : "chevron-down"} size={20} color={colors.textSecondary} />
+        </View>
+      </TouchableOpacity>
+      {!expanded ? null : (
+        <>
+          <View style={styles.historyTabs}>
         {([
           { id: "all" as const, label: "All" },
           { id: "purchase" as const, label: "Purchases" },
@@ -443,6 +459,8 @@ function WalletHistory({ transactions }: { transactions: any[] }) {
           </Card>
         ))}
       </View>
+        </>
+      )}
     </View>
   );
 }

@@ -21,6 +21,8 @@ export default function StudentLayout() {
       <Tabs.Screen name="profile" options={{ title: "Profile", tabBarIcon: ({ color, size }) => <Ionicons name="person" size={size} color={color} /> }} />
       {/* Wallet is reachable via Profile → "Add Credits", but hidden from the tab bar */}
       <Tabs.Screen name="wallet" options={{ href: null }} />
+      {/* Applications detail/list — hidden from tab bar; reached from Profile / Dashboard */}
+      <Tabs.Screen name="applications" options={{ href: null }} />
     </Tabs>
   );
 }

@@ -16,6 +16,8 @@ export default function MockInterviews() {
   const [slots, setSlots] = useState<any[]>([]);
   const [selectedPro, setSelectedPro] = useState<any | null>(null);
   const [skillFilter, setSkillFilter] = useState("");
+  const [dateFilter, setDateFilter] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<string | null>("");
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
@@ -32,9 +34,11 @@ export default function MockInterviews() {
   async function openPro(pro: any) {
     setSelectedPro(pro);
     try {
-      let q = `?pro_id=${pro.id}`;
-      if (skillFilter) q += `&skill=${encodeURIComponent(skillFilter)}`;
-      const s = await api<any[]>(`/interviews/slots${q}`);
+      const params = new URLSearchParams({ pro_id: pro.id });
+      if (skillFilter) params.set("skill", skillFilter);
+      if (dateFilter) params.set("date", dateFilter);
+      if (categoryFilter) params.set("category", categoryFilter);
+      const s = await api<any[]>(`/interviews/slots?${params.toString()}`);
       setSlots(s.filter((x) => x.status === "available"));
     } catch {
       setSlots([]);
@@ -44,11 +48,15 @@ export default function MockInterviews() {
   async function bookSlot(slotId: string) {
     try {
       const r = await api<{ used_free?: boolean; meeting_url?: string }>("/interviews/book", { method: "POST", body: { slot_id: slotId } });
+      setSelectedPro(null);
       Alert.alert(
         "Booked ✅",
         `${r.used_free ? "Used a free token!" : "49 credits spent."}\n\nMeeting link emailed to you and shown on the dashboard.`,
+        [
+          { text: "View on Dashboard", onPress: () => router.push("/student/dashboard") },
+          { text: "OK", style: "cancel" },
+        ],
       );
-      setSelectedPro(null);
       load();
     } catch (e: any) {
       const msg = e.message || "";
@@ -83,6 +91,24 @@ export default function MockInterviews() {
         onChangeText={setSkillFilter}
         style={{ marginTop: 12 }}
       />
+      <View style={{ flexDirection: "row", gap: 8 }}>
+        <View style={{ flex: 1 }}>
+          <Input testID="mi-date" label="" placeholder="Date (YYYY-MM-DD)" value={dateFilter} onChangeText={setDateFilter} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Picker
+            testID="mi-category"
+            options={[
+              { value: "", label: "All categories" },
+              { value: "fresher", label: "Fresher" },
+              { value: "experienced", label: "Experienced" },
+            ]}
+            value={categoryFilter}
+            onChange={(v) => setCategoryFilter(v as string)}
+            placeholder="Category"
+          />
+        </View>
+      </View>
 
       <View style={{ gap: 12, marginTop: 12 }}>
         {visiblePros.length === 0 ? (

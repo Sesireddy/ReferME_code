@@ -44,9 +44,12 @@ export default function StudentLeaderboard() {
       if (minRating) params.set("min_rating", minRating);
       if (minJobs) params.set("min_jobs_applied", minJobs);
       if (minRefs) params.set("min_referrals", minRefs);
+      params.set("page", "1");
+      params.set("page_size", "50");
       const qs = params.toString();
-      const r = await api<any[]>(`/leaderboard/students${qs ? "?" + qs : ""}`);
-      setBoard(r);
+      const r = await api<{ items: any[]; total: number } | any[]>(`/leaderboard/students${qs ? "?" + qs : ""}`);
+      // Support both legacy array and paginated dict response
+      setBoard(Array.isArray(r) ? r : (r.items || []));
     } catch {}
     setRefreshing(false);
   }, [category, skill, location, minScore, maxScore, minRating, minJobs, minRefs]);
@@ -66,8 +69,11 @@ export default function StudentLeaderboard() {
     <Screen refreshing={refreshing} onRefresh={load}>
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
         <View>
-          <Txt variant="h1">LeadBoard</Txt>
-          <Txt variant="muted">Ranked by interviews + score + activity</Txt>
+          <Txt variant="h1">Student Leaderboard 🏆</Txt>
+          <Txt variant="muted">Top performing job seekers on ReferME</Txt>
+          <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 4 }}>
+            Total participants: {board.length}
+          </Txt>
         </View>
         <TouchableOpacity testID="filter-btn" onPress={() => setShowFilters((s) => !s)} style={styles.filterBtn}>
           <Ionicons name="options" size={20} color={colors.textPrimary} />
@@ -95,49 +101,57 @@ export default function StudentLeaderboard() {
       ) : null}
 
       <View style={styles.podium}>
-        {top3[1] ? <PodiumCol entry={top3[1]} rank={2} height={90} /> : <View style={{ flex: 1 }} />}
-        {top3[0] ? <PodiumCol entry={top3[0]} rank={1} height={120} crown /> : <View style={{ flex: 1 }} />}
-        {top3[2] ? <PodiumCol entry={top3[2]} rank={3} height={70} /> : <View style={{ flex: 1 }} />}
+        {board[1] ? <PodiumCol entry={board[1]} rank={2} height={90} /> : <View style={{ flex: 1 }} />}
+        {board[0] ? <PodiumCol entry={board[0]} rank={1} height={120} crown /> : <View style={{ flex: 1 }} />}
+        {board[2] ? <PodiumCol entry={board[2]} rank={3} height={70} /> : <View style={{ flex: 1 }} />}
       </View>
 
-      <View style={{ marginTop: 24, gap: 8 }}>
+      <View style={{ marginTop: 16, gap: 8 }}>
         {board.length === 0 ? <Txt variant="muted">No matches — try adjusting filters.</Txt> : null}
-        {rest.map((e) => (
-          <Card key={e.id} padding={14} style={e.is_me ? { borderColor: colors.primary, borderWidth: 2 } : undefined}>
-            <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
-              <Txt style={{ fontWeight: "800", width: 36, color: colors.textSecondary, fontSize: 18 }}>#{e.rank}</Txt>
-              <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                  <Txt variant="h3">{e.name}{e.is_me ? <Txt style={{ color: colors.primary }}> (you)</Txt> : null}</Txt>
-                  {e.category && e.category !== "—" ? (
-                    <View style={[styles.tag, { backgroundColor: e.category === "experienced" ? "#EDE9FE" : "#FFE4E5" }]}>
-                      <Txt variant="small" style={{ fontWeight: "700", color: e.category === "experienced" ? "#7C3AED" : colors.primary, textTransform: "capitalize" }}>{e.category}</Txt>
-                    </View>
-                  ) : null}
+        {board.map((e) => {
+          const medal = e.rank === 1 ? "🥇" : e.rank === 2 ? "🥈" : e.rank === 3 ? "🥉" : null;
+          return (
+            <Card key={e.id} padding={14} style={e.is_me ? { borderColor: colors.primary, borderWidth: 2 } : undefined}>
+              <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
+                <View style={{ width: 44, alignItems: "center" }}>
+                  {medal ? <Txt style={{ fontSize: 24 }}>{medal}</Txt> : null}
+                  <Txt style={{ fontWeight: "800", color: colors.textSecondary, fontSize: 16, marginTop: medal ? 2 : 0 }}>#{e.rank}</Txt>
                 </View>
-                <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 2 }}>
-                  📍 {e.current_location}
-                </Txt>
-                {e.skills?.length ? (
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 6 }}>
-                    {e.skills.slice(0, 6).map((s: string) => (
-                      <View key={s} style={styles.chip}><Txt variant="small">{s}</Txt></View>
-                    ))}
-                  </ScrollView>
-                ) : null}
-                <View style={styles.stats}>
-                  <Stat label="Score" value={e.resume_score} />
-                  <Stat label="Interviews" value={e.interviews_attended} />
-                  <Stat label="Rating" value={e.rating ? e.rating.toFixed(1) : "—"} />
-                  <Stat label="Credits" value={e.total_credits_earned} />
-                  <Stat label="Applied" value={e.jobs_applied} />
-                  <Stat label="Referrals" value={e.referrals_received} />
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                    <Txt variant="h3">{e.name}{e.is_me ? <Txt style={{ color: colors.primary }}> (you)</Txt> : null}</Txt>
+                    {e.category && e.category !== "—" ? (
+                      <View style={[styles.tag, { backgroundColor: e.category === "experienced" ? "#EDE9FE" : "#E6F9F0" }]}>
+                        <Txt variant="small" style={{ fontWeight: "700", color: e.category === "experienced" ? "#7C3AED" : colors.success, textTransform: "capitalize" }}>{e.category}</Txt>
+                      </View>
+                    ) : null}
+                  </View>
+                  <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 2 }}>
+                    📍 {e.current_location}
+                  </Txt>
+                  {e.skills?.length ? (
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 6 }}>
+                      {e.skills.slice(0, 6).map((s: string) => (
+                        <View key={s} style={styles.chip}><Txt variant="small">{s}</Txt></View>
+                      ))}
+                    </ScrollView>
+                  ) : null}
+                  <View style={styles.stats}>
+                    <Stat label="Score" value={`${e.resume_score}%`} />
+                    <Stat label="Interviews" value={e.interviews_attended} />
+                    <Stat label="Rating" value={e.rating ? `★ ${e.rating.toFixed(1)}` : "—"} />
+                    <Stat label="Applied" value={e.jobs_applied} />
+                    <Stat label="Referrals" value={e.referrals_received} />
+                  </View>
                 </View>
               </View>
-            </View>
-          </Card>
-        ))}
+            </Card>
+          );
+        })}
       </View>
+      <Txt variant="small" style={{ color: colors.textSecondary, textAlign: "center", marginTop: 16, paddingHorizontal: 20 }}>
+        Leaderboard is calculated based on resume score, mock interviews, ratings, and overall platform engagement.
+      </Txt>
     </Screen>
   );
 }

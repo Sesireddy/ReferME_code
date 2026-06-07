@@ -6,6 +6,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Screen } from "@/src/components/Screen";
 import { Txt } from "@/src/components/Txt";
 import { Card } from "@/src/components/Card";
+import { Button } from "@/src/components/Button";
 import { colors, radius } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
 
@@ -13,6 +14,7 @@ export default function ProDashboard() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
   const [rank, setRank] = useState<number | null>(null);
+  const [bookings, setBookings] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
@@ -22,6 +24,10 @@ export default function ProDashboard() {
       setUser(me.user);
       const lb = await api<any[]>("/leaderboard/professionals");
       setRank(lb.find((x) => x.is_me)?.rank ?? null);
+      try {
+        const bk = await api<any[]>("/interviews/my-bookings");
+        setBookings(bk || []);
+      } catch {}
     } catch {}
     setRefreshing(false);
   }, []);
@@ -89,6 +95,40 @@ export default function ProDashboard() {
           </Card>
         </TouchableOpacity>
       </View>
+
+      {bookings.length > 0 ? (
+        <Card style={{ marginTop: 16 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}>
+            <Ionicons name="videocam" size={20} color="#7C3AED" />
+            <Txt variant="h3" style={{ marginLeft: 8 }}>Upcoming sessions</Txt>
+          </View>
+          {bookings.slice(0, 3).map((b: any) => {
+            const start = b.start_at ? new Date(b.start_at) : null;
+            return (
+              <View key={b.id} style={{ paddingVertical: 10, borderTopWidth: 1, borderTopColor: colors.border }}>
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                  <View style={{ flex: 1, marginRight: 8 }}>
+                    <Txt variant="h3" numberOfLines={1}>{b.counterparty_name || b.student_name || "Candidate"}</Txt>
+                    <Txt variant="small" style={{ color: colors.textSecondary }}>
+                      {start ? start.toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit", month: "short", day: "numeric" }) : ""}
+                    </Txt>
+                    {(b.skill_set || []).length ? (
+                      <Txt variant="small" style={{ color: colors.textSecondary }}>{(b.skill_set || []).join(", ")}</Txt>
+                    ) : null}
+                  </View>
+                  <Button
+                    testID={`pro-join-${b.id}`}
+                    title={b.join_enabled ? "Join" : "Details"}
+                    variant={b.join_enabled ? "primary" : "secondary"}
+                    onPress={() => router.push(`/video/${b.id}`)}
+                    style={{ height: 38, paddingHorizontal: 16 }}
+                  />
+                </View>
+              </View>
+            );
+          })}
+        </Card>
+      ) : null}
     </Screen>
   );
 }

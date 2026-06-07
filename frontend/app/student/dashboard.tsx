@@ -16,6 +16,7 @@ export default function StudentDashboard() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
   const [rank, setRank] = useState<number | null>(null);
+  const [bookings, setBookings] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
@@ -23,9 +24,14 @@ export default function StudentDashboard() {
     try {
       const me = await api<{ user: any }>("/auth/me");
       setUser(me.user);
-      const lb = await api<any[]>("/leaderboard/students");
-      const meRank = lb.find((s) => s.is_me);
+      const lb = await api<{ items: any[] } | any[]>("/leaderboard/students");
+      const items = Array.isArray(lb) ? lb : (lb?.items || []);
+      const meRank = items.find((s: any) => s.is_me);
       setRank(meRank?.rank ?? null);
+      try {
+        const bk = await api<any[]>("/interviews/my-bookings");
+        setBookings(bk || []);
+      } catch {}
     } catch (e: any) {
       // ignore
     } finally {
@@ -113,6 +119,40 @@ export default function StudentDashboard() {
           </TouchableOpacity>
         </View>
       </Card>
+
+      {bookings.length > 0 ? (
+        <Card style={{ marginTop: 16 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}>
+            <Ionicons name="videocam" size={20} color={colors.primary} />
+            <Txt variant="h3" style={{ marginLeft: 8 }}>Upcoming sessions</Txt>
+          </View>
+          {bookings.slice(0, 3).map((b: any) => {
+            const start = b.start_at ? new Date(b.start_at) : null;
+            return (
+              <View key={b.id} style={{ paddingVertical: 10, borderTopWidth: 1, borderTopColor: colors.border }}>
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                  <View style={{ flex: 1, marginRight: 8 }}>
+                    <Txt variant="h3" numberOfLines={1}>{b.counterparty_name || b.pro_name || "Mock Interview"}</Txt>
+                    <Txt variant="small" style={{ color: colors.textSecondary }}>
+                      {start ? start.toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit", month: "short", day: "numeric" }) : ""}
+                    </Txt>
+                    {(b.skill_set || []).length ? (
+                      <Txt variant="small" style={{ color: colors.textSecondary }}>{(b.skill_set || []).join(", ")}</Txt>
+                    ) : null}
+                  </View>
+                  <Button
+                    testID={`join-${b.id}`}
+                    title={b.join_enabled ? "Join" : "Details"}
+                    variant={b.join_enabled ? "primary" : "secondary"}
+                    onPress={() => router.push(`/video/${b.id}`)}
+                    style={{ height: 38, paddingHorizontal: 16 }}
+                  />
+                </View>
+              </View>
+            );
+          })}
+        </Card>
+      ) : null}
 
       {!user?.profile_complete ? (
         <Card style={{ marginTop: 16, backgroundColor: "#FFF9E5", borderColor: "#FFD566", borderWidth: 1 }}>

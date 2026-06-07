@@ -123,7 +123,13 @@ export default function StudentJobs() {
         <View style={{ gap: 12, marginTop: 16 }}>
           {jobs.length === 0 ? <Txt variant="muted">No jobs match — try adjusting filters.</Txt> : null}
           {jobs.map((j) => (
-            <Card key={j.id}>
+            <TouchableOpacity
+              key={j.id}
+              testID={`job-card-${j.id}`}
+              activeOpacity={0.85}
+              onPress={() => router.push(`/student/jobs/${j.id}`)}
+            >
+              <Card>
               <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
                 <View style={{ flex: 1 }}>
                   <Txt variant="h3">{j.title}</Txt>
@@ -159,6 +165,7 @@ export default function StudentJobs() {
                 <Button testID={`apply-${j.id}`} title="Apply" onPress={() => apply(j.id)} style={{ marginTop: 12 }} />
               )}
             </Card>
+            </TouchableOpacity>
           ))}
         </View>
       ) : null}
@@ -167,21 +174,28 @@ export default function StudentJobs() {
         <View style={{ gap: 12, marginTop: 16 }}>
           {apps.length === 0 ? <Txt variant="muted">No applications yet.</Txt> : null}
           {apps.map((a) => (
-            <Card key={a.id}>
-              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                <View style={{ flex: 1 }}>
-                  <Txt variant="h3">{a.job_title}</Txt>
-                  <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 2 }}>
-                    {a.referrer_pro_name ? `Referred by ${a.referrer_pro_name}` : "Direct"}
-                  </Txt>
+            <TouchableOpacity
+              key={a.id}
+              testID={`app-card-${a.id}`}
+              activeOpacity={0.85}
+              onPress={() => router.push(`/student/applications/${a.id}`)}
+            >
+              <Card>
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                  <View style={{ flex: 1 }}>
+                    <Txt variant="h3">{a.job_title}</Txt>
+                    <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 2 }}>
+                      {a.referrer_pro_name ? `Referred by ${a.referrer_pro_name}` : "Direct"} · Applied {new Date(a.created_at).toLocaleDateString()}
+                    </Txt>
+                  </View>
+                  <View style={[styles.statusPill, { backgroundColor: statusColor(a.status) }]}>
+                    <Txt variant="small" style={{ color: "#fff", fontWeight: "700", textTransform: "capitalize" }}>
+                      {(a.status || "").replace(/_/g, " ")}
+                    </Txt>
+                  </View>
                 </View>
-                <View style={[styles.statusPill, { backgroundColor: statusColor(a.status) }]}>
-                  <Txt variant="small" style={{ color: "#fff", fontWeight: "700", textTransform: "capitalize" }}>
-                    {(a.status || "").replace(/_/g, " ")}
-                  </Txt>
-                </View>
-              </View>
-            </Card>
+              </Card>
+            </TouchableOpacity>
           ))}
         </View>
       ) : null}

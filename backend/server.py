@@ -40,6 +40,9 @@ EMERGENT_AUTH_URL = os.environ.get(
 
 MOCK_OTP_MODE = not bool(SENDGRID_API_KEY)
 MOCK_PAYMENTS_MODE = not (RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET)
+# When TEST_RETURN_OTP=1, expose the generated OTP in the signup/forgot response
+# so backend test suites can complete the verify-otp step without a real inbox.
+TEST_RETURN_OTP = os.environ.get("TEST_RETURN_OTP", "").strip() in ("1", "true", "yes")
 
 # Business rules
 ACTION_COST = 49  # credits per action (apply / book)
@@ -220,6 +223,7 @@ class GoogleSessionBody(BaseModel):
 
 class ProfileBody(BaseModel):
     name: Optional[str] = None
+    phone: Optional[str] = None
     # student / job-seeker
     education: Optional[str] = None  # e.g. "B.Tech" | "Degree" | "M.Tech" | "MBA" | "Others"
     education_details: Optional[str] = None  # when education == "Others" or extra detail
@@ -234,6 +238,9 @@ class ProfileBody(BaseModel):
     resume_size: Optional[int] = None
     resume_mime_type: Optional[str] = None  # "application/pdf" | "application/msword" | "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     resume_link: Optional[str] = None  # external URL alternative
+    profile_photo_base64: Optional[str] = None
+    certifications: Optional[list[dict]] = None  # [{title, issuer, year, link?}]
+    projects: Optional[list[dict]] = None  # [{title, description, link?, tech?}]
     # professional
     company: Optional[str] = None
     designation: Optional[str] = None
@@ -416,7 +423,7 @@ async def signup(body: SignupBody):
     })
     sent = await send_otp_email(email_lower, otp_code, "verify_email")
     resp = {"message": "Signup successful. OTP sent.", "email": email_lower, "email_sent": bool(sent)}
-    if MOCK_OTP_MODE or not sent:
+    if MOCK_OTP_MODE or not sent or TEST_RETURN_OTP:
         resp["mock_otp"] = otp_code  # included when send failed (e.g., unverified sender) for test continuity
     return resp
 
@@ -482,7 +489,7 @@ async def forgot_password(body: ForgotBody):
         })
         sent = await send_otp_email(body.email.lower(), otp_code, "reset_password")
         resp = {"message": "If account exists, OTP has been sent."}
-        if MOCK_OTP_MODE or not sent:
+        if MOCK_OTP_MODE or not sent or TEST_RETURN_OTP:
             resp["mock_otp"] = otp_code
         return resp
     return {"message": "If account exists, OTP has been sent."}
@@ -556,23 +563,78 @@ async def get_me(u: dict = Depends(current_user)):
 
 
 STUDENT_PROFILE_FIELDS = [
-    "education", "education_details", "passed_out_year", "current_location",
+    "phone", "education", "education_details", "passed_out_year", "current_location",
     "dob", "preferred_role", "years_of_experience", "skills",
     "resume_base64", "resume_filename", "resume_size", "resume_mime_type", "resume_link",
+    "profile_photo_base64", "certifications", "projects",
 ]
 PRO_PROFILE_FIELDS = ["company", "designation", "experience_years", "expertise"]
 EMPLOYER_PROFILE_FIELDS = ["company_name", "company_website", "company_size", "company_logo_base64", "bio"]
 
 
 def compute_resume_score(user: dict) -> int:
-    """Resume score 0-100 driven by mock interviews attended + profile completeness."""
+    """Resume score 50-100 (0 if no resume). Driven by profile completeness, skills,
+    certifications, resume size, and mock interviews attended.
+
+    Range:
+      - 0          → no resume uploaded / linked
+      - 50-65      → basic profile + resume
+      - 66-80      → good profile completion
+      - 81-90      → strong profile (projects / certifications)
+      - 91-100     → fully completed professional profile
+    """
     profile = user.get("profile", {}) or {}
-    attended = int(user.get("interviews_attended", 0) or 0)
-    fields = ["education", "passed_out_year", "current_location", "dob", "preferred_role", "skills"]
     has_resume = bool(profile.get("resume_base64") or profile.get("resume_link"))
-    completeness = sum(1 for f in fields if profile.get(f))
-    score = (15 if has_resume else 0) + completeness * 3 + attended * 12
-    return max(0, min(100, int(score)))
+    if not has_resume:
+        return 0
+    score = 50  # base floor when resume present
+    # Identity & contact (max +6)
+    if user.get("name"):
+        score += 2
+    if user.get("email"):
+        score += 1
+    if profile.get("phone"):
+        score += 3
+    # Education & timeline (max +6)
+    if profile.get("education"):
+        score += 3
+    if profile.get("passed_out_year"):
+        score += 2
+    if profile.get("dob"):
+        score += 1
+    # Location & role preference (max +4)
+    if profile.get("current_location"):
+        score += 2
+    if profile.get("preferred_role"):
+        score += 2
+    # Skills — each skill +2, capped at 10 (5 skills)
+    skills = profile.get("skills", []) or []
+    score += min(len(skills) * 2, 10)
+    # Resume file size — bigger content → more substance
+    rsize = int(profile.get("resume_size") or 0)
+    if rsize > 80_000:
+        score += 5
+    elif rsize > 30_000:
+        score += 3
+    elif rsize > 5_000:
+        score += 1
+    # Profile photo bonus
+    if profile.get("profile_photo") or profile.get("profile_photo_base64"):
+        score += 3
+    # Projects / portfolio bonus
+    projects = profile.get("projects", []) or []
+    if projects:
+        score += min(len(projects) * 2, 6)
+    # Certifications — each +3, capped at +9
+    certs = profile.get("certifications", []) or []
+    score += min(len(certs) * 3, 9)
+    # Experience field for "experienced" preferred role
+    if profile.get("preferred_role") == "experienced" and (profile.get("years_of_experience") or 0) > 0:
+        score += 3
+    # Mock interviews attended — +2 each up to +20
+    attended = int(user.get("interviews_attended") or 0)
+    score += min(attended * 2, 20)
+    return max(50, min(100, int(score)))
 
 
 def is_student_complete(profile: dict) -> bool:
@@ -829,6 +891,8 @@ async def create_slot(body: InterviewSlotBody, u: dict = Depends(require_role(["
 async def list_slots(
     pro_id: Optional[str] = Query(None),
     skill: Optional[str] = Query(None),
+    date: Optional[str] = Query(None),  # YYYY-MM-DD — only slots starting on this date
+    category: Optional[str] = Query(None),  # fresher | experienced
     u: dict = Depends(current_user),
 ):
     q: dict = {}
@@ -840,8 +904,30 @@ async def list_slots(
         q["status"] = "available"
     if skill:
         q["skill_set"] = {"$regex": skill, "$options": "i"}
-    slots = await db.interview_slots.find(q, {"_id": 0}).sort("start_at", 1).to_list(200)
-    return slots
+    slots = await db.interview_slots.find(q, {"_id": 0}).sort("start_at", 1).to_list(500)
+    # Apply date / category / future-only filters (students never see expired or non-future)
+    out = []
+    now_dt = datetime.now(timezone.utc)
+    for s in slots:
+        try:
+            sd = datetime.fromisoformat((s.get("start_at") or s.get("scheduled_at") or "").replace("Z", "+00:00"))
+        except Exception:
+            sd = None
+        # Students: only future + available
+        if u["role"] == "student":
+            if not sd or sd <= now_dt:
+                continue
+            if s.get("status") != "available":
+                continue
+        if date and sd:
+            if sd.strftime("%Y-%m-%d") != date:
+                continue
+        if category in ("fresher", "experienced"):
+            slot_cat = "experienced" if int(s.get("experience_years") or 0) > 0 else "fresher"
+            if slot_cat != category:
+                continue
+        out.append(s)
+    return out
 
 
 def _can_use_free(u: dict, kind: str) -> bool:
@@ -898,6 +984,50 @@ async def book_interview(body: BookInterviewBody, u: dict = Depends(require_role
     if pro and pro.get("email"):
         await send_html_email(pro["email"], "ReferME · New interview booking", pro_html, mock_purpose="booking_pro")
     return {"message": "Booked", "used_free": use_free, "meeting_url": meeting}
+
+
+@api.get("/interviews/my-bookings")
+async def my_bookings(
+    upcoming_only: bool = Query(True),
+    u: dict = Depends(current_user),
+):
+    """Return slots the current user has booked (student) or is conducting (pro).
+    Used by dashboards to surface 'Join video' CTAs for upcoming sessions.
+    """
+    if u["role"] == "student":
+        q = {"student_id": u["id"]}
+    elif u["role"] == "professional":
+        q = {"pro_id": u["id"], "student_id": {"$ne": None}}
+    else:
+        return []
+    slots = await db.interview_slots.find(q, {"_id": 0}).sort("start_at", 1).to_list(500)
+    now_dt = datetime.now(timezone.utc)
+    out = []
+    for s in slots:
+        try:
+            sd = datetime.fromisoformat((s.get("start_at") or "").replace("Z", "+00:00"))
+            ed = datetime.fromisoformat((s.get("end_at") or "").replace("Z", "+00:00"))
+        except Exception:
+            sd, ed = None, None
+        # Only consider booked or completed within last 24h
+        if upcoming_only:
+            if s.get("status") in ("cancelled",):
+                continue
+            if ed and ed < now_dt - timedelta(hours=2):
+                continue
+        # Hydrate with counterparty name
+        if u["role"] == "student":
+            s["counterparty_name"] = s.get("pro_name")
+        else:
+            s["counterparty_name"] = s.get("student_name")
+        # Join window: enabled 10 min before start until 2h after end
+        s["join_enabled"] = False
+        if sd and ed:
+            window_start = sd - timedelta(minutes=10)
+            window_end = ed + timedelta(hours=2)
+            s["join_enabled"] = window_start <= now_dt <= window_end
+        out.append(s)
+    return out
 
 
 @api.post("/interviews/{slot_id}/complete")
@@ -1091,6 +1221,33 @@ async def job_applicants(job_id: str, u: dict = Depends(require_role(["employer"
             },
         })
     return out
+
+
+@api.post("/jobs/{job_id}/save")
+async def save_job(job_id: str, u: dict = Depends(require_role(["student"]))):
+    job = await db.jobs.find_one({"id": job_id}, {"_id": 0})
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    res = await db.saved_jobs.update_one(
+        {"student_id": u["id"], "job_id": job_id},
+        {"$setOnInsert": {"id": new_id(), "student_id": u["id"], "job_id": job_id, "saved_at": now_iso()}},
+        upsert=True,
+    )
+    return {"saved": True, "first_time": res.upserted_id is not None}
+
+
+@api.delete("/jobs/{job_id}/save")
+async def unsave_job(job_id: str, u: dict = Depends(require_role(["student"]))):
+    await db.saved_jobs.delete_one({"student_id": u["id"], "job_id": job_id})
+    return {"saved": False}
+
+
+@api.get("/saved-jobs")
+async def list_saved_jobs(u: dict = Depends(require_role(["student"]))):
+    saved = await db.saved_jobs.find({"student_id": u["id"]}, {"_id": 0}).sort("saved_at", -1).to_list(500)
+    job_ids = [s["job_id"] for s in saved]
+    jobs = await db.jobs.find({"id": {"$in": job_ids}}, {"_id": 0}).to_list(500)
+    return jobs
 
 
 @api.post("/jobs/apply")
@@ -1323,11 +1480,13 @@ async def leaderboard_students(
     min_score: Optional[int] = Query(None),
     max_score: Optional[int] = Query(None),
     min_rating: Optional[float] = Query(None),
+    min_interviews: Optional[int] = Query(None),
     min_jobs_applied: Optional[int] = Query(None),
     min_referrals: Optional[int] = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
 ):
-    students = await db.users.find({"role": "student"}, {"_id": 0, "password_hash": 0}).to_list(2000)
-    # Compute per-student aggregate stats
+    students = await db.users.find({"role": "student"}, {"_id": 0, "password_hash": 0}).to_list(5000)
     out: list[dict] = []
     for s in students:
         sid = s["id"]
@@ -1339,9 +1498,7 @@ async def leaderboard_students(
         attended = int(s.get("interviews_attended", 0) or 0)
         jobs_applied = await db.applications.count_documents({"student_id": sid})
         referrals_received = await db.applications.count_documents({"student_id": sid, "referrer_pro_id": {"$ne": None}})
-        credits_earned = max(0, int(s.get("credits", 0)) + 0)  # students don't earn meaningful credits but kept for parity
         rating = float(profile.get("rating") or 0)
-        # Filter
         if category and cat != category:
             continue
         if skill and not any(skill.lower() in (sk or "").lower() for sk in skills):
@@ -1354,16 +1511,13 @@ async def leaderboard_students(
             continue
         if min_rating is not None and rating < min_rating:
             continue
+        if min_interviews is not None and attended < min_interviews:
+            continue
         if min_jobs_applied is not None and jobs_applied < min_jobs_applied:
             continue
         if min_referrals is not None and referrals_received < min_referrals:
             continue
-        composite = (
-            attended * 10
-            + score_val
-            + jobs_applied * 2
-            + referrals_received * 5
-        )
+        composite = attended * 10 + score_val + jobs_applied * 2 + referrals_received * 5
         out.append({
             "id": sid,
             "name": s.get("name") or s["email"].split("@")[0],
@@ -1373,7 +1527,6 @@ async def leaderboard_students(
             "resume_score": score_val,
             "interviews_attended": attended,
             "rating": rating,
-            "total_credits_earned": credits_earned,
             "jobs_applied": jobs_applied,
             "referrals_received": referrals_received,
             "composite_score": composite,
@@ -1382,7 +1535,10 @@ async def leaderboard_students(
     out.sort(key=lambda x: (-x["composite_score"], -x["resume_score"]))
     for i, e in enumerate(out):
         e["rank"] = i + 1
-    return out[:200]
+    total = len(out)
+    start = (page - 1) * page_size
+    end = start + page_size
+    return {"total": total, "page": page, "page_size": page_size, "items": out[start:end]}
 
 
 @api.get("/leaderboard/professionals")

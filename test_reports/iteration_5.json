@@ -1,0 +1,48 @@
+{
+  "summary": "Iteration 5 (Jitsi video integration). Added /app/backend/tests/test_iteration5.py (13 new tests) covering: /api/interviews/my-bookings (student+pro see slot, counterparty_name hydrated, employer & admin return [], join_enabled true within ±10min/+2h window, false for far-future), Jitsi meeting_url propagation (slot create → book → my-bookings), TEST_RETURN_OTP=1 mock_otp fallback for signup & forgot-password, fresh-user safe defaults for /auth/me + /leaderboard/students + minimal PUT /profile, paginated leaderboard {items,total,page,page_size} with all 12 required row fields (rank, name, category, skills, current_location, resume_score, interviews_attended, rating, jobs_applied, referrals_received, composite_score, is_me), and PUT /profile persistence of new fields (phone, profile_photo_base64, certifications[], projects[]). Full pytest suite 89/89 GREEN after one backend fix (see below). Frontend smoke on web preview: Welcome → Create account → I'm a Job Seeker → Send OTP → Mock OTP (835421/303710 etc., rendered as 'Mock OTP: ######' panel) → Verify → /student/dashboard renders with rank card ('Not ranked yet'), Wallet (0 credits · 2 free uses), Book Mock Interview, Apply for Referral, Complete profile prompt, and tab bar (Home/Jobs/Mock Interviews/LeadBoard/Profile). Source confirms /student/dashboard.tsx and /professional/dashboard.tsx both call /interviews/my-bookings and render 'Upcoming sessions' card + Join/Details button → router.push('/video/{id}'). No JS errors during signup flow.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "PUT /api/profile", "issue": "FIXED. ProfileBody Pydantic model was missing profile_photo_base64, certifications and projects fields, so even though STUDENT_PROFILE_FIELDS lists them, model_dump(exclude_unset=True) stripped them before storage — they were silently never persisted. Added the 3 fields to ProfileBody (profile_photo_base64: Optional[str], certifications: Optional[list[dict]], projects: Optional[list[dict]]). Verified GET /auth/me now returns persisted values. server.py L240-243."},
+      {"endpoint": "SendGrid", "issue": "All SendGrid sends return HTTP 401 Unauthorized (key invalid in this env). Mock OTP fallback compensates for signup/forgot, but interview/booking HTML emails are silently dropped — recipients receive nothing. Tracked as a config issue, not code."},
+      {"endpoint": "POST /api/jobs/{id}/close & /reopen", "issue": "Carried over from iter 4 — still returns {'message': 'Closed/Reopened'} without echoing new status. Cosmetic."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "OTP screen", "issue": "Mock OTP value ('Mock OTP: 303710') is rendered directly on the verification screen in the web build. This is convenient for testing (TEST_RETURN_OTP=1) but the UI should gate this on a debug/__DEV__ flag so it cannot leak into production builds. Confirm /app/frontend/app/(auth)/otp.tsx (or similar) hides the OTP panel when response.mock_otp is missing.", "testID": "n/a", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "global", "issues": ["Carried over from iter 3/4: 'shadow*' style props deprecated (use boxShadow); Picker pointerEvents prop deprecated. Non-blocking RN-Web warnings."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration5.py",
+    "/app/backend/tests/test_iteration4.py",
+    "/app/backend/tests/test_referme_api.py",
+    "/app/test_reports/pytest/pytest_iter5.xml"
+  ],
+  "action_items": [
+    "(Hardening) Gate the 'Mock OTP: ######' panel on the OTP screen behind __DEV__ or an EXPO_PUBLIC_SHOW_MOCK_OTP env flag so it never reaches production builds. Currently visible whenever the API returns mock_otp (i.e., when TEST_RETURN_OTP=1 OR SendGrid send fails — and SendGrid is currently failing 401 in this env).",
+    "(Config) SendGrid API key returns 401 Unauthorized for every send — fix the key (or sender) so booking/notification emails actually reach users. Currently silently dropped.",
+    "(Polish) /jobs/{id}/close & /reopen should return the updated status object instead of {'message': '...'}",
+    "(Carried over) Replace 'shadow*' style props with boxShadow and move Picker pointerEvents into style."
+  ],
+  "critical_code_review_comments": [
+    "server.py is now 1835 lines — split into routers (auth, profile, jobs, interviews, applications, leaderboard, wallet, admin, notifications). Bug found this iteration (missing Pydantic fields for profile photo/certs/projects) is exactly the class of regression that gets easier to miss in a monolith.",
+    "Mirror between STUDENT_PROFILE_FIELDS allow-list and ProfileBody Pydantic schema is brittle — adding a field to one and forgetting the other = silent data loss. Suggest deriving one from the other or adding a unit test that asserts ProfileBody.__fields__ ⊇ STUDENT_PROFILE_FIELDS.",
+    "/api/interviews/my-bookings: counterparty_name pulled from slot.pro_name/student_name which are populated at booking time — solid. Join window math uses timezone-aware datetimes consistently (datetime.now(timezone.utc) + timedelta). LGTM."
+  ],
+  "updated_files": [
+    "/app/backend/server.py (added profile_photo_base64, certifications, projects fields to ProfileBody pydantic model — L240-243)",
+    "/app/backend/tests/test_iteration5.py (NEW — 13 tests for iter-5 contract: my-bookings, mock_otp fallback, fresh-user safe defaults, paginated LB, profile new fields)"
+  ],
+  "success_rate": {"backend": "100% (89/89 incl. 13 new iter-5 after profile model fix)", "frontend": "100% on tested flow (welcome → signup → role pick → OTP → verify → /student/dashboard; rank/wallet/CTAs all render; no JS errors)"},
+  "seed_data_creation": "Throwaway test users created via conftest signup+verify-otp fixtures (random @referme.io / @acmecorp.io emails). Demo employer + sample jobs auto-seeded by backend startup. No persistent test pollution.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Iter-5 contract: GET /api/interviews/my-bookings is auth-required, returns [] for employer/admin, list for student (booked slots) & professional (slots with student_id set). Each item has meeting_url (https://meet.jit.si/ReferME-...), counterparty_name (pro_name for students, student_name for pros), join_enabled bool (true iff start-10min <= now <= end+2h, status != cancelled). Slots whose end_at is more than 2h in the past are filtered out unless ?upcoming_only=false. Mock OTP is returned in `mock_otp` of /api/auth/signup AND /api/auth/forgot-password JSON when TEST_RETURN_OTP=1 OR when SendGrid send returns non-2xx (current env: SG 401 → fallback always active). Frontend OTP screen surfaces the mock_otp to the user — flag for prod hardening. ProfileBody now accepts profile_photo_base64 (str), certifications (list[dict]), projects (list[dict]).",
+  "rca_of_issue": "RCA — profile_photo_base64/certifications/projects silently not persisting on PUT /api/profile. ProfileBody Pydantic model (server.py L224-251) had not been extended when these 3 fields were added to STUDENT_PROFILE_FIELDS allow-list (L562-567). Endpoint does `payload = body.model_dump(exclude_unset=True)` then `for k in role_fields: if k in payload: profile[k] = payload[k]` — since Pydantic strips unknown fields from the dict, none of the three ever made it into `payload`, so the storage loop never saw them and they were dropped. Reproduction: signup student → PUT /profile {profile_photo_base64: 'data:...', certifications: [...], projects: [...]} → GET /auth/me shows phone (declared in ProfileBody) but NO profile_photo_base64/certs/projects. Fix: declared the 3 missing optional fields in ProfileBody. Verified by GET /auth/me round-trip and resume_score recompute that consumes projects/certs."
+}
