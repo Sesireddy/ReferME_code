@@ -50,6 +50,27 @@ FIRST_DEPOSIT_MIN_INR = 199
 FIRST_DEPOSIT_BONUS_CREDITS = 398  # ₹199 → 398 credits
 FREE_TIER_ACTIONS = 1  # 1 referral + 1 mock interview free
 
+# Personal email domains NOT allowed for professional signup
+PERSONAL_EMAIL_DOMAINS = {
+    "gmail.com", "yahoo.com", "yahoo.co.in", "outlook.com", "hotmail.com",
+    "rediffmail.com", "live.com", "icloud.com", "aol.com", "ymail.com",
+    "protonmail.com", "proton.me", "msn.com", "googlemail.com",
+}
+
+# Application status pipeline
+APP_STATUSES = ["applied", "shortlisted", "referred", "awaiting_interview", "interview_scheduled", "hired", "rejected"]
+
+# Slot rules
+SLOT_MIN_HOURS = 1
+SLOT_MAX_HOURS_PER_DAY = 5
+SLOT_MIN_DURATION_MIN = 60  # 1 hour
+
+# Jitsi room base
+JITSI_BASE = "https://meet.jit.si"
+
+# Mock revenue per deposit captured for analytics
+REVENUE_PER_ACTION_INR = ACTION_COST  # for analytics simplification
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("referme")
 
@@ -113,25 +134,39 @@ def user_public(u: dict) -> dict:
     }
 
 
-async def send_otp_email(email: str, otp: str, purpose: str) -> None:
-    """Send OTP email via SendGrid, fall back to logging in mock mode."""
+async def send_otp_email(email: str, otp: str, purpose: str) -> bool:
+    """Send OTP email via SendGrid, fall back to logging in mock mode. Returns True on success."""
     subject = "ReferME Verification Code" if purpose == "verify_email" else "ReferME Password Reset Code"
+    html = f"""
+        <div style="font-family: -apple-system, system-ui, Arial; max-width: 480px; margin: 0 auto; padding: 24px; background: #FDFBF7;">
+          <h1 style="color:#FF5A5F; margin: 0 0 12px;">ReferME</h1>
+          <p style="font-size:16px; color:#1A1A1A;">Your verification code is:</p>
+          <div style="font-size:36px; font-weight:800; letter-spacing:6px; color:#1A1A1A; margin: 16px 0; padding: 16px; background:#fff; border-radius:12px; text-align:center;">{otp}</div>
+          <p style="color:#6B7280; font-size:14px;">This code expires in 10 minutes. If you didn't request it, just ignore this email.</p>
+        </div>
+    """
+    return await send_html_email(email, subject, html, mock_purpose=purpose, fallback_text=f"Your OTP is {otp}")
+
+
+async def send_html_email(to_email: str, subject: str, html: str, mock_purpose: str = "", fallback_text: str = "") -> bool:
     if MOCK_OTP_MODE:
-        logger.info("[MOCK-EMAIL] to=%s purpose=%s otp=%s", email, purpose, otp)
-        return
+        logger.info("[MOCK-EMAIL] to=%s purpose=%s subject=%s", to_email, mock_purpose, subject)
+        return False  # treated as not sent → caller may include OTP in response
     try:
         from sendgrid import SendGridAPIClient  # type: ignore
         from sendgrid.helpers.mail import Mail  # type: ignore
 
         msg = Mail(
             from_email=SENDGRID_FROM_EMAIL,
-            to_emails=email,
+            to_emails=to_email,
             subject=subject,
-            html_content=f"<p>Your ReferME code is <b>{otp}</b>. It expires in 10 minutes.</p>",
+            html_content=html or fallback_text,
         )
-        SendGridAPIClient(SENDGRID_API_KEY).send(msg)
+        resp = SendGridAPIClient(SENDGRID_API_KEY).send(msg)
+        return 200 <= resp.status_code < 300
     except Exception as e:
-        logger.warning("SendGrid send failed: %s", e)
+        logger.warning("SendGrid send failed (%s): %s", subject, e)
+        return False
 
 
 async def push_notification(user_id: str, title: str, body: str, kind: str = "info") -> None:
@@ -213,8 +248,10 @@ class ProfileBody(BaseModel):
 
 
 class InterviewSlotBody(BaseModel):
-    start_at: str  # ISO
-    end_at: str    # ISO
+    start_at: str  # ISO (any tz, treat as IST if naive)
+    end_at: str
+    skill_set: Optional[list[str]] = []
+    experience_years: Optional[int] = 0  # years of experience required from the candidate
     topic: Optional[str] = ""
 
 
@@ -234,15 +271,46 @@ class BookInterviewBody(BaseModel):
 
 class JobPostBody(BaseModel):
     title: str
+    company: Optional[str] = None  # company name (auto-fallback to poster's company)
     description: str
     location: Optional[str] = ""
     salary_range: Optional[str] = ""
     skills_required: Optional[list[str]] = []
-    bulk_openings: int = 1
+    category: Optional[Literal["fresher", "experienced"]] = "fresher"
+    experience_required: Optional[int] = 0  # years required if experienced
+    open_positions: int = Field(default=1, ge=1)
+    bulk_openings: Optional[int] = None  # backward compat alias
+
+
+class JobPatchBody(BaseModel):
+    title: Optional[str] = None
+    company: Optional[str] = None
+    description: Optional[str] = None
+    location: Optional[str] = None
+    salary_range: Optional[str] = None
+    skills_required: Optional[list[str]] = None
+    category: Optional[Literal["fresher", "experienced"]] = None
+    experience_required: Optional[int] = None
+    open_positions: Optional[int] = None
 
 
 class ApplyJobBody(BaseModel):
     job_id: str
+
+
+class StatusUpdateBody(BaseModel):
+    application_id: str
+    new_status: Literal["shortlisted", "referred", "awaiting_interview", "interview_scheduled", "hired", "rejected"]
+    proof_base64: Optional[str] = None
+    proof_filename: Optional[str] = None
+    proof_mime_type: Optional[str] = None
+    note: Optional[str] = ""
+
+
+class AdminStatusActionBody(BaseModel):
+    change_id: str
+    action: Literal["approve", "reject"]
+    note: Optional[str] = ""
 
 
 class ReferBody(BaseModel):
@@ -310,16 +378,24 @@ async def root():
 async def signup(body: SignupBody):
     if body.role == "admin":
         raise HTTPException(status_code=400, detail="Cannot self-register as admin")
-    existing = await db.users.find_one({"email": body.email.lower()}, {"_id": 0})
+    email_lower = body.email.lower().strip()
+    domain = email_lower.split("@")[-1] if "@" in email_lower else ""
+    if body.role == "professional" and domain in PERSONAL_EMAIL_DOMAINS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Use your company email (not {domain}). Personal email domains are not allowed for Working Professionals.",
+        )
+    existing = await db.users.find_one({"email": email_lower}, {"_id": 0})
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
     user_doc = {
         "id": new_id(),
-        "email": body.email.lower(),
+        "email": email_lower,
         "password_hash": hash_password(body.password),
         "role": body.role,
         "name": body.name or "",
         "is_email_verified": False,
+        "account_status": "active",  # active | suspended
         "credits": 0,
         "free_uses_left": FREE_TIER_ACTIONS * 2,
         "total_deposits": 0,
@@ -331,17 +407,17 @@ async def signup(body: SignupBody):
     otp_code = f"{secrets.randbelow(10**6):06d}"
     await db.otps.insert_one({
         "id": new_id(),
-        "email": body.email.lower(),
+        "email": email_lower,
         "otp_hash": hash_password(otp_code),
         "purpose": "verify_email",
         "expires_at": now_ts() + 600,
         "consumed": False,
         "created_at": now_iso(),
     })
-    await send_otp_email(body.email.lower(), otp_code, "verify_email")
-    resp = {"message": "Signup successful. OTP sent.", "email": body.email.lower()}
-    if MOCK_OTP_MODE:
-        resp["mock_otp"] = otp_code  # only in mock mode for testing
+    sent = await send_otp_email(email_lower, otp_code, "verify_email")
+    resp = {"message": "Signup successful. OTP sent.", "email": email_lower, "email_sent": bool(sent)}
+    if MOCK_OTP_MODE or not sent:
+        resp["mock_otp"] = otp_code  # included when send failed (e.g., unverified sender) for test continuity
     return resp
 
 
@@ -382,6 +458,8 @@ async def login(body: LoginBody):
     u = await db.users.find_one({"email": body.email.lower()}, {"_id": 0})
     if not u or not verify_password(body.password, u["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
+    if u.get("account_status") == "suspended":
+        raise HTTPException(status_code=403, detail="Account suspended. Please contact support.")
     if not u.get("is_email_verified") and u["role"] != "admin":
         raise HTTPException(status_code=403, detail="Email not verified")
     token = create_jwt(u["id"], u["role"])
@@ -402,9 +480,9 @@ async def forgot_password(body: ForgotBody):
             "consumed": False,
             "created_at": now_iso(),
         })
-        await send_otp_email(body.email.lower(), otp_code, "reset_password")
+        sent = await send_otp_email(body.email.lower(), otp_code, "reset_password")
         resp = {"message": "If account exists, OTP has been sent."}
-        if MOCK_OTP_MODE:
+        if MOCK_OTP_MODE or not sent:
             resp["mock_otp"] = otp_code
         return resp
     return {"message": "If account exists, OTP has been sent."}
@@ -643,7 +721,8 @@ async def confirm_deposit(body: VerifyPaymentBody, u: dict = Depends(current_use
     if order["status"] == "paid":
         return {"message": "Already credited", "credits": u["credits"]}
     if not MOCK_PAYMENTS_MODE:
-        import hashlib, hmac
+        import hashlib
+        import hmac
         msg = f"{body.razorpay_order_id}|{body.razorpay_payment_id}".encode()
         expected = hmac.new(RAZORPAY_KEY_SECRET.encode(), msg, hashlib.sha256).hexdigest()
         if expected != body.razorpay_signature:
@@ -678,6 +757,8 @@ async def list_professionals(u: dict = Depends(current_user)):
 
 @api.post("/interviews/slots")
 async def create_slot(body: InterviewSlotBody, u: dict = Depends(require_role(["professional"]))):
+    if not u.get("is_email_verified"):
+        raise HTTPException(status_code=403, detail="Verify your email before posting interview slots.")
     try:
         start = datetime.fromisoformat(body.start_at.replace("Z", "+00:00"))
         end = datetime.fromisoformat(body.end_at.replace("Z", "+00:00"))
@@ -685,40 +766,59 @@ async def create_slot(body: InterviewSlotBody, u: dict = Depends(require_role(["
         raise HTTPException(status_code=400, detail="Invalid date format")
     if end <= start:
         raise HTTPException(status_code=400, detail="End time must be after start time")
-    if (end - start).total_seconds() < 15 * 60:
-        raise HTTPException(status_code=400, detail="Slot must be at least 15 minutes")
+    duration_min = (end - start).total_seconds() / 60
+    if duration_min < SLOT_MIN_DURATION_MIN:
+        raise HTTPException(status_code=400, detail=f"Slot must be at least {SLOT_MIN_DURATION_MIN} minutes")
+    if duration_min > SLOT_MAX_HOURS_PER_DAY * 60:
+        raise HTTPException(status_code=400, detail=f"Single slot cannot exceed {SLOT_MAX_HOURS_PER_DAY} hours")
     if start <= datetime.now(timezone.utc):
         raise HTTPException(status_code=400, detail="Slot must be in the future")
 
-    # Conflict check: any existing non-cancelled slot for this pro overlapping?
+    # Daily 5-hour total cap for this pro
+    day_start = start.replace(hour=0, minute=0, second=0, microsecond=0)
+    day_end = day_start + timedelta(days=1)
     existing = await db.interview_slots.find(
         {"pro_id": u["id"], "status": {"$in": ["available", "booked"]}},
         {"_id": 0},
     ).to_list(500)
+    day_hours = 0.0
     for s in existing:
         try:
             es = datetime.fromisoformat(s["start_at"].replace("Z", "+00:00"))
             ee = datetime.fromisoformat(s["end_at"].replace("Z", "+00:00"))
         except Exception:
             continue
+        # Conflict check
         if start < ee and end > es:
             raise HTTPException(
                 status_code=400,
                 detail=f"Conflicts with existing slot {es.strftime('%d %b %H:%M')} – {ee.strftime('%H:%M')}",
             )
+        # Daily total accumulation
+        if day_start <= es < day_end:
+            day_hours += (ee - es).total_seconds() / 3600
+    if day_hours + duration_min / 60 > SLOT_MAX_HOURS_PER_DAY:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Daily limit {SLOT_MAX_HOURS_PER_DAY}h exceeded (already booked {day_hours:.1f}h on this day).",
+        )
 
+    slot_id = new_id()
+    meeting_url = f"{JITSI_BASE}/ReferME-{slot_id.split('-')[0]}"
     slot = {
-        "id": new_id(),
+        "id": slot_id,
         "pro_id": u["id"],
         "pro_name": u.get("name") or u["email"].split("@")[0],
         "start_at": body.start_at,
         "end_at": body.end_at,
-        # Keep legacy alias for any clients still reading scheduled_at
-        "scheduled_at": body.start_at,
+        "scheduled_at": body.start_at,  # legacy alias
+        "skill_set": body.skill_set or [],
+        "experience_years": body.experience_years or 0,
         "topic": body.topic or "",
         "status": "available",
         "student_id": None,
         "student_name": None,
+        "meeting_url": meeting_url,
         "created_at": now_iso(),
     }
     await db.interview_slots.insert_one(slot)
@@ -726,7 +826,11 @@ async def create_slot(body: InterviewSlotBody, u: dict = Depends(require_role(["
 
 
 @api.get("/interviews/slots")
-async def list_slots(pro_id: Optional[str] = Query(None), u: dict = Depends(current_user)):
+async def list_slots(
+    pro_id: Optional[str] = Query(None),
+    skill: Optional[str] = Query(None),
+    u: dict = Depends(current_user),
+):
     q: dict = {}
     if pro_id:
         q["pro_id"] = pro_id
@@ -734,6 +838,8 @@ async def list_slots(pro_id: Optional[str] = Query(None), u: dict = Depends(curr
         q["pro_id"] = u["id"]
     elif u["role"] == "student" and not pro_id:
         q["status"] = "available"
+    if skill:
+        q["skill_set"] = {"$regex": skill, "$options": "i"}
     slots = await db.interview_slots.find(q, {"_id": 0}).sort("start_at", 1).to_list(200)
     return slots
 
@@ -749,18 +855,49 @@ async def book_interview(body: BookInterviewBody, u: dict = Depends(require_role
         raise HTTPException(status_code=400, detail="Slot not available")
     use_free = _can_use_free(u, "interview")
     if not use_free and u.get("credits", 0) < ACTION_COST:
-        raise HTTPException(status_code=400, detail="Insufficient credits")
+        raise HTTPException(status_code=400, detail="Insufficient credits. Please add credits to continue booking this interview.")
     if use_free:
         await db.users.update_one({"id": u["id"]}, {"$inc": {"free_uses_left": -1}})
     else:
         await _credit_user(u["id"], -ACTION_COST, "interview_booking", {"slot_id": slot["id"]})
     await db.interview_slots.update_one(
         {"id": slot["id"]},
-        {"$set": {"status": "booked", "student_id": u["id"], "student_name": u.get("name") or u["email"].split("@")[0]}},
+        {"$set": {"status": "booked", "student_id": u["id"], "student_name": u.get("name") or u["email"].split("@")[0], "booked_at": now_iso()}},
     )
-    await push_notification(u["id"], "Interview booked ✅", f"With {slot['pro_name']} at {slot['scheduled_at']}", "success")
-    await push_notification(slot["pro_id"], "New interview booked", f"Student booked your slot at {slot['scheduled_at']}", "info")
-    return {"message": "Booked", "used_free": use_free}
+    pro = await db.users.find_one({"id": slot["pro_id"]}, {"_id": 0, "password_hash": 0})
+    when = slot.get("start_at", "")
+    end_when = slot.get("end_at", "")
+    # In-app notifications
+    await push_notification(u["id"], "Interview booked ✅", f"With {slot['pro_name']} at {when}", "success")
+    await push_notification(slot["pro_id"], "New interview booked", f"Student booked your slot at {when}", "info")
+    # Email both parties
+    meeting = slot.get("meeting_url", "")
+    student_html = f"""
+        <div style="font-family:-apple-system,Arial; max-width:520px; margin:0 auto; padding:24px; background:#FDFBF7;">
+          <h2 style="color:#FF5A5F">Interview confirmed 🎉</h2>
+          <p>You're booked with <b>{slot['pro_name']}</b>.</p>
+          <ul>
+            <li><b>Date / Time:</b> {when} – {end_when}</li>
+            <li><b>Topic:</b> {slot.get('topic') or '—'}</li>
+            <li><b>Skill set:</b> {', '.join(slot.get('skill_set', []) or []) or '—'}</li>
+            <li><b>Meeting link:</b> <a href="{meeting}">{meeting}</a></li>
+          </ul>
+          <p>Good luck!</p>
+        </div>
+    """
+    pro_html = f"""
+        <div style="font-family:-apple-system,Arial; max-width:520px; margin:0 auto; padding:24px; background:#FDFBF7;">
+          <h2 style="color:#7C3AED">New interview booked</h2>
+          <p><b>Candidate:</b> {u.get('name') or u['email']}</p>
+          <p><b>Date / Time:</b> {when} – {end_when}</p>
+          <p><b>Topic:</b> {slot.get('topic') or '—'}</p>
+          <p><b>Meeting link:</b> <a href="{meeting}">{meeting}</a></p>
+        </div>
+    """
+    await send_html_email(u["email"], "ReferME · Interview confirmed", student_html, mock_purpose="booking_student")
+    if pro and pro.get("email"):
+        await send_html_email(pro["email"], "ReferME · New interview booking", pro_html, mock_purpose="booking_pro")
+    return {"message": "Booked", "used_free": use_free, "meeting_url": meeting}
 
 
 @api.post("/interviews/{slot_id}/complete")
@@ -796,31 +933,74 @@ async def complete_interview(slot_id: str, u: dict = Depends(require_role(["prof
 
 # ------------------- Jobs & Applications & Referrals -------------------
 @api.post("/jobs")
-async def post_job(body: JobPostBody, u: dict = Depends(require_role(["employer"]))):
+async def post_job(body: JobPostBody, u: dict = Depends(require_role(["employer", "professional"]))):
+    profile = u.get("profile", {}) or {}
+    default_company = profile.get("company_name") or profile.get("company") or u.get("name") or "Employer"
+    openings = body.open_positions if body.open_positions else (body.bulk_openings or 1)
+    if openings < 1 or openings > 5:
+        # Default allowed range 1-5, manual override accepted up to 50 if explicit > 5
+        if openings > 5 and openings <= 50:
+            pass
+        else:
+            raise HTTPException(status_code=400, detail="open_positions must be between 1 and 50")
+    category = body.category or ("experienced" if (body.experience_required or 0) > 0 else "fresher")
+    exp_req = body.experience_required or 0
+    if category == "experienced" and exp_req <= 0:
+        raise HTTPException(status_code=400, detail="experience_required must be > 0 for experienced category")
     job = {
         "id": new_id(),
         "employer_id": u["id"],
-        "employer_name": u.get("profile", {}).get("company_name") or u.get("name") or "Employer",
+        "employer_name": body.company or default_company,
+        "posted_by_role": u["role"],
+        "posted_by_name": u.get("name") or u["email"].split("@")[0],
         "title": body.title,
+        "company": body.company or default_company,
         "description": body.description,
-        "location": body.location,
-        "salary_range": body.salary_range,
+        "location": body.location or "",
+        "salary_range": body.salary_range or "",
         "skills_required": body.skills_required or [],
-        "bulk_openings": body.bulk_openings,
+        "category": category,
+        "experience_required": exp_req,
+        "open_positions": openings,
+        "bulk_openings": openings,  # back-compat
         "status": "open",
         "created_at": now_iso(),
+        "updated_at": now_iso(),
     }
     await db.jobs.insert_one(job)
     return {k: v for k, v in job.items() if k != "_id"}
 
 
 @api.get("/jobs")
-async def list_jobs(u: dict = Depends(current_user)):
+async def list_jobs(
+    u: dict = Depends(current_user),
+    skill: Optional[str] = Query(None),
+    location: Optional[str] = Query(None),
+    category: Optional[str] = Query(None),
+    exp_min: Optional[int] = Query(None),
+    exp_max: Optional[int] = Query(None),
+    company: Optional[str] = Query(None),
+):
     q: dict = {}
     if u["role"] == "employer":
         q["employer_id"] = u["id"]
+    elif u["role"] == "professional":
+        # Show all open jobs + ones they posted
+        q["$or"] = [{"status": "open"}, {"employer_id": u["id"]}]
     else:
         q["status"] = "open"
+    if skill:
+        q["skills_required"] = {"$regex": skill, "$options": "i"}
+    if location:
+        q["location"] = {"$regex": location, "$options": "i"}
+    if category in ("fresher", "experienced"):
+        q["category"] = category
+    if company:
+        q["company"] = {"$regex": company, "$options": "i"}
+    if exp_min is not None:
+        q["experience_required"] = {**(q.get("experience_required") or {}), "$gte": int(exp_min)}
+    if exp_max is not None:
+        q["experience_required"] = {**(q.get("experience_required") or {}), "$lte": int(exp_max)}
     jobs = await db.jobs.find(q, {"_id": 0}).sort("created_at", -1).to_list(200)
     # Annotate `applied` flag for students
     if u["role"] == "student" and jobs:
@@ -830,6 +1010,87 @@ async def list_jobs(u: dict = Depends(current_user)):
             j["applied"] = j["id"] in by_job
             j["application_status"] = by_job.get(j["id"])
     return jobs
+
+
+@api.get("/jobs/{job_id}")
+async def get_job(job_id: str, u: dict = Depends(current_user)):
+    job = await db.jobs.find_one({"id": job_id}, {"_id": 0})
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if u["role"] == "student":
+        app = await db.applications.find_one({"student_id": u["id"], "job_id": job_id}, {"_id": 0})
+        job["applied"] = bool(app)
+        job["application_status"] = app["status"] if app else None
+    return job
+
+
+@api.patch("/jobs/{job_id}")
+async def edit_job(job_id: str, body: JobPatchBody, u: dict = Depends(require_role(["employer", "professional", "admin"]))):
+    job = await db.jobs.find_one({"id": job_id}, {"_id": 0})
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if u["role"] != "admin" and job["employer_id"] != u["id"]:
+        raise HTTPException(status_code=403, detail="Only owner can edit")
+    updates = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
+    if "open_positions" in updates:
+        updates["bulk_openings"] = updates["open_positions"]
+    updates["updated_at"] = now_iso()
+    await db.jobs.update_one({"id": job_id}, {"$set": updates})
+    out = await db.jobs.find_one({"id": job_id}, {"_id": 0})
+    return out
+
+
+@api.post("/jobs/{job_id}/close")
+async def close_job(job_id: str, u: dict = Depends(require_role(["employer", "professional", "admin"]))):
+    job = await db.jobs.find_one({"id": job_id}, {"_id": 0})
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if u["role"] != "admin" and job["employer_id"] != u["id"]:
+        raise HTTPException(status_code=403, detail="Only owner can close")
+    await db.jobs.update_one({"id": job_id}, {"$set": {"status": "closed", "updated_at": now_iso()}})
+    return {"message": "Closed"}
+
+
+@api.post("/jobs/{job_id}/reopen")
+async def reopen_job(job_id: str, u: dict = Depends(require_role(["employer", "professional", "admin"]))):
+    job = await db.jobs.find_one({"id": job_id}, {"_id": 0})
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if u["role"] != "admin" and job["employer_id"] != u["id"]:
+        raise HTTPException(status_code=403, detail="Only owner can reopen")
+    await db.jobs.update_one({"id": job_id}, {"$set": {"status": "open", "updated_at": now_iso()}})
+    return {"message": "Reopened"}
+
+
+@api.get("/jobs/{job_id}/applicants")
+async def job_applicants(job_id: str, u: dict = Depends(require_role(["employer", "professional", "admin"]))):
+    job = await db.jobs.find_one({"id": job_id}, {"_id": 0})
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if u["role"] != "admin" and job["employer_id"] != u["id"]:
+        raise HTTPException(status_code=403, detail="Only owner can view")
+    apps = await db.applications.find({"job_id": job_id}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    student_ids = [a["student_id"] for a in apps]
+    students = await db.users.find({"id": {"$in": student_ids}}, {"_id": 0, "password_hash": 0}).to_list(500)
+    sm = {s["id"]: s for s in students}
+    out = []
+    for a in apps:
+        s = sm.get(a["student_id"], {})
+        p = s.get("profile", {}) or {}
+        out.append({
+            **a,
+            "student_profile": {
+                "name": s.get("name") or s.get("email", "").split("@")[0],
+                "skills": p.get("skills", []),
+                "resume_score": p.get("resume_score", 0),
+                "current_location": p.get("current_location"),
+                "preferred_role": p.get("preferred_role"),
+                "years_of_experience": p.get("years_of_experience"),
+                "education": p.get("education"),
+                "passed_out_year": p.get("passed_out_year"),
+            },
+        })
+    return out
 
 
 @api.post("/jobs/apply")
@@ -842,7 +1103,7 @@ async def apply_job(body: ApplyJobBody, u: dict = Depends(require_role(["student
         raise HTTPException(status_code=400, detail="Already applied")
     use_free = _can_use_free(u, "referral")
     if not use_free and u.get("credits", 0) < ACTION_COST:
-        raise HTTPException(status_code=400, detail="Insufficient credits")
+        raise HTTPException(status_code=402, detail="Insufficient credits. Please add credits to continue applying for this job.")
     if use_free:
         await db.users.update_one({"id": u["id"]}, {"$inc": {"free_uses_left": -1}})
     else:
@@ -855,7 +1116,8 @@ async def apply_job(body: ApplyJobBody, u: dict = Depends(require_role(["student
         "student_id": u["id"],
         "student_name": u.get("name") or u["email"].split("@")[0],
         "referrer_pro_id": None,
-        "status": "applied",  # applied -> shortlisted -> hired / rejected
+        "status": "applied",  # applied -> shortlisted -> referred -> awaiting_interview -> interview_scheduled -> hired / rejected
+        "status_history": [{"status": "applied", "at": now_iso(), "by": u["id"]}],
         "created_at": now_iso(),
     }
     await db.applications.insert_one(app_doc)
@@ -957,25 +1219,170 @@ async def hire_candidate(body: HireBody, u: dict = Depends(require_role(["employ
     return {"message": "Candidate hired"}
 
 
+# ------------------- Status pipeline (Applied → Hired) -------------------
+@api.post("/applications/status")
+async def request_status_change(body: StatusUpdateBody, u: dict = Depends(current_user)):
+    appdoc = await db.applications.find_one({"id": body.application_id}, {"_id": 0})
+    if not appdoc:
+        raise HTTPException(status_code=404, detail="Application not found")
+    # Authorization: student (their own app), employer (their job), pro (referrer), admin
+    is_owner_student = (u["role"] == "student" and appdoc["student_id"] == u["id"])
+    is_employer = (u["role"] == "employer" and appdoc["employer_id"] == u["id"])
+    is_referrer = (u["role"] == "professional" and appdoc.get("referrer_pro_id") == u["id"])
+    if not (is_owner_student or is_employer or is_referrer or u["role"] == "admin"):
+        raise HTTPException(status_code=403, detail="Not allowed")
+    change = {
+        "id": new_id(),
+        "application_id": body.application_id,
+        "requested_by_id": u["id"],
+        "requested_by_role": u["role"],
+        "requested_by_name": u.get("name") or u["email"].split("@")[0],
+        "from_status": appdoc["status"],
+        "to_status": body.new_status,
+        "proof_base64": body.proof_base64,
+        "proof_filename": body.proof_filename,
+        "proof_mime_type": body.proof_mime_type,
+        "note": body.note or "",
+        "status": "pending",  # pending | approved | rejected
+        "admin_note": "",
+        "created_at": now_iso(),
+    }
+    await db.status_changes.insert_one(change)
+    await push_notification(u["id"], "Status update submitted", "Pending admin review.", "info")
+    return {"message": "Submitted for admin review", "change_id": change["id"], "status": "pending"}
+
+
+@api.get("/applications/{app_id}/timeline")
+async def application_timeline(app_id: str, u: dict = Depends(current_user)):
+    appdoc = await db.applications.find_one({"id": app_id}, {"_id": 0})
+    if not appdoc:
+        raise HTTPException(status_code=404, detail="Application not found")
+    history = appdoc.get("status_history", [])
+    pending = await db.status_changes.find(
+        {"application_id": app_id, "status": "pending"}, {"_id": 0, "proof_base64": 0}
+    ).sort("created_at", -1).to_list(50)
+    return {
+        "current_status": appdoc["status"],
+        "history": history,
+        "pending_changes": pending,
+    }
+
+
+@api.get("/admin/status-changes")
+async def admin_status_changes(_: dict = Depends(admin_only)):
+    items = await db.status_changes.find({"status": "pending"}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return items
+
+
+@api.post("/admin/status-changes/action")
+async def admin_status_action(body: AdminStatusActionBody, _: dict = Depends(admin_only)):
+    change = await db.status_changes.find_one({"id": body.change_id}, {"_id": 0})
+    if not change:
+        raise HTTPException(status_code=404, detail="Change not found")
+    if change["status"] != "pending":
+        raise HTTPException(status_code=400, detail="Already processed")
+    await db.status_changes.update_one(
+        {"id": body.change_id},
+        {"$set": {"status": body.action + "d" if body.action == "approve" else "rejected", "admin_note": body.note or "", "updated_at": now_iso()}},
+    )
+    if body.action == "approve":
+        appdoc = await db.applications.find_one({"id": change["application_id"]}, {"_id": 0})
+        if appdoc:
+            new_hist = (appdoc.get("status_history") or []) + [{
+                "status": change["to_status"],
+                "at": now_iso(),
+                "by": change["requested_by_id"],
+                "note": change.get("note") or "",
+            }]
+            update_fields = {"status": change["to_status"], "status_history": new_hist}
+            await db.applications.update_one({"id": appdoc["id"]}, {"$set": update_fields})
+            # If status hired and referrer present, credit them
+            if change["to_status"] == "hired" and appdoc.get("referrer_pro_id"):
+                await _credit_user(appdoc["referrer_pro_id"], REFERRAL_HIRED_REWARD, "referral_hired", {"application_id": appdoc["id"]})
+                await db.users.update_one({"id": appdoc["referrer_pro_id"]}, {"$inc": {"successful_referrals": 1}})
+                await push_notification(appdoc["referrer_pro_id"], "Referral bonus 💸", f"+{REFERRAL_HIRED_REWARD} credits — candidate hired!", "success")
+            await push_notification(
+                appdoc["student_id"],
+                "Status updated 📈",
+                f"Your application is now: {change['to_status'].replace('_', ' ').title()}",
+                "success",
+            )
+    else:
+        # Rejected — keep status as before
+        await push_notification(change["requested_by_id"], "Status update rejected", body.note or "Please attach proof.", "error")
+    return {"message": f"Change {body.action}d"}
+
+
 # ------------------- Leaderboards -------------------
 @api.get("/leaderboard/students")
-async def leaderboard_students(u: dict = Depends(current_user)):
-    students = await db.users.find({"role": "student"}, {"_id": 0, "password_hash": 0}).to_list(1000)
-    def score(s: dict) -> int:
-        return (s.get("interviews_attended", 0) * 10) + int((s.get("profile", {}).get("resume_score") or 0))
-    students.sort(key=score, reverse=True)
-    return [
-        {
-            "rank": i + 1,
-            "id": s["id"],
+async def leaderboard_students(
+    u: dict = Depends(current_user),
+    category: Optional[str] = Query(None),
+    skill: Optional[str] = Query(None),
+    location: Optional[str] = Query(None),
+    min_score: Optional[int] = Query(None),
+    max_score: Optional[int] = Query(None),
+    min_rating: Optional[float] = Query(None),
+    min_jobs_applied: Optional[int] = Query(None),
+    min_referrals: Optional[int] = Query(None),
+):
+    students = await db.users.find({"role": "student"}, {"_id": 0, "password_hash": 0}).to_list(2000)
+    # Compute per-student aggregate stats
+    out: list[dict] = []
+    for s in students:
+        sid = s["id"]
+        profile = s.get("profile", {}) or {}
+        skills = profile.get("skills", []) or []
+        cat = profile.get("preferred_role")
+        loc = profile.get("current_location")
+        score_val = int(profile.get("resume_score") or 0)
+        attended = int(s.get("interviews_attended", 0) or 0)
+        jobs_applied = await db.applications.count_documents({"student_id": sid})
+        referrals_received = await db.applications.count_documents({"student_id": sid, "referrer_pro_id": {"$ne": None}})
+        credits_earned = max(0, int(s.get("credits", 0)) + 0)  # students don't earn meaningful credits but kept for parity
+        rating = float(profile.get("rating") or 0)
+        # Filter
+        if category and cat != category:
+            continue
+        if skill and not any(skill.lower() in (sk or "").lower() for sk in skills):
+            continue
+        if location and location.lower() not in (loc or "").lower():
+            continue
+        if min_score is not None and score_val < min_score:
+            continue
+        if max_score is not None and score_val > max_score:
+            continue
+        if min_rating is not None and rating < min_rating:
+            continue
+        if min_jobs_applied is not None and jobs_applied < min_jobs_applied:
+            continue
+        if min_referrals is not None and referrals_received < min_referrals:
+            continue
+        composite = (
+            attended * 10
+            + score_val
+            + jobs_applied * 2
+            + referrals_received * 5
+        )
+        out.append({
+            "id": sid,
             "name": s.get("name") or s["email"].split("@")[0],
-            "score": score(s),
-            "interviews_attended": s.get("interviews_attended", 0),
-            "resume_score": s.get("profile", {}).get("resume_score") or 0,
-            "is_me": s["id"] == u["id"],
-        }
-        for i, s in enumerate(students[:50])
-    ]
+            "category": cat or "—",
+            "skills": skills,
+            "current_location": loc or "—",
+            "resume_score": score_val,
+            "interviews_attended": attended,
+            "rating": rating,
+            "total_credits_earned": credits_earned,
+            "jobs_applied": jobs_applied,
+            "referrals_received": referrals_received,
+            "composite_score": composite,
+            "is_me": sid == u["id"],
+        })
+    out.sort(key=lambda x: (-x["composite_score"], -x["resume_score"]))
+    for i, e in enumerate(out):
+        e["rank"] = i + 1
+    return out[:200]
 
 
 @api.get("/leaderboard/professionals")
@@ -1062,20 +1469,96 @@ async def admin_payout_action(body: AdminActionBody, _: dict = Depends(admin_onl
 @api.get("/admin/users")
 async def admin_users(_: dict = Depends(admin_only)):
     users = await db.users.find({}, {"_id": 0, "password_hash": 0}).sort("created_at", -1).to_list(1000)
-    return [user_public(u) for u in users]
+    return [{**user_public(u), "account_status": u.get("account_status", "active")} for u in users]
+
+
+@api.post("/admin/users/{user_id}/suspend")
+async def admin_suspend(user_id: str, _: dict = Depends(admin_only)):
+    res = await db.users.update_one({"id": user_id}, {"$set": {"account_status": "suspended"}})
+    if not res.matched_count:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"message": "Suspended"}
+
+
+@api.post("/admin/users/{user_id}/activate")
+async def admin_activate(user_id: str, _: dict = Depends(admin_only)):
+    res = await db.users.update_one({"id": user_id}, {"$set": {"account_status": "active"}})
+    if not res.matched_count:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"message": "Activated"}
+
+
+@api.delete("/admin/users/{user_id}")
+async def admin_delete_user(user_id: str, _: dict = Depends(admin_only)):
+    res = await db.users.delete_one({"id": user_id, "role": {"$ne": "admin"}})
+    if not res.deleted_count:
+        raise HTTPException(status_code=404, detail="User not found or admin cannot be deleted")
+    return {"message": "Deleted"}
+
+
+@api.get("/admin/jobs")
+async def admin_all_jobs(_: dict = Depends(admin_only)):
+    return await db.jobs.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+
+
+@api.delete("/admin/jobs/{job_id}")
+async def admin_delete_job(job_id: str, _: dict = Depends(admin_only)):
+    res = await db.jobs.delete_one({"id": job_id})
+    if not res.deleted_count:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return {"message": "Job removed"}
+
+
+@api.get("/admin/interviews")
+async def admin_interviews(_: dict = Depends(admin_only)):
+    return await db.interview_slots.find({}, {"_id": 0}).sort("start_at", -1).to_list(500)
+
+
+@api.delete("/admin/interviews/{slot_id}")
+async def admin_cancel_slot(slot_id: str, _: dict = Depends(admin_only)):
+    slot = await db.interview_slots.find_one({"id": slot_id}, {"_id": 0})
+    if not slot:
+        raise HTTPException(status_code=404, detail="Slot not found")
+    await db.interview_slots.update_one({"id": slot_id}, {"$set": {"status": "cancelled"}})
+    if slot.get("student_id"):
+        # refund credits
+        await _credit_user(slot["student_id"], ACTION_COST, "interview_cancel_refund", {"slot_id": slot_id})
+        await push_notification(slot["student_id"], "Interview cancelled", "Credits refunded.", "warning")
+    return {"message": "Slot cancelled"}
+
+
+@api.post("/admin/wallet/refund")
+async def admin_refund(user_id: str = Query(...), amount: int = Query(...), reason: str = Query("admin_refund"), _: dict = Depends(admin_only)):
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="Amount must be > 0")
+    new_balance = await _credit_user(user_id, amount, reason, {"by": "admin"})
+    await push_notification(user_id, "Credit adjustment", f"+{amount} credits applied by admin.", "info")
+    return {"credits": new_balance}
 
 
 @api.get("/admin/stats")
 async def admin_stats(_: dict = Depends(admin_only)):
+    deposits = await db.deposit_orders.find({"status": "paid"}, {"_id": 0, "amount_inr": 1}).to_list(10000)
+    revenue = sum(int(d.get("amount_inr", 0)) for d in deposits)
+    hires = await db.applications.count_documents({"status": "hired"})
+    referrals_done = await db.applications.count_documents({"referrer_pro_id": {"$ne": None}})
     return {
+        "total_users": await db.users.count_documents({}),
         "students": await db.users.count_documents({"role": "student"}),
         "professionals": await db.users.count_documents({"role": "professional"}),
         "employers": await db.users.count_documents({"role": "employer"}),
+        "active_students": await db.users.count_documents({"role": "student", "account_status": {"$ne": "suspended"}}),
+        "active_professionals": await db.users.count_documents({"role": "professional", "account_status": {"$ne": "suspended"}}),
         "jobs": await db.jobs.count_documents({}),
+        "jobs_open": await db.jobs.count_documents({"status": "open"}),
         "applications": await db.applications.count_documents({}),
+        "referrals_completed": referrals_done,
         "interviews": await db.interview_slots.count_documents({"status": "completed"}),
+        "hires": hires,
+        "revenue_inr": revenue,
         "payouts_pending": await db.payouts.count_documents({"status": "requested"}),
         "disputes_open": await db.disputes.count_documents({"status": "open"}),
+        "status_changes_pending": await db.status_changes.count_documents({"status": "pending"}),
     }
 
 

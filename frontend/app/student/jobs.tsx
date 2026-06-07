@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { View, StyleSheet, TouchableOpacity, Alert, Modal, ScrollView } from "react-native";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Screen } from "@/src/components/Screen";
 import { Txt } from "@/src/components/Txt";
@@ -12,6 +12,7 @@ import { api } from "@/src/lib/api";
 type Tab = "jobs" | "interview" | "applications";
 
 export default function StudentJobs() {
+  const router = useRouter();
   const params = useLocalSearchParams<{ tab?: string }>();
   const [tab, setTab] = useState<Tab>((params.tab as Tab) || "jobs");
   const [jobs, setJobs] = useState<any[]>([]);
@@ -46,7 +47,19 @@ export default function StudentJobs() {
       Alert.alert("Applied", r.used_free ? "Used a free token!" : "49 credits spent.");
       load();
     } catch (e: any) {
-      Alert.alert("Cannot apply", e.message);
+      const msg = e.message || "";
+      if (/insufficient credit/i.test(msg)) {
+        Alert.alert(
+          "Insufficient credits",
+          "Please add credits to continue applying for this job.",
+          [
+            { text: "Add Credits", onPress: () => router.push("/student/wallet") },
+            { text: "Cancel", style: "cancel" },
+          ],
+        );
+      } else {
+        Alert.alert("Cannot apply", msg);
+      }
     }
   }
 

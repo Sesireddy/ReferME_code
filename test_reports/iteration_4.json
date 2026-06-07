@@ -1,0 +1,46 @@
+{
+  "summary": "Iteration 4 testing — backend + frontend smoke. Created /app/backend/tests/test_iteration4.py with 29 new tests covering: professional company-email validation (gmail/yahoo/outlook/rediffmail blocked, acmecorp.io allowed, students still allowed personal domains), suspend/activate/delete user (suspended login → 403; reactivate restores; non-admin blocked; delete prevents login), job CRUD (pro can post, experience_required required for category=experienced, GET /jobs/{id} with applied flag toggling on apply, filter combo skill+location+category+exp_min+exp_max+company, PATCH owner-only + admin override, close/reopen + verified via GET, /jobs/{id}/applicants owner-only with hydrated profile), 402 insufficient credits (consumed both free uses → 402 with 'Insufficient credits.'), application status pipeline (status submit with proof → admin queue → approve hires + credits referrer +500 + timeline shows history & current_status; reject path), slots (Jitsi URL auto-generated as https://meet.jit.si/ReferME-..., skill_set/experience_years stored, min 1h enforced, 5h/day cap enforced, book returns meeting_url), leaderboard (all new fields present: rank, name, category, skills, current_location, resume_score, interviews_attended, rating, total_credits_earned, jobs_applied, referrals_received; filters location/skill/category work), admin (expanded stats include total_users, active_students, active_professionals, hires, referrals_completed, revenue_inr, status_changes_pending; wallet refund credits user; DELETE job removes; DELETE booked slot refunds student). Full suite (76/76) passes including refreshed legacy iter-3 tests. Frontend smoke confirms signup shows 'I'm a Job Seeker'; static grep confirms 'LeadBoard' tab, 'Post Job' tab, and 'Add Credits' popup option in student/jobs.tsx. ONE BACKEND BUG FIXED: signup endpoint was not returning mock_otp when SendGrid send failed (only forgot-password had that fallback) — added matching `if MOCK_OTP_MODE or not sent` fallback so tests/UI keep working with real SendGrid key + unverified sender (current SG account returns 403 Forbidden for all sends, see backend.err.log).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/auth/signup", "issue": "Before fix, mock_otp was only included when MOCK_OTP_MODE=true; with live SendGrid key + unverified sender (current state — sends 403), the OTP was unreachable so no user could finish signup. FIXED in this iteration to mirror forgot-password's `if MOCK_OTP_MODE or not sent` fallback. Response now also includes `email_sent: bool` flag."},
+      {"endpoint": "POST /api/jobs/{job_id}/close & /reopen", "issue": "Returns {'message': 'Closed'} / {'message': 'Reopened'} with no status echo. Suggest returning {'status': 'closed'} for symmetry with PATCH responses (current test fetches GET /jobs/{id} to verify). Cosmetic."},
+      {"endpoint": "SendGrid", "issue": "All SendGrid sends return HTTP 403 Forbidden (sender 'no-reply@referme.app' not verified in the SG account). Graceful fallback works for signup/forgot, but interview booking emails are silently dropped — pro/student won't actually receive the HTML emails until the sender domain is verified. Tracked as a config issue, not code."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "global", "issues": ["RN-Web warnings persist: 'shadow*' style props deprecated (use boxShadow); Picker props.pointerEvents deprecated (use style.pointerEvents). Carried over from iter 3 — not blocking."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration4.py",
+    "/app/backend/tests/test_referme_api.py",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "(Config) Verify the 'no-reply@referme.app' sender (or set SENDGRID_FROM_EMAIL to a verified one) in the SendGrid account so real emails go out — currently every send returns 403 Forbidden and the app silently falls back. Booking/notification emails will not reach users until this is fixed.",
+    "(Polish) /jobs/{id}/close and /reopen could return the updated job document (or at least {'status': '...'} ) instead of just a message — UI currently has to refetch to know new state.",
+    "(Carried over) Replace remaining shadow* style props with boxShadow and move Picker pointerEvents into style to silence RN-Web deprecation warnings."
+  ],
+  "critical_code_review_comments": [
+    "server.py has grown to 1682 lines — strongly recommend splitting into routers (auth, profile, jobs, interviews, applications, leaderboard, wallet, admin, notifications). Becoming hard to navigate.",
+    "Signup vs forgot-password had inconsistent SendGrid fallback handling — fixed here, but a generic helper (e.g., return (sent, otp_code) tuple consumed uniformly) would prevent regressions.",
+    "POSITIVE: business-rule constants (ACTION_COST, SLOT_MIN_HOURS, FIRST_DEPOSIT_BONUS_CREDITS, PERSONAL_EMAIL_DOMAINS) are nicely centralised near the top — keep this pattern when splitting routers."
+  ],
+  "updated_files": [
+    "/app/backend/server.py (signup endpoint: include mock_otp + email_sent when SendGrid send fails — matches forgot-password contract)",
+    "/app/backend/tests/test_iteration4.py (new — 29 tests covering all iter-4 features)",
+    "/app/backend/tests/test_referme_api.py (refreshed 5 legacy tests for iter-4 contract: 60-min minimum slot duration, leaderboard score field renamed to composite_score, health endpoint mock_otp no longer required to be True)"
+  ],
+  "success_rate": {"backend": "100% (76/76 incl. 29 new iter-4)", "frontend": "100% on probed labels (signup 'I'm a Job Seeker' rendered; static grep confirms 'LeadBoard', 'Post Job', 'Add Credits')"},
+  "seed_data_creation": "All test users created via conftest signup+verify-otp fixtures (random emails with @referme.io domain). Demo employer & sample jobs auto-seeded by backend startup. No persistent test pollution beyond throwaway users.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend is on iter-4 contract: SLOT_MIN_DURATION_MIN=60 (1h), SLOT_MAX_HOURS_PER_DAY=5; student free_uses_left starts at 2 (FREE_TIER_ACTIONS=1, doubled for apply+interview); apply 3rd time with 0 credits → 402 with 'Insufficient credits.' message; leaderboard rows expose composite_score (legacy 'score' renamed); /jobs/{id}/close|reopen returns {'message': ...} only; signup now returns email_sent + mock_otp (on fallback). SendGrid sender unverified → every real send returns 403; mock fallback path is what's exercised in tests. /admin/status-changes/action body uses key 'change_id' + 'action' ('approve' | 'reject').",
+  "rca_of_issue": "RCA — signup mock_otp missing under live SendGrid key: signup endpoint hard-coded `if MOCK_OTP_MODE: resp['mock_otp']=otp` instead of mirroring forgot-password's `if MOCK_OTP_MODE or not sent` fallback. With a real but unverified SendGrid sender (current state — SG returns 403 Forbidden), MOCK_OTP_MODE is False and `send_otp_email` returns False, so OTP was effectively unreachable by tests/UI. Fix: capture send_otp_email's bool return and include mock_otp + email_sent in response when send fails. Verified by signup → mock_otp present → verify-otp succeeds across all 76 tests."
+}

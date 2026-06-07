@@ -28,6 +28,8 @@ export default function ProSlots() {
   const [fromTime, setFromTime] = useState("11:00");
   const [toTime, setToTime] = useState("12:00");
   const [topic, setTopic] = useState("");
+  const [skillSet, setSkillSet] = useState("");
+  const [expYears, setExpYears] = useState("0");
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -68,6 +70,8 @@ export default function ProSlots() {
           start_at: start.toISOString(),
           end_at: end.toISOString(),
           topic,
+          skill_set: skillSet.split(",").map((s) => s.trim()).filter(Boolean),
+          experience_years: parseInt(expYears || "0", 10),
         },
       });
       setTopic("");
@@ -122,6 +126,11 @@ export default function ProSlots() {
           </View>
         </View>
         <Input testID="slot-topic" label="Topic (optional)" placeholder="System design / Behavioral" value={topic} onChangeText={setTopic} />
+        <Input testID="slot-skills" label="Skill set (comma-separated)" placeholder="React, System Design" value={skillSet} onChangeText={setSkillSet} />
+        <Input testID="slot-exp" label="Candidate experience (years)" value={expYears} onChangeText={setExpYears} keyboardType="number-pad" />
+        <Txt variant="small" style={{ color: colors.textSecondary, marginBottom: 8 }}>
+          Slots use IST. Min 1 hour, max 5 hours/day per professional.
+        </Txt>
         <Button testID="create-slot" title="Create slot" onPress={createSlot} loading={busy} />
       </Card>
 
