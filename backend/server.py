@@ -1390,25 +1390,30 @@ async def apply_job(body: ApplyJobBody, u: dict = Depends(require_role(["student
 
     # Pro-poster reward: when the job (posted by a professional) reaches >= JOB_POST_REWARD_MIN_APPS valid
     # non-withdrawn applications, the poster receives a one-time JOB_POST_REWARD credit bonus.
+    # We use a conditional update + modified_count check to make crediting race-safe under concurrent applies.
     if job.get("posted_by_role") == "professional" and not job.get("posting_reward_paid"):
         valid_count = await db.applications.count_documents({
             "job_id": job["id"],
             "status": {"$nin": ["withdrawn"]},
         })
         if valid_count >= JOB_POST_REWARD_MIN_APPS:
-            await db.jobs.update_one({"id": job["id"]}, {"$set": {"posting_reward_paid": True}})
-            await _credit_user(
-                job["employer_id"],
-                JOB_POST_REWARD,
-                "job_post_reward",
-                {"job_id": job["id"], "job_title": job.get("title"), "applications": valid_count},
+            res = await db.jobs.update_one(
+                {"id": job["id"], "posting_reward_paid": {"$ne": True}},
+                {"$set": {"posting_reward_paid": True}},
             )
-            await push_notification(
-                job["employer_id"],
-                f"Earned +{JOB_POST_REWARD} credits 💼",
-                f"Your post '{job.get('title')}' crossed {JOB_POST_REWARD_MIN_APPS} applications!",
-                "success",
-            )
+            if res.modified_count == 1:
+                await _credit_user(
+                    job["employer_id"],
+                    JOB_POST_REWARD,
+                    "job_post_reward",
+                    {"job_id": job["id"], "job_title": job.get("title"), "applications": valid_count},
+                )
+                await push_notification(
+                    job["employer_id"],
+                    f"Earned +{JOB_POST_REWARD} credits 💼",
+                    f"Your post '{job.get('title')}' crossed {JOB_POST_REWARD_MIN_APPS} applications!",
+                    "success",
+                )
 
     return {"message": "Applied", "used_free": use_free}
 
