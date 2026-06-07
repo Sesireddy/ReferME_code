@@ -160,19 +160,46 @@ class TestInterviews:
         r2 = session.post(f"{API}/interviews/book", json={"slot_id": slot_id}, headers=auth_headers(student["token"]))
         assert r2.status_code == 200, r2.text
         assert r2.json()["used_free"] is True
-        # pro completes
-        r3 = session.post(f"{API}/interviews/{slot_id}/complete", headers=auth_headers(professional["token"]))
-        assert r3.status_code == 200
-        assert r3.json()["earned"] == 25
-        # pro wallet has 25
+        # Backdate the slot start_at to >15min ago and mark both participants joined so
+        # complete passes the new validations (min duration + both-joined). We use the
+        # synchronous pymongo client to avoid event-loop tangles during pytest.
+        from pymongo import MongoClient  # type: ignore
+        import os
+        from dotenv import load_dotenv  # type: ignore
+        load_dotenv()
+        _mc = MongoClient(os.environ["MONGO_URL"])
+        _coll = _mc[os.environ["DB_NAME"]].interview_slots
+        past = (datetime.now(timezone.utc) - timedelta(minutes=20)).isoformat()
+        end = (datetime.now(timezone.utc) + timedelta(minutes=40)).isoformat()
+        _coll.update_one(
+            {"id": slot_id},
+            {"$set": {"start_at": past, "end_at": end, "joined_by": [professional["user"]["id"], student["user"]["id"]]}},
+        )
+        _mc.close()
+        # pro completes (new payload: rating + optional feedback)
+        r3 = session.post(
+            f"{API}/interviews/{slot_id}/complete",
+            json={"rating": 8, "feedback": "Solid fundamentals"},
+            headers=auth_headers(professional["token"]),
+        )
+        assert r3.status_code == 200, r3.text
+        assert r3.json()["earned"] == 35
+        # pro wallet has 35
         w = session.get(f"{API}/wallet", headers=auth_headers(professional["token"])).json()
-        assert w["credits"] == 25
+        assert w["credits"] == 35
         # Student interviews_attended incremented and resume_score recomputed.
-        # `interviews_attended` is not exposed in user_public; confirm via student leaderboard.
-        lb = session.get(f"{API}/leaderboard/students?page_size=100", headers=auth_headers(student["token"])).json()
+        # Use a tight filter (location matches a unique value) so the freshly-created student appears within page.
+        # Set a unique location on this student via profile update to find them.
+        upd = session.put(f"{API}/profile", json={"current_location": f"Loc-{slot_id[:8]}"}, headers=auth_headers(student["token"]))
+        assert upd.status_code == 200, upd.text
+        lb = session.get(f"{API}/leaderboard/students?location=Loc-{slot_id[:8]}&page_size=100", headers=auth_headers(student["token"])).json()
         items = lb["items"] if isinstance(lb, dict) else lb
         me = next((x for x in items if x.get("id") == student["user"]["id"]), None)
         assert me is not None and me.get("interviews_attended", 0) >= 1
+        # Pro leaderboard reflects new rating
+        plb = session.get(f"{API}/leaderboard/professionals", headers=auth_headers(professional["token"])).json()
+        mp = next((x for x in plb if x.get("id") == professional["user"]["id"]), None)
+        assert mp is not None and float(mp.get("rating", 0)) == 8.0
 
     def test_student_cannot_create_slot(self, session, student):
         future_start = (datetime.now(timezone.utc) + timedelta(days=2)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
@@ -198,7 +225,7 @@ class TestJobs:
         r2 = session.post(f"{API}/jobs/apply", json={"job_id": jobs[0]["id"]}, headers=auth_headers(student["token"]))
         assert r2.status_code == 400
 
-    def test_referral_and_hire_flow(self, session, professional, student, employer):
+    def test_referral_and_hire_flow(self, session, professional, student, employer, admin_token):
         # employer posts a job
         r = session.post(f"{API}/jobs", json={"title": "TEST Role", "description": "test", "location": "X", "salary_range": "10L", "skills_required": ["a"], "bulk_openings": 1}, headers=auth_headers(employer["token"]))
         assert r.status_code == 200, r.text
@@ -207,12 +234,20 @@ class TestJobs:
         r2 = session.post(f"{API}/referrals", json={"student_id": student["user"]["id"], "job_id": job_id, "note": "great fit"}, headers=auth_headers(professional["token"]))
         assert r2.status_code == 200, r2.text
         app_id = r2.json()["application_id"]
-        # employer hires
-        r3 = session.post(f"{API}/applications/hire", json={"application_id": app_id}, headers=auth_headers(employer["token"]))
-        assert r3.status_code == 200
-        # pro got +500
+        # employer submits hire (new flow requires note/proof — goes pending)
+        r3 = session.post(f"{API}/applications/hire", json={"application_id": app_id, "note": "Offered SDE1 on 2025-06-12"}, headers=auth_headers(employer["token"]))
+        assert r3.status_code == 200, r3.text
+        change_id = r3.json().get("change_id")
+        assert change_id, "expected change_id"
+        # Admin approves
+        r4 = session.post(f"{API}/admin/status-changes/action", json={"change_id": change_id, "action": "approve"}, headers=auth_headers(admin_token))
+        assert r4.status_code == 200, r4.text
+        # pro got REFERRAL_HIRED_REWARD (500)
         w = session.get(f"{API}/wallet", headers=auth_headers(professional["token"])).json()
-        assert w["credits"] == 500
+        assert w["credits"] == 500, f"expected 500, got {w['credits']}"
+        # employer (job poster) got HIRING_REWARD (1500)
+        we = session.get(f"{API}/wallet", headers=auth_headers(employer["token"])).json()
+        assert we["credits"] == 1500, f"expected 1500, got {we['credits']}"
 
 
 # ---------- Leaderboards ----------
@@ -243,12 +278,16 @@ class TestPayouts:
         assert r.status_code == 400
 
     def test_full_payout_approve_flow(self, session, professional, student, employer, admin_token):
-        # Earn 500+ credits via referral hire
+        # Earn 500+ credits via referral hire (now requires admin approval)
         r = session.post(f"{API}/jobs", json={"title": "X", "description": "y", "bulk_openings": 1}, headers=auth_headers(employer["token"]))
         job_id = r.json()["id"]
         r2 = session.post(f"{API}/referrals", json={"student_id": student["user"]["id"], "job_id": job_id}, headers=auth_headers(professional["token"]))
         app_id = r2.json()["application_id"]
-        session.post(f"{API}/applications/hire", json={"application_id": app_id}, headers=auth_headers(employer["token"]))
+        hr = session.post(f"{API}/applications/hire", json={"application_id": app_id, "note": "Onboarded"}, headers=auth_headers(employer["token"]))
+        assert hr.status_code == 200, hr.text
+        cid = hr.json().get("change_id")
+        # admin approves → pro gets 500
+        session.post(f"{API}/admin/status-changes/action", json={"change_id": cid, "action": "approve"}, headers=auth_headers(admin_token))
         # Now request payout
         r3 = session.post(f"{API}/payouts/request", json={"amount_inr": 500, "upi_or_account": "test@upi"}, headers=auth_headers(professional["token"]))
         assert r3.status_code == 200, r3.text

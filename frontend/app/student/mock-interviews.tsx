@@ -6,6 +6,7 @@ import { Txt } from "@/src/components/Txt";
 import { Card } from "@/src/components/Card";
 import { Button } from "@/src/components/Button";
 import { Input } from "@/src/components/Input";
+import { Picker } from "@/src/components/Picker";
 import { colors, radius } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
 import { useRouter } from "expo-router";

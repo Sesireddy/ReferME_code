@@ -53,7 +53,7 @@ export default function Signup() {
             <Ionicons name="chevron-back" size={28} color={colors.textPrimary} />
           </TouchableOpacity>
           <Txt variant="h1">Create account</Txt>
-          <Txt variant="muted" style={{ marginTop: 4, marginBottom: 20 }}>Pick how you'll use ReferME</Txt>
+          <Txt variant="muted" style={{ marginTop: 4, marginBottom: 20 }}>Pick how you&apos;ll use ReferME</Txt>
 
           <View style={{ gap: 12, marginBottom: 20 }}>
             {ROLES.map((r) => {

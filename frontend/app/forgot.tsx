@@ -39,7 +39,7 @@ export default function Forgot() {
             <Ionicons name="chevron-back" size={28} color={colors.textPrimary} />
           </TouchableOpacity>
           <Txt variant="h1" style={{ marginTop: 16 }}>Forgot password?</Txt>
-          <Txt variant="muted" style={{ marginTop: 8, marginBottom: 24 }}>We'll send a 6-digit OTP to reset your password.</Txt>
+          <Txt variant="muted" style={{ marginTop: 8, marginBottom: 24 }}>We&apos;ll send a 6-digit OTP to reset your password.</Txt>
           <Input testID="forgot-email" label="Email" placeholder="you@example.com" autoCapitalize="none" keyboardType="email-address" value={email} onChangeText={setEmail} />
           <Button testID="forgot-submit" title="Send reset code" onPress={send} loading={loading} />
         </ScrollView>

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { View, StyleSheet, TouchableOpacity, Image, Alert } from "react-native";
+import { View, StyleSheet, TouchableOpacity } from "react-native";
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
@@ -8,13 +8,12 @@ import { Txt } from "@/src/components/Txt";
 import { Card } from "@/src/components/Card";
 import { Button } from "@/src/components/Button";
 import { colors, radius } from "@/src/theme/tokens";
-import { api, getUser } from "@/src/lib/api";
-
-const COIN = "https://static.prod-images.emergentagent.com/jobs/d2f455eb-160b-40ff-9a4e-1d583c1869b0/images/9e5ea04b28cbe7d19560f639172fa32c7ea2e010c38001356192231f7835193d.png";
+import { api } from "@/src/lib/api";
 
 export default function StudentDashboard() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
+  const [profile, setProfile] = useState<any>(null);
   const [rank, setRank] = useState<number | null>(null);
   const [bookings, setBookings] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -22,8 +21,9 @@ export default function StudentDashboard() {
   const load = useCallback(async () => {
     setRefreshing(true);
     try {
-      const me = await api<{ user: any }>("/auth/me");
+      const me = await api<{ user: any; profile: any }>("/auth/me");
       setUser(me.user);
+      setProfile(me.profile || {});
       const lb = await api<{ items: any[] } | any[]>("/leaderboard/students");
       const items = Array.isArray(lb) ? lb : (lb?.items || []);
       const meRank = items.find((s: any) => s.is_me);
@@ -32,7 +32,7 @@ export default function StudentDashboard() {
         const bk = await api<any[]>("/interviews/my-bookings");
         setBookings(bk || []);
       } catch {}
-    } catch (e: any) {
+    } catch {
       // ignore
     } finally {
       setRefreshing(false);
@@ -43,10 +43,13 @@ export default function StudentDashboard() {
     load();
   }, [load]);
 
+  const score = profile?.resume_score ?? 0;
+  const freeUses = user?.free_uses_left ?? 0;
+
   return (
     <Screen refreshing={refreshing} onRefresh={load}>
       <View style={styles.header}>
-        <View>
+        <View style={{ flex: 1 }}>
           <Txt variant="label">Hello,</Txt>
           <Txt variant="h2" testID="student-name">{user?.name || (user?.email || "").split("@")[0]}</Txt>
         </View>
@@ -57,22 +60,28 @@ export default function StudentDashboard() {
         </TouchableOpacity>
       </View>
 
+      {/* Hero card: resume score + free uses — NO credits here (Profile → Wallet only) */}
       <LinearGradient
         colors={["#FF5A5F", "#FFB347"]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
-        style={styles.walletCard}
+        style={styles.heroCard}
       >
         <View style={{ flex: 1 }}>
-          <Txt style={{ color: "#fff", opacity: 0.8 }} variant="label">Wallet balance</Txt>
-          <Txt style={{ color: "#fff", fontSize: 40, fontWeight: "800", marginTop: 4 }} testID="student-credits">
-            {user?.credits ?? 0}
+          <Txt style={{ color: "#fff", opacity: 0.85 }} variant="label">Your resume score</Txt>
+          <Txt style={{ color: "#fff", fontSize: 44, fontWeight: "800", marginTop: 4 }} testID="student-score">
+            {score}<Txt style={{ color: "#fff", fontSize: 22, opacity: 0.85 }}> /100</Txt>
           </Txt>
-          <Txt style={{ color: "#fff", opacity: 0.9, marginTop: 2 }} variant="small">
-            credits · {user?.free_uses_left ?? 0} free uses
+          <View style={styles.progressTrack}>
+            <View style={[styles.progressFill, { width: `${Math.min(100, score)}%` }]} />
+          </View>
+          <Txt style={{ color: "#fff", opacity: 0.95, marginTop: 8 }} variant="small">
+            {freeUses > 0 ? `🎁 ${freeUses} free uses left` : "Earn credits by referrals & interviews"}
           </Txt>
         </View>
-        <Image source={{ uri: COIN }} style={{ width: 96, height: 96 }} />
+        <View style={styles.heroIcon}>
+          <Ionicons name="rocket" size={48} color="#fff" />
+        </View>
       </LinearGradient>
 
       <View style={styles.actionRow}>
@@ -86,7 +95,7 @@ export default function StudentDashboard() {
               <Ionicons name="videocam" size={24} color={colors.textPrimary} />
             </View>
             <Txt variant="h3" style={{ marginTop: 12 }}>Book Mock Interview</Txt>
-            <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 4 }}>49 credits / free</Txt>
+            <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 4 }}>Practice with pros</Txt>
           </Card>
         </TouchableOpacity>
         <TouchableOpacity testID="cta-apply-job" style={{ flex: 1 }} onPress={() => router.push("/student/jobs")}>
@@ -95,7 +104,7 @@ export default function StudentDashboard() {
               <Ionicons name="paper-plane" size={22} color={colors.primary} />
             </View>
             <Txt variant="h3" style={{ marginTop: 12 }}>Apply for Referral</Txt>
-            <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 4 }}>49 credits / free</Txt>
+            <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 4 }}>Top companies</Txt>
           </Card>
         </TouchableOpacity>
       </View>
@@ -170,7 +179,10 @@ export default function StudentDashboard() {
 const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 16 },
   iconBtn: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
-  walletCard: { borderRadius: radius.xxl, padding: 20, flexDirection: "row", alignItems: "center", marginBottom: 16 },
+  heroCard: { borderRadius: radius.xxl, padding: 20, flexDirection: "row", alignItems: "center", marginBottom: 16, minHeight: 160 },
+  heroIcon: { width: 80, height: 80, alignItems: "center", justifyContent: "center", opacity: 0.85 },
+  progressTrack: { height: 8, backgroundColor: "rgba(255,255,255,0.25)", borderRadius: 8, marginTop: 12, overflow: "hidden" },
+  progressFill: { height: "100%", backgroundColor: "#fff", borderRadius: 8 },
   actionRow: { flexDirection: "row", gap: 12 },
   actionIcon: { width: 44, height: 44, borderRadius: 14, alignItems: "center", justifyContent: "center" },
   rankIcon: { width: 56, height: 56, borderRadius: 18, alignItems: "center", justifyContent: "center" },

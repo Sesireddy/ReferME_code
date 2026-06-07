@@ -1,0 +1,52 @@
+{
+  "summary": "Iteration 6 (Credit System & Pro Job Management). Added /app/backend/tests/test_iteration6.py with 13 NEW tests covering: interview /joined (403 for non-participant + idempotent add to slot.joined_by for participants), /interviews/{id}/complete validations (400 without both-joined; 400 if <15min from start_at; 200 with earned=35 + pro_rating in the happy path), pro leaderboard row schema includes `rating` + `ratings_count`, pro-posted job +100 ONE-TIME reward exactly at 4th unique non-withdrawn application (job.posting_reward_paid set), employer-posted job does NOT receive the +100 bonus, /applications/hire 400 without note OR proof, /applications/hire goes hired_pending + status_changes pending entry, /admin/status-changes/action approve → status=hired, employer +1500, separate referrer pro +500, /applications/refer-own pro-only (other pros 403; owner success; status=referred + referrer_pro_id set; history contains shortlisted then referred), GET /api/jobs as pro excludes other pros' posted jobs, GET /api/jobs?mine=true returns only caller's jobs with applications_count populated. Pytest full suite GREEN: 102/102 (89 baseline + 13 new iter-6). Frontend web preview smoke: app boots → Welcome → Create account → I'm a Job Seeker (default) → Send OTP (mock_otp 167688 returned & rendered) → 6-digit OTP boxes auto-advance → Verify → /student/dashboard renders with resume score hero (NO credits/wallet card), Book Mock Interview + Apply for Referral CTAs, Leaderboard rank card ('Not ranked yet'), Complete-profile prompt, and tab bar Home/Jobs/Mock Interviews/LeadBoard/Profile. Pro tab layout statically verified in /app/frontend/app/professional/_layout.tsx: Home → Interviews → My Jobs → Post → Profile (refer + payout + my-jobs/[id] correctly registered with href:null so they don't appear in the tab bar).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/jobs?mine=true", "issue": "`posting_reward_paid` is present on the job document only AFTER it is set to true (Mongo doesn't materialize default false). Spec said the response should include `applications_count + posting_reward_paid` — applications_count is always populated; posting_reward_paid will be present once paid and ABSENT otherwise. Cosmetic; consider `j.setdefault('posting_reward_paid', False)` in the response loop for consistency."},
+      {"endpoint": "SendGrid", "issue": "Carried over: SendGrid sends still return 401 in this env. Mock OTP fallback (TEST_RETURN_OTP=1) keeps tests + UI flow alive; production emails silently dropped."},
+      {"endpoint": "POST /api/jobs/{id}/close & /reopen", "issue": "Carried over: still returns {message:'...'} without echoing new status. Cosmetic."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "OTP screen", "issue": "Carried over: 'Mock OTP: 167688' panel is rendered directly on the verify screen whenever response.mock_otp is present. Should be gated on __DEV__ / EXPO_PUBLIC_SHOW_MOCK_OTP so it can never leak into production.", "testID": "n/a", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "global", "issues": ["Carried over: 'shadow*' style props deprecated (use boxShadow); Picker props.pointerEvents deprecated (move into style). Non-blocking RN-Web warnings."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration6.py",
+    "/app/backend/tests/test_iteration5.py",
+    "/app/backend/tests/test_iteration4.py",
+    "/app/backend/tests/test_referme_api.py",
+    "/app/test_reports/pytest/pytest_iter6.xml",
+    "/app/test_reports/pytest/pytest_iter6_baseline.xml"
+  ],
+  "action_items": [
+    "(Optional, polish) Annotate `posting_reward_paid: false` on job rows in GET /api/jobs so the field is always present, matching the iter-6 contract claim of 'includes applications_count + posting_reward_paid'.",
+    "(Carried over) Gate Mock OTP panel on OTP screen behind __DEV__ / EXPO_PUBLIC_SHOW_MOCK_OTP.",
+    "(Carried over Config) Fix SendGrid API key (currently 401) or remove the warning spam.",
+    "(Carried over) /jobs/{id}/close & /reopen should echo updated status object.",
+    "(Carried over) Replace 'shadow*' style props with boxShadow and move Picker pointerEvents into style."
+  ],
+  "critical_code_review_comments": [
+    "server.py is now 2073 lines — splitting into routers (auth, profile, jobs, interviews, applications, leaderboard, wallet, admin, payouts) is overdue.",
+    "complete_interview tightens the contract well: requires booked status, both-joined, >=15min since start_at, and persists candidate_rating + candidate_feedback, then aggregates pro running average via rating*prev_count formula and rounds to 2dp — correct.",
+    "apply_job's posting_reward_paid guard relies on a single read-then-write (find_one → count_documents → update_one with $set). Under burst concurrent applies the count could exceed 4 before $set lands, but the `not job.get('posting_reward_paid')` precondition + idempotent $set means at worst two parallel applies might both credit +100. Consider a conditional update `update_one({'id': job_id, 'posting_reward_paid': {'$ne': True}}, {'$set': {'posting_reward_paid': True}})` and only credit on res.modified_count == 1.",
+    "refer_own_applicant returns early 200 with {'message':'Already referred'} when status is already referred/hired/hired_pending — silently OK rather than 409. Acceptable but worth documenting in the OpenAPI spec.",
+    "leaderboard_pros caps at top 50 with no pagination — a fresh pro can fall off the list in a busy environment; if 'Pro leaderboard row includes rating' is a hard contract for ALL pros, paginate or add a /me row endpoint."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration6.py (NEW — 13 iter-6 contract tests)"
+  ],
+  "success_rate": {"backend": "100% (102/102 incl. 13 new iter-6)", "frontend": "100% on tested flow (welcome → signup → student dashboard renders WITHOUT credits/wallet card, with resume score hero + CTAs + leaderboard + complete-profile prompt; pro tab order verified statically: Home/Interviews/My Jobs/Post/Profile)"},
+  "seed_data_creation": "Throwaway test users created via signup+verify-otp helper (random @referme.io). Test creates several student/pro/employer accounts per run; safe to leave in test DB.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Iter-6 contract endpoints all verified: POST /api/interviews/{slot_id}/joined (auth, addToSet joined_by, 403 if not pro/student of slot); POST /api/interviews/{slot_id}/complete (body: rating int 1-10 + feedback?: str; needs both joined + >=INTERVIEW_MIN_DURATION_MIN=15 min from start; awards INTERVIEW_PRO_REWARD=35 to pro; updates user.rating running avg + ratings_count); POST /api/jobs/apply auto-fires JOB_POST_REWARD=100 ONE-TIME on the 4th unique non-withdrawn application IF posted_by_role=='professional' (job.posting_reward_paid flag); POST /api/applications/hire requires note OR proof_base64, sets status='hired_pending' and inserts pending status_changes row; POST /api/admin/status-changes/action approve moves status to 'hired', credits employer_id (job poster) HIRING_REWARD=1500 and referrer_pro_id (if set & distinct) REFERRAL_HIRED_REWARD=500; POST /api/applications/refer-own pro-only, must be posting pro of pro-posted job, pipeline applied → shortlisted → referred + referrer_pro_id; GET /api/jobs as pro: own + employer-open jobs only, other pros' posts hidden; ?mine=true returns own-only with applications_count populated. To exercise these via pytest, use pymongo (sync) to backdate slots and seed joined_by — fixtures in conftest.py make signup+verify trivial.",
+  "rca_of_issue": "No bugs found in iter-6 backend. Two transient test-authoring issues were self-corrected: (1) initial pro leaderboard test asserted that the freshly-created pro fixture appears as a row, but leaderboard_pros returns only top 50 by composite score and a brand-new pro with score=0 can fall off when the DB has many older pros — rewritten to assert the SCHEMA of row[0] (rating + ratings_count fields present and typed numerically). (2) initial admin-approve test called /referrals/refer (which doesn't exist); switched to POST /api/referrals with student_id+job_id, which creates an application_with referrer_pro_id directly (matches existing test_referral_and_hire_flow pattern)."
+}

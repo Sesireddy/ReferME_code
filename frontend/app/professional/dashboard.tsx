@@ -14,6 +14,7 @@ export default function ProDashboard() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
   const [rank, setRank] = useState<number | null>(null);
+  const [rating, setRating] = useState<{ rating: number; count: number }>({ rating: 0, count: 0 });
   const [bookings, setBookings] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -23,7 +24,12 @@ export default function ProDashboard() {
       const me = await api<{ user: any }>("/auth/me");
       setUser(me.user);
       const lb = await api<any[]>("/leaderboard/professionals");
-      setRank(lb.find((x) => x.is_me)?.rank ?? null);
+      const meRow = lb.find((x) => x.is_me);
+      setRank(meRow?.rank ?? null);
+      setRating({
+        rating: meRow?.rating ?? 0,
+        count: meRow?.ratings_count ?? 0,
+      });
       try {
         const bk = await api<any[]>("/interviews/my-bookings");
         setBookings(bk || []);
@@ -46,26 +52,32 @@ export default function ProDashboard() {
         </TouchableOpacity>
       </View>
 
+      {/* Hero: stats + rating — NO credit balance here (Profile → Wallet only) */}
       <LinearGradient colors={["#7C3AED", "#A855F7"]} start={{x:0,y:0}} end={{x:1,y:1}} style={styles.hero}>
-        <View>
-          <Txt style={{ color: "#fff", opacity: 0.85 }} variant="label">Credits earned</Txt>
-          <Txt style={{ color: "#fff", fontSize: 44, fontWeight: "800", marginTop: 4 }}>{user?.credits ?? 0}</Txt>
-          <Txt style={{ color: "#fff", opacity: 0.9 }}>Redeem after 500 credits</Txt>
+        <View style={{ flex: 1 }}>
+          <Txt style={{ color: "#fff", opacity: 0.85 }} variant="label">Your impact</Txt>
+          <View style={{ flexDirection: "row", marginTop: 8, alignItems: "baseline" }}>
+            <Txt style={{ color: "#fff", fontSize: 36, fontWeight: "800" }}>{user?.interviews_conducted ?? 0}</Txt>
+            <Txt style={{ color: "#fff", fontSize: 14, opacity: 0.85, marginLeft: 6 }}>interviews</Txt>
+            <Txt style={{ color: "#fff", fontSize: 36, fontWeight: "800", marginLeft: 18 }}>{user?.referrals_made ?? 0}</Txt>
+            <Txt style={{ color: "#fff", fontSize: 14, opacity: 0.85, marginLeft: 6 }}>referrals</Txt>
+          </View>
+          <View style={{ flexDirection: "row", marginTop: 10, alignItems: "center" }}>
+            <Ionicons name="star" size={18} color="#FFD566" />
+            <Txt style={{ color: "#fff", marginLeft: 6, fontWeight: "700" }}>
+              {rating.rating ? `${rating.rating.toFixed(1)}/10` : "No ratings yet"}
+            </Txt>
+            {rating.count > 0 ? (
+              <Txt style={{ color: "#fff", opacity: 0.8, marginLeft: 6 }} variant="small">
+                ({rating.count} review{rating.count > 1 ? "s" : ""})
+              </Txt>
+            ) : null}
+          </View>
+        </View>
+        <View style={styles.heroIcon}>
+          <Ionicons name="ribbon" size={56} color="#fff" />
         </View>
       </LinearGradient>
-
-      <View style={styles.row}>
-        <Card style={styles.statBox}>
-          <Txt variant="label" style={{ color: "#7C3AED" }}>Interviews</Txt>
-          <Txt variant="h1" style={{ marginTop: 4 }}>{user?.interviews_conducted ?? 0}</Txt>
-          <Txt variant="small" style={{ color: colors.textSecondary }}>conducted</Txt>
-        </Card>
-        <Card style={styles.statBox}>
-          <Txt variant="label" style={{ color: colors.primary }}>Referrals</Txt>
-          <Txt variant="h1" style={{ marginTop: 4 }}>{user?.referrals_made ?? 0}</Txt>
-          <Txt variant="small" style={{ color: colors.textSecondary }}>made</Txt>
-        </Card>
-      </View>
 
       <Card style={{ marginTop: 12 }}>
         <View style={{ flexDirection: "row", alignItems: "center" }}>
@@ -84,14 +96,31 @@ export default function ProDashboard() {
           <Card style={{ borderColor: "#7C3AED", borderWidth: 2 }}>
             <Ionicons name="videocam" size={24} color="#7C3AED" />
             <Txt variant="h3" style={{ marginTop: 8 }}>Conduct Interview</Txt>
-            <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 4 }}>+25 credits each</Txt>
+            <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 4 }}>+35 credits / session</Txt>
+          </Card>
+        </TouchableOpacity>
+        <TouchableOpacity testID="cta-post-job" style={{ flex: 1 }} onPress={() => router.push("/professional/post-job")}>
+          <Card style={{ borderColor: colors.primary, borderWidth: 2 }}>
+            <Ionicons name="briefcase" size={24} color={colors.primary} />
+            <Txt variant="h3" style={{ marginTop: 8 }}>Post a Job</Txt>
+            <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 4 }}>+100 at 4 apps</Txt>
+          </Card>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.row}>
+        <TouchableOpacity testID="cta-my-jobs" style={{ flex: 1 }} onPress={() => router.push("/professional/my-jobs")}>
+          <Card style={{ borderColor: colors.secondary, borderWidth: 2 }}>
+            <Ionicons name="folder-open" size={24} color={colors.textPrimary} />
+            <Txt variant="h3" style={{ marginTop: 8 }}>My Posted Jobs</Txt>
+            <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 4 }}>Manage applicants</Txt>
           </Card>
         </TouchableOpacity>
         <TouchableOpacity testID="cta-refer" style={{ flex: 1 }} onPress={() => router.push("/professional/refer")}>
-          <Card style={{ borderColor: colors.secondary, borderWidth: 2 }}>
+          <Card style={{ borderColor: "#FFD566", borderWidth: 2 }}>
             <Ionicons name="share-social" size={24} color={colors.textPrimary} />
             <Txt variant="h3" style={{ marginTop: 8 }}>Refer Candidate</Txt>
-            <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 4 }}>+500 if hired</Txt>
+            <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 4 }}>+1500 if hired</Txt>
           </Card>
         </TouchableOpacity>
       </View>
@@ -135,8 +164,8 @@ export default function ProDashboard() {
 const styles = StyleSheet.create({
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 },
   iconBtn: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
-  hero: { padding: 20, borderRadius: radius.xxl },
+  hero: { padding: 20, borderRadius: radius.xxl, flexDirection: "row", alignItems: "center" },
+  heroIcon: { width: 80, alignItems: "center", justifyContent: "center", opacity: 0.85 },
   row: { flexDirection: "row", gap: 12, marginTop: 12 },
-  statBox: { flex: 1 },
   rankIcon: { width: 56, height: 56, borderRadius: 18, alignItems: "center", justifyContent: "center" },
 });

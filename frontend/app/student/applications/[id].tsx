@@ -146,7 +146,7 @@ export default function ApplicationDetail() {
             <Card style={{ marginTop: 12, backgroundColor: "#F3EEFF" }}>
               <Txt variant="label" style={{ color: "#7C3AED" }}>⭐ Referral</Txt>
               <Txt variant="h3" style={{ marginTop: 4 }}>Referred by {appdoc.referrer_pro_name}</Txt>
-              {appdoc.note ? <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 4 }}>"{appdoc.note}"</Txt> : null}
+              {appdoc.note ? <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 4 }}>&quot;{appdoc.note}&quot;</Txt> : null}
             </Card>
           ) : null}
 

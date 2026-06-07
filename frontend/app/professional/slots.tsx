@@ -1,12 +1,12 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { View, StyleSheet, Alert, TouchableOpacity } from "react-native";
+import { View, StyleSheet, Alert, TouchableOpacity, Modal, ScrollView } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Screen } from "@/src/components/Screen";
 import { Txt } from "@/src/components/Txt";
 import { Card } from "@/src/components/Card";
 import { Button } from "@/src/components/Button";
 import { Input } from "@/src/components/Input";
-import { colors } from "@/src/theme/tokens";
+import { colors, radius } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
 
 function tomorrowDateStr() {
@@ -32,6 +32,11 @@ export default function ProSlots() {
   const [expYears, setExpYears] = useState("0");
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+
+  const [completingSlot, setCompletingSlot] = useState<any | null>(null);
+  const [ratingValue, setRatingValue] = useState<number>(8);
+  const [feedback, setFeedback] = useState("");
+  const [submittingComplete, setSubmittingComplete] = useState(false);
 
   const load = useCallback(async () => {
     setRefreshing(true);
@@ -84,13 +89,30 @@ export default function ProSlots() {
     }
   }
 
-  async function complete(slotId: string) {
+  async function complete(slot: any) {
+    setCompletingSlot(slot);
+    setRatingValue(8);
+    setFeedback("");
+  }
+
+  async function submitComplete() {
+    if (!completingSlot) return;
+    if (ratingValue < 1 || ratingValue > 10) {
+      return Alert.alert("Pick a rating", "Rating must be 1-10");
+    }
+    setSubmittingComplete(true);
     try {
-      const r = await api<any>(`/interviews/${slotId}/complete`, { method: "POST" });
-      Alert.alert("Earned", `+${r.earned} credits`);
+      const r = await api<any>(`/interviews/${completingSlot.id}/complete`, {
+        method: "POST",
+        body: { rating: ratingValue, feedback },
+      });
+      setCompletingSlot(null);
+      Alert.alert("Earned", `+${r.earned} credits\nCandidate rated ${r.candidate_rating}/10\nYour rating: ${r.pro_rating}/10`);
       load();
     } catch (e: any) {
       Alert.alert("Failed", e.message);
+    } finally {
+      setSubmittingComplete(false);
     }
   }
 
@@ -148,7 +170,7 @@ export default function ProSlots() {
                 </Txt>
               </View>
               {s.status === "booked" ? (
-                <Button testID={`complete-${s.id}`} title="Done" onPress={() => complete(s.id)} style={{ height: 40, paddingHorizontal: 14 }} />
+                <Button testID={`complete-${s.id}`} title="Done" onPress={() => complete(s)} style={{ height: 40, paddingHorizontal: 14 }} />
               ) : (
                 <View style={[styles.pill, { backgroundColor: s.status === "completed" ? colors.success : colors.surfaceAlt }]}>
                   <Txt variant="small" style={{ color: s.status === "completed" ? "#fff" : colors.textSecondary, fontWeight: "700" }}>{s.status}</Txt>
@@ -158,10 +180,57 @@ export default function ProSlots() {
           </Card>
         ))}
       </View>
+
+      <Modal visible={!!completingSlot} transparent animationType="slide" onRequestClose={() => setCompletingSlot(null)}>
+        <View style={styles.modalBg}>
+          <View style={styles.modalSheet}>
+            <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 6 }}>
+              <Ionicons name="star" size={22} color="#FFB347" />
+              <Txt variant="h2" style={{ marginLeft: 8 }}>Rate the candidate</Txt>
+            </View>
+            <Txt variant="small" style={{ color: colors.textSecondary, marginBottom: 12 }}>
+              {completingSlot?.student_name} · {fmtRange(completingSlot || {})}
+            </Txt>
+            <Txt variant="label" style={{ marginBottom: 6 }}>Score (1–10)</Txt>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
+              {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+                <TouchableOpacity
+                  key={n}
+                  testID={`rating-${n}`}
+                  onPress={() => setRatingValue(n)}
+                  style={[styles.rateBtn, ratingValue === n ? styles.rateBtnActive : null]}
+                >
+                  <Txt style={{ fontWeight: "700", color: ratingValue === n ? "#fff" : colors.textPrimary }}>{n}</Txt>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <Input
+              testID="feedback"
+              label="Feedback (optional)"
+              placeholder="Strengths, areas to improve…"
+              value={feedback}
+              onChangeText={setFeedback}
+              multiline
+            />
+            <View style={{ height: 8 }} />
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              <Button title="Cancel" variant="secondary" onPress={() => setCompletingSlot(null)} style={{ flex: 1 }} />
+              <Button testID="submit-complete" title={`Mark Done · +35`} onPress={submitComplete} loading={submittingComplete} style={{ flex: 1 }} />
+            </View>
+            <Txt variant="small" style={{ marginTop: 8, color: colors.textSecondary, textAlign: "center" }}>
+              Requires both participants to have joined the session and a minimum 15 minutes since the scheduled start.
+            </Txt>
+          </View>
+        </View>
+      </Modal>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
   pill: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
+  modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "flex-end" },
+  modalSheet: { backgroundColor: colors.bg, padding: 20, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: "85%" },
+  rateBtn: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceAlt, marginRight: 8 },
+  rateBtnActive: { backgroundColor: "#7C3AED" },
 });

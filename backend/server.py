@@ -46,8 +46,12 @@ TEST_RETURN_OTP = os.environ.get("TEST_RETURN_OTP", "").strip() in ("1", "true",
 
 # Business rules
 ACTION_COST = 49  # credits per action (apply / book)
-INTERVIEW_PRO_REWARD = 25
+INTERVIEW_PRO_REWARD = 35  # credits awarded to pro for a completed mock interview
+JOB_POST_REWARD = 100  # one-time credits awarded when a posted job gets >= JOB_POST_REWARD_MIN_APPS valid applications
+JOB_POST_REWARD_MIN_APPS = 4
 REFERRAL_HIRED_REWARD = 500
+HIRING_REWARD = 1500  # credits awarded to job poster on admin-approved hire
+INTERVIEW_MIN_DURATION_MIN = 15  # minimum minutes interview must run before it qualifies for the reward
 PAYOUT_MIN = 500
 FIRST_DEPOSIT_MIN_INR = 199
 FIRST_DEPOSIT_BONUS_CREDITS = 398  # ₹199 → 398 credits
@@ -328,6 +332,20 @@ class ReferBody(BaseModel):
 
 class HireBody(BaseModel):
     application_id: str
+    proof_base64: Optional[str] = None
+    proof_filename: Optional[str] = None
+    proof_mime_type: Optional[str] = None
+    note: Optional[str] = ""
+
+
+class CompleteInterviewBody(BaseModel):
+    rating: int = Field(ge=1, le=10)
+    feedback: Optional[str] = ""
+
+
+class ReferOwnJobBody(BaseModel):
+    application_id: str
+    note: Optional[str] = ""
 
 
 class PayoutBody(BaseModel):
@@ -1031,14 +1049,48 @@ async def my_bookings(
 
 
 @api.post("/interviews/{slot_id}/complete")
-async def complete_interview(slot_id: str, u: dict = Depends(require_role(["professional"]))):
+async def complete_interview(
+    slot_id: str,
+    body: CompleteInterviewBody,
+    u: dict = Depends(require_role(["professional"])),
+):
     slot = await db.interview_slots.find_one({"id": slot_id}, {"_id": 0})
     if not slot or slot["pro_id"] != u["id"]:
         raise HTTPException(status_code=404, detail="Slot not found")
     if slot["status"] != "booked":
         raise HTTPException(status_code=400, detail="Slot not booked")
-    await db.interview_slots.update_one({"id": slot_id}, {"$set": {"status": "completed", "completed_at": now_iso()}})
-    await _credit_user(u["id"], INTERVIEW_PRO_REWARD, "interview_conducted", {"slot_id": slot_id})
+    if not slot.get("student_id"):
+        raise HTTPException(status_code=400, detail="No candidate booked for this slot")
+    # Both-joined validation: require both participants to have joined at least once
+    joined = slot.get("joined_by") or []
+    if slot["pro_id"] not in joined or slot["student_id"] not in joined:
+        raise HTTPException(status_code=400, detail="Both participants must join the interview before it can be completed")
+    # Minimum duration validation: scheduled slot must have started at least INTERVIEW_MIN_DURATION_MIN ago
+    try:
+        sd = datetime.fromisoformat((slot.get("start_at") or "").replace("Z", "+00:00"))
+    except Exception:
+        sd = None
+    now_dt = datetime.now(timezone.utc)
+    if sd and (now_dt - sd) < timedelta(minutes=INTERVIEW_MIN_DURATION_MIN):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Interview must run for at least {INTERVIEW_MIN_DURATION_MIN} minutes before completion",
+        )
+    await db.interview_slots.update_one(
+        {"id": slot_id},
+        {"$set": {
+            "status": "completed",
+            "completed_at": now_iso(),
+            "candidate_rating": body.rating,
+            "candidate_feedback": body.feedback or "",
+        }},
+    )
+    # Pro reward
+    await _credit_user(u["id"], INTERVIEW_PRO_REWARD, "mock_interview_reward", {
+        "slot_id": slot_id,
+        "candidate_id": slot["student_id"],
+        "rating": body.rating,
+    })
     # Increment student interviews_attended and refresh resume score
     student = await db.users.find_one_and_update(
         {"id": slot["student_id"]},
@@ -1053,12 +1105,46 @@ async def complete_interview(slot_id: str, u: dict = Depends(require_role(["prof
         await push_notification(
             student["id"],
             "Interview completed 🎓",
-            f"Your resume score is now {new_score}/100. Keep going!",
+            f"Your interviewer rated you {body.rating}/10. Resume score: {new_score}/100.",
             "success",
         )
-    await db.users.update_one({"id": u["id"]}, {"$inc": {"interviews_conducted": 1}})
-    await push_notification(u["id"], "Earned +25 credits 🎯", "Interview marked completed.", "success")
-    return {"message": "Completed", "earned": INTERVIEW_PRO_REWARD}
+    # Aggregate pro rating: store running average and total ratings count
+    pro = await db.users.find_one({"id": u["id"]}, {"_id": 0})
+    prev_count = int(pro.get("ratings_count") or 0)
+    prev_avg = float(pro.get("rating") or 0)
+    new_count = prev_count + 1
+    new_avg = round(((prev_avg * prev_count) + body.rating) / new_count, 2)
+    await db.users.update_one(
+        {"id": u["id"]},
+        {
+            "$inc": {"interviews_conducted": 1, "ratings_count": 1},
+            "$set": {"rating": new_avg},
+        },
+    )
+    await push_notification(
+        u["id"],
+        f"Earned +{INTERVIEW_PRO_REWARD} credits 🎯",
+        f"Interview marked completed. Your rating: {new_avg}/10 ({new_count} interviews).",
+        "success",
+    )
+    return {"message": "Completed", "earned": INTERVIEW_PRO_REWARD, "pro_rating": new_avg, "candidate_rating": body.rating}
+
+
+@api.post("/interviews/{slot_id}/joined")
+async def mark_interview_joined(slot_id: str, u: dict = Depends(current_user)):
+    """Frontend hits this when the user actually opens the Jitsi room.
+    Used by complete_interview to verify both parties showed up.
+    """
+    slot = await db.interview_slots.find_one({"id": slot_id}, {"_id": 0})
+    if not slot:
+        raise HTTPException(status_code=404, detail="Slot not found")
+    if u["id"] not in (slot["pro_id"], slot.get("student_id")):
+        raise HTTPException(status_code=403, detail="Not your session")
+    await db.interview_slots.update_one(
+        {"id": slot_id},
+        {"$addToSet": {"joined_by": u["id"]}},
+    )
+    return {"message": "Joined"}
 
 
 # ------------------- Jobs & Applications & Referrals -------------------
@@ -1110,14 +1196,23 @@ async def list_jobs(
     exp_min: Optional[int] = Query(None),
     exp_max: Optional[int] = Query(None),
     company: Optional[str] = Query(None),
+    mine: bool = Query(False, description="When true (pro/employer), return only jobs posted by the current user"),
 ):
     q: dict = {}
     if u["role"] == "employer":
         q["employer_id"] = u["id"]
     elif u["role"] == "professional":
-        # Show all open jobs + ones they posted
-        q["$or"] = [{"status": "open"}, {"employer_id": u["id"]}]
+        if mine:
+            q["employer_id"] = u["id"]
+        else:
+            # Pros see: their own posts + open jobs posted by employers.
+            # Jobs posted by OTHER pros are intentionally hidden so referrals stay scoped to the posting pro.
+            q["$or"] = [
+                {"employer_id": u["id"]},
+                {"status": "open", "posted_by_role": {"$ne": "professional"}},
+            ]
     else:
+        # students & admin
         q["status"] = "open"
     if skill:
         q["skills_required"] = {"$regex": skill, "$options": "i"}
@@ -1139,6 +1234,18 @@ async def list_jobs(
         for j in jobs:
             j["applied"] = j["id"] in by_job
             j["application_status"] = by_job.get(j["id"])
+    # Annotate application count + reward status for employer/pro on their own jobs
+    if u["role"] in ("employer", "professional"):
+        own_ids = [j["id"] for j in jobs if j.get("employer_id") == u["id"]]
+        if own_ids:
+            agg = await db.applications.aggregate([
+                {"$match": {"job_id": {"$in": own_ids}, "status": {"$nin": ["withdrawn"]}}},
+                {"$group": {"_id": "$job_id", "n": {"$sum": 1}}},
+            ]).to_list(1000)
+            counts = {r["_id"]: r["n"] for r in agg}
+            for j in jobs:
+                if j.get("employer_id") == u["id"]:
+                    j["applications_count"] = counts.get(j["id"], 0)
     return jobs
 
 
@@ -1280,6 +1387,29 @@ async def apply_job(body: ApplyJobBody, u: dict = Depends(require_role(["student
     await db.applications.insert_one(app_doc)
     await push_notification(u["id"], "Application sent ✉️", f"Applied to {job['title']}", "success")
     await push_notification(job["employer_id"], "New applicant", f"For {job['title']}", "info")
+
+    # Pro-poster reward: when the job (posted by a professional) reaches >= JOB_POST_REWARD_MIN_APPS valid
+    # non-withdrawn applications, the poster receives a one-time JOB_POST_REWARD credit bonus.
+    if job.get("posted_by_role") == "professional" and not job.get("posting_reward_paid"):
+        valid_count = await db.applications.count_documents({
+            "job_id": job["id"],
+            "status": {"$nin": ["withdrawn"]},
+        })
+        if valid_count >= JOB_POST_REWARD_MIN_APPS:
+            await db.jobs.update_one({"id": job["id"]}, {"$set": {"posting_reward_paid": True}})
+            await _credit_user(
+                job["employer_id"],
+                JOB_POST_REWARD,
+                "job_post_reward",
+                {"job_id": job["id"], "job_title": job.get("title"), "applications": valid_count},
+            )
+            await push_notification(
+                job["employer_id"],
+                f"Earned +{JOB_POST_REWARD} credits 💼",
+                f"Your post '{job.get('title')}' crossed {JOB_POST_REWARD_MIN_APPS} applications!",
+                "success",
+            )
+
     return {"message": "Applied", "used_free": use_free}
 
 
@@ -1361,19 +1491,92 @@ async def applications_pool(_: dict = Depends(require_role(["professional"]))):
 
 
 @api.post("/applications/hire")
-async def hire_candidate(body: HireBody, u: dict = Depends(require_role(["employer"]))):
+async def hire_candidate(body: HireBody, u: dict = Depends(require_role(["employer", "professional"]))):
+    """Mark a candidate as hired. This goes into 'hired_pending' status until admin approves
+    and the +HIRING_REWARD credits go to the job poster after admin approval.
+    Pros can only hire candidates from jobs THEY posted.
+    """
     appdoc = await db.applications.find_one({"id": body.application_id}, {"_id": 0})
-    if not appdoc or appdoc["employer_id"] != u["id"]:
+    if not appdoc:
         raise HTTPException(status_code=404, detail="Application not found")
-    if appdoc["status"] == "hired":
-        raise HTTPException(status_code=400, detail="Already hired")
-    await db.applications.update_one({"id": appdoc["id"]}, {"$set": {"status": "hired", "hired_at": now_iso()}})
-    await push_notification(appdoc["student_id"], "You're hired! 🎉", f"For {appdoc['job_title']}", "success")
-    if appdoc.get("referrer_pro_id"):
-        await _credit_user(appdoc["referrer_pro_id"], REFERRAL_HIRED_REWARD, "referral_hired", {"application_id": appdoc["id"]})
-        await db.users.update_one({"id": appdoc["referrer_pro_id"]}, {"$inc": {"successful_referrals": 1}})
-        await push_notification(appdoc["referrer_pro_id"], "Referral bonus 💸", f"+{REFERRAL_HIRED_REWARD} credits — your candidate was hired!", "success")
-    return {"message": "Candidate hired"}
+    if appdoc["employer_id"] != u["id"]:
+        raise HTTPException(status_code=403, detail="Only the job poster can mark this candidate hired")
+    if appdoc["status"] in ("hired", "hired_pending"):
+        raise HTTPException(status_code=400, detail="Already submitted for hire approval")
+    # Require proof screenshot for the hiring reward
+    if not body.proof_base64 and not body.note:
+        raise HTTPException(status_code=400, detail="Please attach supporting evidence or a note")
+    change = {
+        "id": new_id(),
+        "application_id": body.application_id,
+        "requested_by_id": u["id"],
+        "requested_by_role": u["role"],
+        "requested_by_name": u.get("name") or u["email"].split("@")[0],
+        "from_status": appdoc["status"],
+        "to_status": "hired",
+        "proof_base64": body.proof_base64,
+        "proof_filename": body.proof_filename,
+        "proof_mime_type": body.proof_mime_type,
+        "note": body.note or "",
+        "status": "pending",
+        "admin_note": "",
+        "created_at": now_iso(),
+    }
+    await db.status_changes.insert_one(change)
+    await db.applications.update_one(
+        {"id": body.application_id},
+        {"$set": {"status": "hired_pending", "hired_pending_at": now_iso()}},
+    )
+    await push_notification(u["id"], "Hire submitted for admin review ⏳", "We'll credit you 1500 once approved.", "info")
+    await push_notification(appdoc["student_id"], "Hire submitted 🎉", f"For {appdoc['job_title']} — pending admin verification.", "info")
+    return {"message": "Submitted for admin verification", "change_id": change["id"]}
+
+
+@api.post("/applications/refer-own")
+async def refer_own_applicant(body: ReferOwnJobBody, u: dict = Depends(require_role(["professional"]))):
+    """The pro who posted the job can refer an applicant directly from their My Posted Jobs.
+    Status pipeline: applied → shortlisted → referred (in one shot, with history).
+    """
+    appdoc = await db.applications.find_one({"id": body.application_id}, {"_id": 0})
+    if not appdoc:
+        raise HTTPException(status_code=404, detail="Application not found")
+    job = await db.jobs.find_one({"id": appdoc["job_id"]}, {"_id": 0})
+    if not job or job.get("employer_id") != u["id"] or job.get("posted_by_role") != "professional":
+        raise HTTPException(status_code=403, detail="Only the posting professional can refer this candidate")
+    if appdoc["status"] in ("referred", "hired", "hired_pending"):
+        return {"message": "Already referred", "status": appdoc["status"]}
+    hist = list(appdoc.get("status_history") or [])
+    for st in ("shortlisted", "referred"):
+        hist.append({"status": st, "at": now_iso(), "by": u["id"], "note": body.note or ""})
+    await db.applications.update_one(
+        {"id": appdoc["id"]},
+        {"$set": {
+            "status": "referred",
+            "status_history": hist,
+            "referrer_pro_id": u["id"],
+            "referrer_pro_name": u.get("name") or u["email"].split("@")[0],
+            "referral_note": body.note or "",
+        }},
+    )
+    await db.users.update_one({"id": u["id"]}, {"$inc": {"referrals_made": 1}})
+    await push_notification(appdoc["student_id"], "You've been referred 🌟", f"For {appdoc['job_title']}", "success")
+    await push_notification(u["id"], "Referral submitted ✅", f"For {appdoc['job_title']}", "success")
+    # Admin gets a heads-up too via status_changes log (best-effort)
+    await db.status_changes.insert_one({
+        "id": new_id(),
+        "application_id": appdoc["id"],
+        "requested_by_id": u["id"],
+        "requested_by_role": "professional",
+        "requested_by_name": u.get("name") or u["email"].split("@")[0],
+        "from_status": appdoc["status"],
+        "to_status": "referred",
+        "note": body.note or "",
+        "status": "approved",  # auto-approved (pro is the job owner)
+        "auto": True,
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+    })
+    return {"message": "Referred", "application_id": appdoc["id"]}
 
 
 # ------------------- Status pipeline (Applied → Hired) -------------------
@@ -1452,15 +1655,40 @@ async def admin_status_action(body: AdminStatusActionBody, _: dict = Depends(adm
                 "note": change.get("note") or "",
             }]
             update_fields = {"status": change["to_status"], "status_history": new_hist}
+            if change["to_status"] == "hired":
+                update_fields["hired_at"] = now_iso()
             await db.applications.update_one({"id": appdoc["id"]}, {"$set": update_fields})
-            # If status hired and referrer present, credit them
-            if change["to_status"] == "hired" and appdoc.get("referrer_pro_id"):
-                await _credit_user(appdoc["referrer_pro_id"], REFERRAL_HIRED_REWARD, "referral_hired", {"application_id": appdoc["id"]})
-                await db.users.update_one({"id": appdoc["referrer_pro_id"]}, {"$inc": {"successful_referrals": 1}})
-                await push_notification(appdoc["referrer_pro_id"], "Referral bonus 💸", f"+{REFERRAL_HIRED_REWARD} credits — candidate hired!", "success")
+            # Hiring reward → goes to the JOB POSTER (employer/pro who owns the job)
+            if change["to_status"] == "hired":
+                job_owner_id = appdoc.get("employer_id")
+                if job_owner_id:
+                    await _credit_user(
+                        job_owner_id,
+                        HIRING_REWARD,
+                        "hiring_reward",
+                        {
+                            "application_id": appdoc["id"],
+                            "candidate_name": appdoc.get("student_name"),
+                            "candidate_id": appdoc.get("student_id"),
+                            "job_id": appdoc.get("job_id"),
+                            "job_title": appdoc.get("job_title"),
+                        },
+                    )
+                    await db.users.update_one({"id": job_owner_id}, {"$inc": {"successful_hires": 1}})
+                    await push_notification(
+                        job_owner_id,
+                        f"Hiring bonus 💸 +{HIRING_REWARD} credits",
+                        f"Verified hire of {appdoc.get('student_name')} for {appdoc.get('job_title')}.",
+                        "success",
+                    )
+                # Referrer (separate person from job poster) keeps the smaller referral bonus
+                if appdoc.get("referrer_pro_id") and appdoc.get("referrer_pro_id") != job_owner_id:
+                    await _credit_user(appdoc["referrer_pro_id"], REFERRAL_HIRED_REWARD, "referral_hired", {"application_id": appdoc["id"]})
+                    await db.users.update_one({"id": appdoc["referrer_pro_id"]}, {"$inc": {"successful_referrals": 1}})
+                    await push_notification(appdoc["referrer_pro_id"], "Referral bonus 💸", f"+{REFERRAL_HIRED_REWARD} credits — candidate hired!", "success")
             await push_notification(
                 appdoc["student_id"],
-                "Status updated 📈",
+                "Status updated 📈" if change["to_status"] != "hired" else "You're hired! 🎉",
                 f"Your application is now: {change['to_status'].replace('_', ' ').title()}",
                 "success",
             )
@@ -1545,7 +1773,12 @@ async def leaderboard_students(
 async def leaderboard_pros(u: dict = Depends(current_user)):
     pros = await db.users.find({"role": "professional"}, {"_id": 0, "password_hash": 0}).to_list(1000)
     def score(p: dict) -> int:
-        return p.get("interviews_conducted", 0) * 5 + p.get("referrals_made", 0) * 3 + p.get("successful_referrals", 0) * 20
+        return (
+            p.get("interviews_conducted", 0) * 5
+            + p.get("referrals_made", 0) * 3
+            + p.get("successful_referrals", 0) * 20
+            + int(round(float(p.get("rating") or 0) * 4))  # rating weights ~max 40
+        )
     pros.sort(key=score, reverse=True)
     return [
         {
@@ -1556,6 +1789,8 @@ async def leaderboard_pros(u: dict = Depends(current_user)):
             "interviews_conducted": p.get("interviews_conducted", 0),
             "referrals_made": p.get("referrals_made", 0),
             "successful_referrals": p.get("successful_referrals", 0),
+            "rating": float(p.get("rating") or 0),
+            "ratings_count": int(p.get("ratings_count") or 0),
             "is_me": p["id"] == u["id"],
         }
         for i, p in enumerate(pros[:50])
