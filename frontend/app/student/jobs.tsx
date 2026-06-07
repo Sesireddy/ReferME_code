@@ -1,41 +1,60 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { View, StyleSheet, TouchableOpacity, Alert, Modal, ScrollView } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { View, StyleSheet, TouchableOpacity, Alert } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import { Screen } from "@/src/components/Screen";
 import { Txt } from "@/src/components/Txt";
 import { Card } from "@/src/components/Card";
 import { Button } from "@/src/components/Button";
+import { Input } from "@/src/components/Input";
+import { Picker } from "@/src/components/Picker";
 import { colors } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
 
-type Tab = "jobs" | "interview" | "applications";
+type Tab = "jobs" | "applications";
+
+const CAT_OPTS = [
+  { value: "", label: "All" },
+  { value: "fresher", label: "Fresher" },
+  { value: "experienced", label: "Experienced" },
+];
 
 export default function StudentJobs() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ tab?: string }>();
-  const [tab, setTab] = useState<Tab>((params.tab as Tab) || "jobs");
+  const [tab, setTab] = useState<Tab>("jobs");
   const [jobs, setJobs] = useState<any[]>([]);
-  const [pros, setPros] = useState<any[]>([]);
-  const [slots, setSlots] = useState<any[]>([]);
-  const [selectedPro, setSelectedPro] = useState<any | null>(null);
   const [apps, setApps] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
+
+  // Filters
+  const [skill, setSkill] = useState("");
+  const [location, setLocation] = useState("");
+  const [category, setCategory] = useState<string | null>("");
+  const [expMin, setExpMin] = useState("");
+  const [expMax, setExpMax] = useState("");
+  const [company, setCompany] = useState("");
 
   const load = useCallback(async () => {
     setRefreshing(true);
     try {
-      const [j, p, a] = await Promise.all([
-        api<any[]>("/jobs"),
-        api<any[]>("/professionals"),
+      const params = new URLSearchParams();
+      if (skill) params.set("skill", skill);
+      if (location) params.set("location", location);
+      if (category) params.set("category", category);
+      if (expMin) params.set("exp_min", expMin);
+      if (expMax) params.set("exp_max", expMax);
+      if (company) params.set("company", company);
+      const qs = params.toString();
+      const [j, a] = await Promise.all([
+        api<any[]>(`/jobs${qs ? "?" + qs : ""}`),
         api<any[]>("/applications"),
       ]);
       setJobs(j);
-      setPros(p);
       setApps(a);
     } catch {}
     setRefreshing(false);
-  }, []);
+  }, [skill, location, category, expMin, expMax, company]);
 
   useEffect(() => {
     load();
@@ -63,59 +82,62 @@ export default function StudentJobs() {
     }
   }
 
-  async function openPro(pro: any) {
-    setSelectedPro(pro);
-    try {
-      const s = await api<any[]>(`/interviews/slots?pro_id=${pro.id}`);
-      setSlots(s.filter((x) => x.status === "available"));
-    } catch {
-      setSlots([]);
-    }
-  }
-
-  async function bookSlot(slotId: string) {
-    try {
-      const r = await api<{ used_free?: boolean }>("/interviews/book", { method: "POST", body: { slot_id: slotId } });
-      Alert.alert("Booked", r.used_free ? "Used a free token!" : "49 credits spent.");
-      setSelectedPro(null);
-      load();
-    } catch (e: any) {
-      Alert.alert("Cannot book", e.message);
-    }
+  function clearFilters() {
+    setSkill(""); setLocation(""); setCategory(""); setExpMin(""); setExpMax(""); setCompany("");
   }
 
   return (
     <Screen refreshing={refreshing} onRefresh={load}>
-      <Txt variant="h1">Explore</Txt>
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+        <Txt variant="h1">Jobs</Txt>
+        <TouchableOpacity testID="filter-btn" onPress={() => setShowFilters((p) => !p)} style={styles.filterBtn}>
+          <Ionicons name="options" size={20} color={colors.textPrimary} />
+        </TouchableOpacity>
+      </View>
+
       <View style={styles.tabs}>
-        {(["jobs", "interview", "applications"] as Tab[]).map((t) => (
-          <TouchableOpacity
-            key={t}
-            testID={`tab-${t}`}
-            onPress={() => setTab(t)}
-            style={[styles.tab, tab === t && styles.tabActive]}
-          >
-            <Txt style={{ fontWeight: "700", color: tab === t ? "#fff" : colors.textPrimary, textTransform: "capitalize" }}>
-              {t === "interview" ? "Mock Interview" : t}
-            </Txt>
+        {(["jobs", "applications"] as Tab[]).map((t) => (
+          <TouchableOpacity key={t} testID={`tab-${t}`} onPress={() => setTab(t)} style={[styles.tab, tab === t && styles.tabActive]}>
+            <Txt style={{ fontWeight: "700", color: tab === t ? "#fff" : colors.textPrimary, textTransform: "capitalize" }}>{t}</Txt>
           </TouchableOpacity>
         ))}
       </View>
 
+      {showFilters && tab === "jobs" ? (
+        <Card style={{ marginTop: 12 }}>
+          <Input testID="f-skill" label="Skill" value={skill} onChangeText={setSkill} placeholder="React, Python" />
+          <Input testID="f-location" label="Location" value={location} onChangeText={setLocation} placeholder="Bengaluru / Remote" />
+          <Picker testID="f-cat" label="Category" options={CAT_OPTS} value={category} onChange={(v) => setCategory(v as string)} placeholder="All" />
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <View style={{ flex: 1 }}><Input testID="f-expmin" label="Min exp (years)" value={expMin} onChangeText={setExpMin} keyboardType="number-pad" /></View>
+            <View style={{ flex: 1 }}><Input testID="f-expmax" label="Max exp" value={expMax} onChangeText={setExpMax} keyboardType="number-pad" /></View>
+          </View>
+          <Input testID="f-company" label="Company" value={company} onChangeText={setCompany} placeholder="Acme" />
+          <TouchableOpacity testID="f-clear" onPress={clearFilters} style={{ alignSelf: "flex-end" }}>
+            <Txt style={{ color: colors.primary, fontWeight: "700" }}>Clear filters</Txt>
+          </TouchableOpacity>
+        </Card>
+      ) : null}
+
       {tab === "jobs" ? (
         <View style={{ gap: 12, marginTop: 16 }}>
-          {jobs.length === 0 ? <Txt variant="muted">No jobs yet — check back soon.</Txt> : null}
+          {jobs.length === 0 ? <Txt variant="muted">No jobs match — try adjusting filters.</Txt> : null}
           {jobs.map((j) => (
             <Card key={j.id}>
               <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
                 <View style={{ flex: 1 }}>
                   <Txt variant="h3">{j.title}</Txt>
                   <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 2 }}>
-                    {j.employer_name} · {j.location || "Anywhere"} · {j.salary_range || ""}
+                    {j.company || j.employer_name} · {j.location || "Anywhere"} · {j.salary_range || ""}
+                  </Txt>
+                  <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 2, textTransform: "capitalize" }}>
+                    {j.category || "fresher"}{j.experience_required ? ` · ${j.experience_required}y+` : ""}
                   </Txt>
                 </View>
-                {j.bulk_openings > 1 ? (
-                  <View style={styles.badge}><Txt variant="small" style={{ fontWeight: "700", color: colors.primary }}>{j.bulk_openings} openings</Txt></View>
+                {(j.open_positions || j.bulk_openings) > 1 ? (
+                  <View style={styles.badge}>
+                    <Txt variant="small" style={{ fontWeight: "700", color: colors.primary }}>{j.open_positions || j.bulk_openings} openings</Txt>
+                  </View>
                 ) : null}
               </View>
               <Txt variant="small" style={{ marginTop: 8, color: colors.textSecondary }} numberOfLines={2}>{j.description}</Txt>
@@ -141,26 +163,6 @@ export default function StudentJobs() {
         </View>
       ) : null}
 
-      {tab === "interview" ? (
-        <View style={{ gap: 12, marginTop: 16 }}>
-          <Txt variant="h3">Pick a professional</Txt>
-          {pros.length === 0 ? <Txt variant="muted">No professionals yet — invite some!</Txt> : null}
-          {pros.map((p) => (
-            <Card key={p.id}>
-              <View style={{ flexDirection: "row", alignItems: "center" }}>
-                <View style={styles.avatar}><Txt style={{ fontWeight: "800", color: "#7C3AED" }}>{(p.name || "?")[0].toUpperCase()}</Txt></View>
-                <View style={{ flex: 1, marginLeft: 12 }}>
-                  <Txt variant="h3">{p.name}</Txt>
-                  <Txt variant="small" style={{ color: colors.textSecondary }}>{p.designation || ""} @ {p.company || ""}</Txt>
-                  <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 2 }}>{(p.expertise || []).join(", ")}</Txt>
-                </View>
-                <Button testID={`pick-pro-${p.id}`} title="Book" onPress={() => openPro(p)} style={{ height: 40, paddingHorizontal: 14 }} />
-              </View>
-            </Card>
-          ))}
-        </View>
-      ) : null}
-
       {tab === "applications" ? (
         <View style={{ gap: 12, marginTop: 16 }}>
           {apps.length === 0 ? <Txt variant="muted">No applications yet.</Txt> : null}
@@ -170,50 +172,19 @@ export default function StudentJobs() {
                 <View style={{ flex: 1 }}>
                   <Txt variant="h3">{a.job_title}</Txt>
                   <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 2 }}>
-                    {a.referrer_pro_name ? `Referred by ${a.referrer_pro_name}` : "Direct"} · {a.status}
+                    {a.referrer_pro_name ? `Referred by ${a.referrer_pro_name}` : "Direct"}
                   </Txt>
                 </View>
                 <View style={[styles.statusPill, { backgroundColor: statusColor(a.status) }]}>
-                  <Txt variant="small" style={{ color: "#fff", fontWeight: "700", textTransform: "capitalize" }}>{a.status}</Txt>
+                  <Txt variant="small" style={{ color: "#fff", fontWeight: "700", textTransform: "capitalize" }}>
+                    {(a.status || "").replace(/_/g, " ")}
+                  </Txt>
                 </View>
               </View>
             </Card>
           ))}
         </View>
       ) : null}
-
-      <Modal visible={!!selectedPro} animationType="slide" transparent onRequestClose={() => setSelectedPro(null)}>
-        <View style={styles.modalBg}>
-          <View style={styles.modal}>
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-              <Txt variant="h2">{selectedPro?.name}</Txt>
-              <TouchableOpacity onPress={() => setSelectedPro(null)}>
-                <Ionicons name="close" size={26} color={colors.textPrimary} />
-              </TouchableOpacity>
-            </View>
-            <Txt variant="muted" style={{ marginTop: 4 }}>Available slots</Txt>
-            <ScrollView style={{ marginTop: 12 }} contentContainerStyle={{ gap: 8 }}>
-              {slots.length === 0 ? <Txt variant="muted">No slots available</Txt> : null}
-              {slots.map((s) => (
-                <TouchableOpacity key={s.id} testID={`slot-${s.id}`} onPress={() => bookSlot(s.id)}>
-                  <Card style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-                    <View style={{ flex: 1 }}>
-                      <Txt variant="h3">{new Date(s.start_at || s.scheduled_at).toLocaleString()}</Txt>
-                      {s.end_at ? (
-                        <Txt variant="small" style={{ color: colors.textSecondary }}>
-                          → {new Date(s.end_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                        </Txt>
-                      ) : null}
-                      {s.topic ? <Txt variant="small" style={{ color: colors.textSecondary }}>{s.topic}</Txt> : null}
-                    </View>
-                    <Ionicons name="arrow-forward-circle" size={28} color={colors.primary} />
-                  </Card>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
     </Screen>
   );
 }
@@ -222,18 +193,19 @@ function statusColor(s: string) {
   if (s === "hired") return colors.success;
   if (s === "rejected") return colors.error;
   if (s === "referred") return "#7C3AED";
+  if (s === "interview_scheduled") return colors.primary;
+  if (s === "awaiting_interview") return colors.warning;
+  if (s === "shortlisted") return "#2563EB";
   return colors.accent;
 }
 
 const styles = StyleSheet.create({
+  filterBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, alignItems: "center", justifyContent: "center" },
   tabs: { flexDirection: "row", marginTop: 16, backgroundColor: colors.surfaceAlt, borderRadius: 999, padding: 4 },
   tab: { flex: 1, paddingVertical: 10, alignItems: "center", borderRadius: 999 },
   tabActive: { backgroundColor: colors.primary },
   badge: { backgroundColor: "#FFE4E5", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
   chip: { backgroundColor: colors.surfaceAlt, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
   appliedPill: { flexDirection: "row", alignItems: "center", backgroundColor: "#E6F9F0", paddingHorizontal: 14, paddingVertical: 10, borderRadius: 999, alignSelf: "flex-start" },
-  avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: "#EDE9FE", alignItems: "center", justifyContent: "center" },
   statusPill: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
-  modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
-  modal: { backgroundColor: colors.bg, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, maxHeight: "80%" },
 });

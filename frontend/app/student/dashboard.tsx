@@ -73,7 +73,7 @@ export default function StudentDashboard() {
         <TouchableOpacity
           testID="cta-book-interview"
           style={{ flex: 1 }}
-          onPress={() => router.push("/student/jobs?tab=interview")}
+          onPress={() => router.push("/student/mock-interviews")}
         >
           <Card style={{ borderColor: colors.secondary, borderWidth: 2 }}>
             <View style={[styles.actionIcon, { backgroundColor: "#F5FFD0" }]}>

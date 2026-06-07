@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { View, StyleSheet, Alert, TouchableOpacity, ActivityIndicator } from "react-native";
 import { useRouter } from "expo-router";
+import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
 import { Screen } from "@/src/components/Screen";
@@ -61,10 +62,21 @@ export default function StudentProfile() {
   const [picking, setPicking] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
+  // Wallet
+  const [wallet, setWallet] = useState<{ credits: number; free_uses_left: number; total_deposits: number; transactions: any[] }>({
+    credits: 0,
+    free_uses_left: 0,
+    total_deposits: 0,
+    transactions: [],
+  });
+
   const load = useCallback(async () => {
     setRefreshing(true);
     try {
-      const me = await api<{ user: any; profile: any }>("/auth/me");
+      const [me, w] = await Promise.all([
+        api<{ user: any; profile: any }>("/auth/me"),
+        api<any>("/wallet"),
+      ]);
       setUser(me.user);
       setName(me.user.name || "");
       const p = me.profile || {};
@@ -82,6 +94,7 @@ export default function StudentProfile() {
       setResumeMime(p.resume_mime_type || "");
       setResumeLink(p.resume_link || "");
       if (!p.resume_base64 && p.resume_link) setResumeTab("link");
+      setWallet(w);
     } catch {}
     setRefreshing(false);
   }, []);
@@ -202,6 +215,40 @@ export default function StudentProfile() {
         </Txt>
       </Card>
 
+      {/* ----------------- Wallet section ----------------- */}
+      <LinearGradient
+        colors={["#FF5A5F", "#FFB347"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.walletCard}
+      >
+        <View style={styles.walletHead}>
+          <View style={styles.walletIcon}>
+            <Ionicons name="wallet" size={24} color="#fff" />
+          </View>
+          <View style={{ flex: 1, marginLeft: 12 }}>
+            <Txt style={{ color: "#fff", opacity: 0.85 }} variant="label">Wallet</Txt>
+            <Txt style={{ color: "#fff", fontSize: 36, fontWeight: "800", marginTop: 2 }} testID="profile-credits">
+              {wallet.credits}
+            </Txt>
+            <Txt style={{ color: "#fff", opacity: 0.9 }} variant="small">
+              credits available · {wallet.free_uses_left} free uses
+            </Txt>
+          </View>
+        </View>
+        <Button
+          testID="add-credits-btn"
+          title="Add credits"
+          variant="secondary"
+          icon={<Ionicons name="add-circle" size={18} color={colors.textPrimary} />}
+          onPress={() => router.push("/student/wallet")}
+          style={{ marginTop: 14 }}
+        />
+      </LinearGradient>
+
+      <WalletHistory transactions={wallet.transactions} />
+      {/* --------------- end Wallet section --------------- */}
+
       <View style={{ marginTop: 16 }}>
         <Input testID="profile-name" label="Full name" value={name} onChangeText={setName} placeholder="Your name" />
 
@@ -319,6 +366,13 @@ export default function StudentProfile() {
 }
 
 const styles = StyleSheet.create({
+  walletCard: { marginTop: 16, padding: 18, borderRadius: radius.xxl },
+  walletHead: { flexDirection: "row", alignItems: "center" },
+  walletIcon: { width: 48, height: 48, borderRadius: 24, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,0.2)" },
+  historyHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 22, marginBottom: 8 },
+  historyTabs: { flexDirection: "row", backgroundColor: colors.surfaceAlt, borderRadius: 999, padding: 4, marginBottom: 12 },
+  historyTab: { flex: 1, paddingVertical: 8, alignItems: "center", borderRadius: 999 },
+  historyTabActive: { backgroundColor: colors.primary },
   tabs: { flexDirection: "row", backgroundColor: colors.surfaceAlt, borderRadius: 999, padding: 4, marginBottom: 12 },
   tab: { flex: 1, paddingVertical: 8, alignItems: "center", borderRadius: 999 },
   tabActive: { backgroundColor: colors.primary },
@@ -341,3 +395,54 @@ const styles = StyleSheet.create({
     width: 40, height: 40, borderRadius: 10, alignItems: "center", justifyContent: "center", backgroundColor: "#FFE4E5",
   },
 });
+
+function WalletHistory({ transactions }: { transactions: any[] }) {
+  const [filter, setFilter] = useState<"all" | "purchase" | "usage">("all");
+  const purchases = transactions.filter((t) => t.delta > 0 && (t.reason || "").toLowerCase().includes("deposit"));
+  const usage = transactions.filter((t) => t.delta < 0);
+  const all = transactions;
+  const shown = filter === "purchase" ? purchases : filter === "usage" ? usage : all;
+
+  return (
+    <View>
+      <View style={styles.historyHeader}>
+        <Txt variant="h3">Credit history</Txt>
+        <Txt variant="small" style={{ color: colors.textSecondary }}>{transactions.length} entries</Txt>
+      </View>
+      <View style={styles.historyTabs}>
+        {([
+          { id: "all" as const, label: "All" },
+          { id: "purchase" as const, label: "Purchases" },
+          { id: "usage" as const, label: "Usage" },
+        ]).map((t) => (
+          <TouchableOpacity
+            key={t.id}
+            testID={`history-tab-${t.id}`}
+            onPress={() => setFilter(t.id)}
+            style={[styles.historyTab, filter === t.id && styles.historyTabActive]}
+          >
+            <Txt style={{ fontWeight: "700", color: filter === t.id ? "#fff" : colors.textPrimary, fontSize: 13 }}>
+              {t.label} ({t.id === "all" ? all.length : t.id === "purchase" ? purchases.length : usage.length})
+            </Txt>
+          </TouchableOpacity>
+        ))}
+      </View>
+      <View style={{ gap: 6 }}>
+        {shown.length === 0 ? <Txt variant="muted">No matching entries.</Txt> : null}
+        {shown.slice(0, 20).map((t) => (
+          <Card key={t.id} padding={12}>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+              <View style={{ flex: 1 }}>
+                <Txt style={{ fontWeight: "600", textTransform: "capitalize" }}>{(t.reason || "").replace(/_/g, " ")}</Txt>
+                <Txt variant="small" style={{ color: colors.textSecondary }}>{new Date(t.created_at).toLocaleString()}</Txt>
+              </View>
+              <Txt style={{ fontWeight: "800", color: t.delta >= 0 ? colors.success : colors.error }}>
+                {t.delta >= 0 ? "+" : ""}{t.delta}
+              </Txt>
+            </View>
+          </Card>
+        ))}
+      </View>
+    </View>
+  );
+}
