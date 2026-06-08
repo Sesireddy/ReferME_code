@@ -175,7 +175,7 @@ export default function ProProfile() {
           <TouchableOpacity testID="credits-pill" onPress={() => router.push("/professional/wallet")} style={styles.creditsPill}>
             <Ionicons name="wallet" size={16} color="#fff" />
             <View style={{ marginLeft: 6 }}>
-              <Txt style={{ color: "#fff", fontSize: 10, opacity: 0.8 }}>Available</Txt>
+              <Txt style={{ color: "#fff", fontSize: 10, opacity: 0.8 }}>Available Credits</Txt>
               <Txt style={{ color: "#fff", fontWeight: "800" }} testID="credits-value">{credits}</Txt>
             </View>
           </TouchableOpacity>
