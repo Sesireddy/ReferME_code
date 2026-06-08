@@ -7,6 +7,7 @@ import { Card } from "@/src/components/Card";
 import { Button } from "@/src/components/Button";
 import { Input } from "@/src/components/Input";
 import { Picker } from "@/src/components/Picker";
+import { DatePickerField } from "@/src/components/DateTimePicker";
 import { colors, radius } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
 import { useRouter } from "expo-router";
@@ -24,11 +25,18 @@ export default function MockInterviews() {
   const load = useCallback(async () => {
     setRefreshing(true);
     try {
-      const p = await api<any[]>("/professionals");
+      // Only fetch pros who CURRENTLY have available, future slots — backend filters this.
+      const params = new URLSearchParams({ has_available_slots: "true" });
+      if (skillFilter.trim()) params.set("skill", skillFilter.trim());
+      if (dateFilter) params.set("date", dateFilter);
+      if (categoryFilter) params.set("category", categoryFilter);
+      const p = await api<any[]>(`/professionals?${params.toString()}`);
       setPros(p);
-    } catch {}
+    } catch {
+      setPros([]);
+    }
     setRefreshing(false);
-  }, []);
+  }, [skillFilter, dateFilter, categoryFilter]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -72,12 +80,8 @@ export default function MockInterviews() {
     }
   }
 
-  // Filter pros client-side by skill if entered
-  const visiblePros = pros.filter((p) => {
-    if (!skillFilter.trim()) return true;
-    const s = (p.expertise || []).join(" ").toLowerCase();
-    return s.includes(skillFilter.toLowerCase());
-  });
+  // Pros are already filtered server-side by skill + date + category, and only those
+  // with currently available future slots are returned. No additional client filter needed.
 
   return (
     <Screen refreshing={refreshing} onRefresh={load}>
@@ -94,7 +98,7 @@ export default function MockInterviews() {
       />
       <View style={{ flexDirection: "row", gap: 8 }}>
         <View style={{ flex: 1 }}>
-          <Input testID="mi-date" label="" placeholder="Date (YYYY-MM-DD)" value={dateFilter} onChangeText={setDateFilter} />
+          <DatePickerField testID="mi-date" value={dateFilter} onChange={setDateFilter} placeholder="Filter by date" />
         </View>
         <View style={{ flex: 1 }}>
           <Picker
@@ -110,14 +114,23 @@ export default function MockInterviews() {
           />
         </View>
       </View>
+      {dateFilter ? (
+        <TouchableOpacity testID="mi-clear-date" onPress={() => setDateFilter("")} style={{ alignSelf: "flex-end", paddingVertical: 4, marginBottom: 4 }}>
+          <Txt variant="small" style={{ color: colors.primary }}>Clear date filter</Txt>
+        </TouchableOpacity>
+      ) : null}
 
       <View style={{ gap: 12, marginTop: 12 }}>
-        {visiblePros.length === 0 ? (
+        {pros.length === 0 ? (
           <Card>
-            <Txt variant="muted">No professionals match — try a different skill.</Txt>
+            <Txt variant="muted">
+              {dateFilter || skillFilter
+                ? "No professionals available with these filters."
+                : "No professionals currently available — check back later."}
+            </Txt>
           </Card>
         ) : null}
-        {visiblePros.map((p) => (
+        {pros.map((p) => (
           <Card key={p.id}>
             <View style={{ flexDirection: "row", alignItems: "center" }}>
               <View style={styles.avatar}>

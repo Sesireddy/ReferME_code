@@ -189,8 +189,21 @@ export default function StudentProfile() {
   }
 
   async function logout() {
-    await clearSession();
-    router.replace("/welcome");
+    Alert.alert(
+      "Are you sure you want to sign out?",
+      undefined,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Yes, Sign Out",
+          style: "destructive",
+          onPress: async () => {
+            await clearSession();
+            router.replace("/welcome");
+          },
+        },
+      ],
+    );
   }
 
   return (
@@ -366,6 +379,16 @@ export default function StudentProfile() {
         <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 4 }}>Reach out via support if anything looks wrong.</Txt>
         <Button testID="raise-dispute" title="Raise a dispute" variant="outline" style={{ marginTop: 12 }} onPress={() => router.push("/notifications")} />
       </Card>
+
+      <View style={{ marginTop: 24, marginBottom: 32 }}>
+        <Button
+          testID="sign-out-btn"
+          title="Sign Out"
+          variant="outline"
+          onPress={logout}
+          style={{ borderColor: colors.error }}
+        />
+      </View>
     </Screen>
   );
 }

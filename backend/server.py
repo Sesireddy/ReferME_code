@@ -16,6 +16,7 @@ import jwt
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request, status
 from motor.motor_asyncio import AsyncIOMotorClient
+import re
 from pydantic import BaseModel, EmailStr, Field
 from starlette.middleware.cors import CORSMiddleware
 
@@ -43,6 +44,32 @@ MOCK_PAYMENTS_MODE = not (RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET)
 # When TEST_RETURN_OTP=1, expose the generated OTP in the signup/forgot response
 # so backend test suites can complete the verify-otp step without a real inbox.
 TEST_RETURN_OTP = os.environ.get("TEST_RETURN_OTP", "").strip() in ("1", "true", "yes")
+
+CITY_SYNONYMS = {
+    "bangalore": ["bangalore", "bengaluru", "bglr"],
+    "bengaluru": ["bengaluru", "bangalore", "bglr"],
+    "mumbai": ["mumbai", "bombay"],
+    "bombay": ["bombay", "mumbai"],
+    "chennai": ["chennai", "madras"],
+    "madras": ["madras", "chennai"],
+    "calcutta": ["calcutta", "kolkata"],
+    "kolkata": ["kolkata", "calcutta"],
+    "gurgaon": ["gurgaon", "gurugram"],
+    "gurugram": ["gurugram", "gurgaon"],
+    "delhi": ["delhi", "new delhi", "ncr"],
+    "ncr": ["ncr", "delhi", "new delhi", "noida", "gurgaon", "gurugram", "faridabad", "ghaziabad"],
+    "trivandrum": ["trivandrum", "thiruvananthapuram"],
+    "thiruvananthapuram": ["thiruvananthapuram", "trivandrum"],
+}
+
+
+def expand_city(term: str) -> list[str]:
+    """Return a list of regex-safe synonyms for a city term. Always includes the original term."""
+    if not term:
+        return []
+    key = term.strip().lower()
+    return CITY_SYNONYMS.get(key, [key])
+
 
 # Business rules
 ACTION_COST = 49  # credits per action (apply / book)
@@ -918,8 +945,57 @@ async def confirm_deposit(body: VerifyPaymentBody, u: dict = Depends(current_use
 
 # ------------------- Mock Interviews -------------------
 @api.get("/professionals")
-async def list_professionals(u: dict = Depends(current_user)):
-    pros = await db.users.find({"role": "professional", "profile_complete": True}, {"_id": 0, "password_hash": 0}).to_list(100)
+async def list_professionals(
+    skill: Optional[str] = Query(None, description="Case-insensitive partial match across expertise"),
+    location: Optional[str] = Query(None),
+    category: Optional[str] = Query(None, description="fresher | experienced"),
+    date: Optional[str] = Query(None, description="YYYY-MM-DD — show only pros with an available slot starting that day"),
+    has_available_slots: bool = Query(True, description="Hide pros with no future, available slot"),
+    u: dict = Depends(current_user),
+):
+    pros = await db.users.find({"role": "professional", "profile_complete": True}, {"_id": 0, "password_hash": 0}).to_list(500)
+    # Apply skill/location filters with partial, case-insensitive matching.
+    if skill:
+        sk = skill.lower().strip()
+        pros = [
+            p for p in pros
+            if any(sk in (s or "").lower() for s in (p.get("profile", {}).get("expertise", []) or p.get("profile", {}).get("skills", []) or []))
+        ]
+    if location:
+        loc = location.lower().strip()
+        pros = [
+            p for p in pros
+            if loc in (p.get("profile", {}).get("current_location") or "").lower()
+        ]
+    if category in ("fresher", "experienced"):
+        def _cat(p):
+            y = int(p.get("profile", {}).get("experience_years") or 0)
+            return "experienced" if y > 0 else "fresher"
+        pros = [p for p in pros if _cat(p) == category]
+
+    # Filter to pros with future-available slots (and optional date match) for students.
+    if has_available_slots:
+        now_dt = datetime.now(timezone.utc)
+        slot_q: dict = {"status": "available"}
+        slots = await db.interview_slots.find(slot_q, {"_id": 0, "pro_id": 1, "start_at": 1, "skill_set": 1}).to_list(5000)
+        pros_with_slots: set = set()
+        for s in slots:
+            try:
+                sd = datetime.fromisoformat((s.get("start_at") or "").replace("Z", "+00:00"))
+            except Exception:
+                continue
+            if sd <= now_dt:
+                continue
+            if date and sd.strftime("%Y-%m-%d") != date:
+                continue
+            if skill:
+                sk = skill.lower().strip()
+                if not any(sk in (x or "").lower() for x in (s.get("skill_set") or [])):
+                    # still allow match via pro expertise, so don't strictly exclude
+                    pass
+            pros_with_slots.add(s["pro_id"])
+        pros = [p for p in pros if p["id"] in pros_with_slots]
+
     return [
         {
             "id": p["id"],
@@ -927,7 +1003,10 @@ async def list_professionals(u: dict = Depends(current_user)):
             "company": p.get("profile", {}).get("company"),
             "designation": p.get("profile", {}).get("designation"),
             "experience_years": p.get("profile", {}).get("experience_years"),
-            "expertise": p.get("profile", {}).get("expertise", []),
+            "expertise": p.get("profile", {}).get("expertise") or p.get("profile", {}).get("skills", []),
+            "current_location": p.get("profile", {}).get("current_location"),
+            "rating": float(p.get("rating") or 0),
+            "ratings_count": int(p.get("ratings_count") or 0),
         }
         for p in pros
     ]
@@ -1313,9 +1392,13 @@ async def list_jobs(
         # students & admin
         q["status"] = "open"
     if skill:
-        q["skills_required"] = {"$regex": skill, "$options": "i"}
+        # Partial, case-insensitive match. e.g. "Java" matches "Core Java", "Java Full Stack".
+        q["skills_required"] = {"$regex": re.escape(skill), "$options": "i"}
     if location:
-        q["location"] = {"$regex": location, "$options": "i"}
+        # Friendly partial match + city synonyms (Bangalore ↔ Bengaluru, Mumbai ↔ Bombay, etc.)
+        synonyms = expand_city(location)
+        pattern = "|".join(re.escape(s) for s in synonyms)
+        q["location"] = {"$regex": pattern, "$options": "i"}
     if category in ("fresher", "experienced"):
         q["category"] = category
     if company:

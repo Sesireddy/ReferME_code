@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 /* eslint-env node */
+/* global __dirname */
 // Banned packages list. Used by preinstall hook and install-guard.sh.
 
 const fs = require("fs");

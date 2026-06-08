@@ -141,8 +141,21 @@ export default function ProProfile() {
   }
 
   async function logout() {
-    await clearSession();
-    router.replace("/welcome");
+    Alert.alert(
+      "Are you sure you want to sign out?",
+      undefined,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Yes, Sign Out",
+          style: "destructive",
+          onPress: async () => {
+            await clearSession();
+            router.replace("/welcome");
+          },
+        },
+      ],
+    );
   }
 
   const credits = user?.credits ?? 0;

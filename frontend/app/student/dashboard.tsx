@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from "react";
 import { View, StyleSheet, TouchableOpacity } from "react-native";
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, FontAwesome5 } from "@expo/vector-icons";
 import { Screen } from "@/src/components/Screen";
 import { Txt } from "@/src/components/Txt";
 import { Card } from "@/src/components/Card";
@@ -76,7 +76,7 @@ export default function StudentDashboard() {
             <View style={[styles.progressFill, { width: `${Math.min(100, score)}%` }]} />
           </View>
           <Txt style={{ color: "#fff", opacity: 0.95, marginTop: 8 }} variant="small">
-            {freeUses > 0 ? `🎁 ${freeUses} free uses left` : "Earn credits by referrals & interviews"}
+            Improve your Resume Score by attending Mock Interviews
           </Txt>
         </View>
         <View style={styles.heroIcon}>
@@ -92,7 +92,7 @@ export default function StudentDashboard() {
         >
           <Card style={{ borderColor: colors.secondary, borderWidth: 2 }}>
             <View style={[styles.actionIcon, { backgroundColor: "#F5FFD0" }]}>
-              <Ionicons name="videocam" size={24} color={colors.textPrimary} />
+              <FontAwesome5 name="user-tie" size={20} color={colors.textPrimary} />
             </View>
             <Txt variant="h3" style={{ marginTop: 12 }}>Book Mock Interview</Txt>
             <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 4 }}>Practice with pros</Txt>
@@ -101,7 +101,7 @@ export default function StudentDashboard() {
         <TouchableOpacity testID="cta-apply-job" style={{ flex: 1 }} onPress={() => router.push("/student/jobs")}>
           <Card style={{ borderColor: colors.primary, borderWidth: 2 }}>
             <View style={[styles.actionIcon, { backgroundColor: "#FFE4E5" }]}>
-              <Ionicons name="paper-plane" size={22} color={colors.primary} />
+              <FontAwesome5 name="handshake" size={20} color={colors.primary} />
             </View>
             <Txt variant="h3" style={{ marginTop: 12 }}>Apply for Referral</Txt>
             <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 4 }}>Top companies</Txt>

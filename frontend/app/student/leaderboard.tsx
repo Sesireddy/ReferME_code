@@ -158,9 +158,24 @@ export default function StudentLeaderboard() {
 
 function Stat({ label, value }: { label: string; value: any }) {
   return (
-    <View style={{ alignItems: "center", flex: 1 }}>
-      <Txt variant="small" style={{ color: colors.textSecondary }}>{label}</Txt>
-      <Txt style={{ fontWeight: "700", marginTop: 2 }}>{value}</Txt>
+    <View style={{ alignItems: "center", flex: 1, paddingHorizontal: 2 }}>
+      <Txt
+        variant="small"
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.7}
+        style={{ color: colors.textSecondary, fontSize: 11, textAlign: "center" }}
+      >
+        {label}
+      </Txt>
+      <Txt
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.7}
+        style={{ fontWeight: "700", marginTop: 2, fontSize: 13, textAlign: "center" }}
+      >
+        {String(value)}
+      </Txt>
     </View>
   );
 }
