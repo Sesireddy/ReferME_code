@@ -270,3 +270,27 @@ class TestJobNumericOpenPositionsBackCompat:
         assert data["open_positions"] == 7
         # Label falls back to default '1 to 5' when not provided (per server: label = body.open_positions_label or "1 to 5")
         assert data["open_positions_label"] == "1 to 5"
+
+
+def test_missing_company_400_when_profile_blank(session):
+    """Raw employer with no company_name set in profile → POST /jobs without
+    `company` should fail with 'Company Name is required.'.
+
+    This bypasses the conftest `employer` fixture (which auto-sets company_name)
+    by calling _signup_verify directly so the new branch stays regression-covered.
+    """
+    emp = _signup_verify(session, "employer")
+    r = session.post(
+        f"{API}/jobs",
+        headers=auth_headers(emp["token"]),
+        json={
+            "title": "TEST iter9 no-company",
+            "description": "Senior role",
+            "location": "Bangalore",
+            "skills_required": ["Python"],
+            "category": "fresher",
+            "open_positions_label": "1 to 5",
+        },
+    )
+    assert r.status_code == 400, r.text
+    assert r.json()["detail"] == "Company Name is required."
