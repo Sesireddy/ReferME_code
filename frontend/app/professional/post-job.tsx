@@ -56,7 +56,7 @@ export default function ProPostJob() {
   return (
     <Screen>
       <Txt variant="h1">Post a job opening</Txt>
-      <Txt variant="muted">Open jobs at your company — refer candidates and earn ₹500/hire.</Txt>
+      <Txt variant="muted">Open jobs at your company — refer candidates and earn ₹1500/hire.</Txt>
       <Card style={{ marginTop: 16 }}>
         <Input testID="pj-title" label="Title" value={title} onChangeText={setTitle} placeholder="Frontend Engineer" />
         <Input testID="pj-company" label="Company Name" value={company} onChangeText={setCompany} placeholder="Acme Corp" />

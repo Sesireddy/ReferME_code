@@ -6,13 +6,17 @@ import { Txt } from "@/src/components/Txt";
 import { Card } from "@/src/components/Card";
 import { Button } from "@/src/components/Button";
 import { Input } from "@/src/components/Input";
+import { DatePickerField, TimePickerField } from "@/src/components/DateTimePicker";
 import { colors, radius } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
 
 function tomorrowDateStr() {
   const d = new Date();
   d.setDate(d.getDate() + 1);
-  return d.toISOString().slice(0, 10);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`;
 }
 
 function buildISO(date: string, time: string): Date {
@@ -135,23 +139,23 @@ export default function ProSlots() {
       <Txt variant="h1">My Interviews</Txt>
       <Card style={{ marginTop: 16 }}>
         <Txt variant="h3">Create a slot</Txt>
-        <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 2, marginBottom: 8 }}>
+        <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 2, marginBottom: 12 }}>
           Pick a date and From / To time. Overlapping slots are not allowed.
         </Txt>
-        <Input testID="slot-date" label="Date" placeholder="YYYY-MM-DD" value={date} onChangeText={setDate} />
+        <DatePickerField testID="slot-date" label="Date" value={date} onChange={setDate} />
         <View style={{ flexDirection: "row", gap: 8 }}>
           <View style={{ flex: 1 }}>
-            <Input testID="slot-from" label="From (HH:MM)" placeholder="11:00" value={fromTime} onChangeText={setFromTime} />
+            <TimePickerField testID="slot-from" label="From" value={fromTime} onChange={setFromTime} />
           </View>
           <View style={{ flex: 1 }}>
-            <Input testID="slot-to" label="To (HH:MM)" placeholder="12:00" value={toTime} onChangeText={setToTime} />
+            <TimePickerField testID="slot-to" label="To" value={toTime} onChange={setToTime} />
           </View>
         </View>
         <Input testID="slot-topic" label="Topic (optional)" placeholder="System design / Behavioral" value={topic} onChangeText={setTopic} />
         <Input testID="slot-skills" label="Skill set (comma-separated)" placeholder="React, System Design" value={skillSet} onChangeText={setSkillSet} />
         <Input testID="slot-exp" label="Candidate experience (years)" value={expYears} onChangeText={setExpYears} keyboardType="number-pad" />
         <Txt variant="small" style={{ color: colors.textSecondary, marginBottom: 8 }}>
-          Slots use IST. Min 1 hour, max 5 hours/day per professional.
+          Slots use 12-hour AM/PM in IST. Min 1 hour, max 5 hours/day per professional.
         </Txt>
         <Button testID="create-slot" title="Create slot" onPress={createSlot} loading={busy} />
       </Card>

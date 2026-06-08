@@ -250,12 +250,18 @@ class ProfileBody(BaseModel):
     designation: Optional[str] = None
     experience_years: Optional[int] = None
     expertise: Optional[list[str]] = None
+    alternate_gmail: Optional[str] = None  # personal gmail (optional). Used for Mock Interview meeting invites.
     # employer
     company_name: Optional[str] = None
     company_website: Optional[str] = None
     company_size: Optional[str] = None
     company_logo_base64: Optional[str] = None
     bio: Optional[str] = None
+
+
+class GmailVerifyBody(BaseModel):
+    email: str
+    otp: Optional[str] = None  # supplied on the verify step
 
 
 class InterviewSlotBody(BaseModel):
@@ -577,7 +583,78 @@ async def google_login(body: GoogleSessionBody):
 
 @api.get("/auth/me")
 async def get_me(u: dict = Depends(current_user)):
-    return {"user": user_public(u), "profile": u.get("profile", {})}
+    out = {"user": user_public(u), "profile": u.get("profile", {})}
+    if u["role"] == "professional":
+        out["profile_completion"] = compute_pro_profile_completion(u)
+        out["user"]["gmail_verified"] = bool(u.get("gmail_verified"))
+        out["user"]["alternate_gmail"] = u.get("alternate_gmail") or (u.get("profile", {}) or {}).get("alternate_gmail")
+        out["user"]["email_verified"] = True  # company email verified at signup
+    return out
+
+
+@api.post("/pro/gmail/send-otp")
+async def pro_gmail_send_otp(body: GmailVerifyBody, u: dict = Depends(require_role(["professional"]))):
+    email = (body.email or "").strip().lower()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="Invalid email")
+    # Only allow personal email providers here (not the corporate domain already used for login).
+    personal_domains = {"gmail.com", "googlemail.com"}
+    domain = email.split("@", 1)[1]
+    if domain not in personal_domains:
+        raise HTTPException(status_code=400, detail="Please provide a personal Gmail address (gmail.com).")
+    if email == (u.get("email") or "").lower():
+        raise HTTPException(status_code=400, detail="Use a DIFFERENT email from your company login email.")
+    otp_code = f"{secrets.randbelow(10**6):06d}"
+    await db.otps.insert_one({
+        "id": new_id(),
+        "user_id": u["id"],
+        "email": email,
+        "purpose": "verify_alternate_gmail",
+        "code_hash": hash_password(otp_code),
+        "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat(),
+        "consumed": False,
+        "created_at": now_iso(),
+    })
+    sent = await send_otp_email(email, otp_code, "verify_alternate_gmail")
+    resp = {"message": "OTP sent to your Gmail", "email_sent": bool(sent)}
+    if MOCK_OTP_MODE or not sent or TEST_RETURN_OTP:
+        resp["mock_otp"] = otp_code
+    return resp
+
+
+@api.post("/pro/gmail/verify-otp")
+async def pro_gmail_verify_otp(body: GmailVerifyBody, u: dict = Depends(require_role(["professional"]))):
+    email = (body.email or "").strip().lower()
+    code = (body.otp or "").strip()
+    if not email or not code:
+        raise HTTPException(status_code=400, detail="email + otp required")
+    otp = await db.otps.find_one(
+        {"user_id": u["id"], "email": email, "purpose": "verify_alternate_gmail", "consumed": False},
+        sort=[("created_at", -1)],
+    )
+    if not otp:
+        raise HTTPException(status_code=400, detail="No OTP pending. Please request a fresh one.")
+    if datetime.fromisoformat(otp["expires_at"]) < datetime.now(timezone.utc):
+        raise HTTPException(status_code=400, detail="OTP expired. Please request a new one.")
+    if not verify_password(code, otp["code_hash"]):
+        raise HTTPException(status_code=400, detail="Invalid OTP")
+    await db.otps.update_one({"id": otp["id"]}, {"$set": {"consumed": True}})
+    new_profile = {**(u.get("profile", {}) or {}), "alternate_gmail": email}
+    await db.users.update_one(
+        {"id": u["id"]},
+        {"$set": {
+            "alternate_gmail": email,
+            "gmail_verified": True,
+            "gmail_verified_at": now_iso(),
+            "profile": new_profile,
+        }},
+    )
+    await push_notification(u["id"], "Gmail verified ✅", f"{email} is now linked for interview invites.", "success")
+    return {"message": "Gmail verified", "alternate_gmail": email}
+
+
+STUDENT_PROFILE_FIELDS_END = True  # marker
+
 
 
 STUDENT_PROFILE_FIELDS = [
@@ -586,8 +663,29 @@ STUDENT_PROFILE_FIELDS = [
     "resume_base64", "resume_filename", "resume_size", "resume_mime_type", "resume_link",
     "profile_photo_base64", "certifications", "projects",
 ]
-PRO_PROFILE_FIELDS = ["company", "designation", "experience_years", "expertise"]
+PRO_PROFILE_FIELDS = [
+    "phone", "company", "designation", "experience_years", "expertise",
+    "current_location", "skills", "profile_photo_base64", "alternate_gmail",
+]
 EMPLOYER_PROFILE_FIELDS = ["company_name", "company_website", "company_size", "company_logo_base64", "bio"]
+
+
+def compute_pro_profile_completion(user: dict) -> int:
+    """Working professional profile completion percentage based on 7 factors.
+    Each factor contributes ~14% (sum 98–100).
+    """
+    p = user.get("profile") or {}
+    factors = [
+        bool(p.get("phone")),  # Mobile Number Added
+        bool(user.get("email_verified", True)),  # Company Email Verified — verified at signup
+        bool(user.get("gmail_verified")),  # Gmail Verified (for Mock Interview)
+        bool((p.get("skills") or []) or (p.get("expertise") or [])),  # Skills Added
+        bool(p.get("experience_years") or p.get("years_of_experience")),  # Experience Added
+        bool(p.get("designation")),  # Designation Added
+        bool(p.get("profile_photo_base64")),  # Profile Photo Uploaded
+    ]
+    pct = round(sum(factors) / len(factors) * 100)
+    return pct
 
 
 def compute_resume_score(user: dict) -> int:

@@ -116,11 +116,11 @@ export default function ProDashboard() {
             <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 4 }}>Manage applicants</Txt>
           </Card>
         </TouchableOpacity>
-        <TouchableOpacity testID="cta-refer" style={{ flex: 1 }} onPress={() => router.push("/professional/refer")}>
+        <TouchableOpacity testID="cta-refer" style={{ flex: 1 }} onPress={() => router.push("/professional/my-jobs")}>
           <Card style={{ borderColor: "#FFD566", borderWidth: 2 }}>
             <Ionicons name="share-social" size={24} color={colors.textPrimary} />
             <Txt variant="h3" style={{ marginTop: 8 }}>Refer Candidate</Txt>
-            <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 4 }}>+1500 if hired</Txt>
+            <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 4 }}>+₹1500/hire</Txt>
           </Card>
         </TouchableOpacity>
       </View>

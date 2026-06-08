@@ -20,7 +20,7 @@ export default function ProMyJobs() {
   const load = useCallback(async () => {
     setRefreshing(true);
     try {
-      const r = await api<any[]>("/jobs/?mine=true");
+      const r = await api<any[]>("/jobs?mine=true");
       setJobs(r || []);
     } catch {}
     setRefreshing(false);

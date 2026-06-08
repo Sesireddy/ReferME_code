@@ -21,6 +21,7 @@ export default function ProLayout() {
       <Tabs.Screen name="profile" options={{ title: "Profile", tabBarIcon: ({ color, size }) => <Ionicons name="person" size={size} color={color} /> }} />
       <Tabs.Screen name="refer" options={{ href: null }} />
       <Tabs.Screen name="payout" options={{ href: null }} />
+      <Tabs.Screen name="wallet" options={{ href: null }} />
       <Tabs.Screen name="my-jobs/[id]" options={{ href: null }} />
     </Tabs>
   );
