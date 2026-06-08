@@ -49,6 +49,17 @@ def _signup_verify(session, role: str, prefix: str = "TEST"):
     return {"email": email, "password": password, "token": data["token"], "user": data["user"]}
 
 
+def _gmail_verify_in_db(user_id: str):
+    """Test helper — flip gmail_verified for a pro in DB so they can post slots without OTP flow."""
+    from pymongo import MongoClient
+    mc = MongoClient(os.environ["MONGO_URL"])
+    mc[os.environ["DB_NAME"]].users.update_one(
+        {"id": user_id},
+        {"$set": {"gmail_verified": True, "alternate_gmail": f"test.pro.{user_id[:6]}@gmail.com"}},
+    )
+    mc.close()
+
+
 @pytest.fixture()
 def student(session):
     return _signup_verify(session, "student")
@@ -56,7 +67,12 @@ def student(session):
 
 @pytest.fixture()
 def professional(session):
-    return _signup_verify(session, "professional")
+    """Default 'professional' fixture for tests that just want to post slots/jobs.
+    Use _signup_verify directly when you need a raw, un-gmail-verified pro.
+    """
+    pro = _signup_verify(session, "professional")
+    _gmail_verify_in_db(pro["user"]["id"])
+    return pro
 
 
 @pytest.fixture()

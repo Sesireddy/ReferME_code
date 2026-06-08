@@ -181,7 +181,7 @@ class TestMyBookings:
     def test_pro_sees_booked_slot_with_student_as_counterparty(self, session, professional, student):
         s, e = _future(120, 90)
         r = session.post(f"{API}/interviews/slots", json={
-            "start_at": s, "end_at": e,
+            "start_at": s, "end_at": e, "skill_set": ["Python"],
         }, headers=auth_headers(professional["token"]))
         sid = r.json()["id"]
         # Book
@@ -213,7 +213,7 @@ class TestMyBookings:
         e = s + timedelta(minutes=60)
         sj = s.isoformat().replace("+00:00", "Z")
         ej = e.isoformat().replace("+00:00", "Z")
-        r = session.post(f"{API}/interviews/slots", json={"start_at": sj, "end_at": ej}, headers=auth_headers(professional["token"]))
+        r = session.post(f"{API}/interviews/slots", json={"start_at": sj, "end_at": ej, "skill_set": ["Python"]}, headers=auth_headers(professional["token"]))
         assert r.status_code == 200, r.text
         sid = r.json()["id"]
         session.post(f"{API}/interviews/book", json={"slot_id": sid}, headers=auth_headers(student["token"]))
@@ -225,7 +225,7 @@ class TestMyBookings:
     def test_join_enabled_false_for_far_future(self, session, professional, student):
         # Slot far in future (>10 min) → join_enabled False
         s, e = _future(120, 60)
-        r = session.post(f"{API}/interviews/slots", json={"start_at": s, "end_at": e}, headers=auth_headers(professional["token"]))
+        r = session.post(f"{API}/interviews/slots", json={"start_at": s, "end_at": e, "skill_set": ["Python"]}, headers=auth_headers(professional["token"]))
         sid = r.json()["id"]
         session.post(f"{API}/interviews/book", json={"slot_id": sid}, headers=auth_headers(student["token"]))
         items = session.get(f"{API}/interviews/my-bookings", headers=auth_headers(student["token"])).json()

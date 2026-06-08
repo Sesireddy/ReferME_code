@@ -90,13 +90,12 @@ class TestJobsIteration4:
 
     def test_experienced_requires_experience_required(self, session, employer):
         r = session.post(f"{API}/jobs", json={
-            "title": "Sr Eng", "description": "x", "category": "experienced",
-        }, headers=auth_headers(employer["token"]))
+            "title": "Sr Eng", "description": "demo description x", "category": "experienced", "location": "Bangalore", "skills_required": ["Python"]}, headers=auth_headers(employer["token"]))
         assert r.status_code == 400, r.text
 
     def test_get_single_job_with_applied_flag(self, session, student, employer):
         # employer posts
-        r = session.post(f"{API}/jobs", json={"title": "TEST single", "description": "d", "open_positions": 1}, headers=auth_headers(employer["token"]))
+        r = session.post(f"{API}/jobs", json={"title": "TEST single", "description": "demo role", "open_positions": 1, "location": "Bangalore", "skills_required": ["Python"]}, headers=auth_headers(employer["token"]))
         job_id = r.json()["id"]
         # student fetches single
         r2 = session.get(f"{API}/jobs/{job_id}", headers=auth_headers(student["token"]))
@@ -114,7 +113,7 @@ class TestJobsIteration4:
 
     def test_filter_jobs(self, session, student, employer):
         r = session.post(f"{API}/jobs", json={
-            "title": "Filter Match", "description": "x", "location": "Bengaluru",
+            "title": "Filter Match", "description": "demo description x", "location": "Bengaluru",
             "company": "Acme", "category": "experienced", "experience_required": 3,
             "skills_required": ["React"], "open_positions": 1,
         }, headers=auth_headers(employer["token"]))
@@ -126,7 +125,7 @@ class TestJobsIteration4:
         assert jid in ids
 
     def test_patch_owner_only(self, session, employer, professional, admin_token):
-        r = session.post(f"{API}/jobs", json={"title": "Edit Me", "description": "d", "open_positions": 1}, headers=auth_headers(employer["token"]))
+        r = session.post(f"{API}/jobs", json={"title": "Edit Me", "description": "demo role", "open_positions": 1, "location": "Bangalore", "skills_required": ["Python"]}, headers=auth_headers(employer["token"]))
         jid = r.json()["id"]
         # other pro cannot edit
         r2 = session.patch(f"{API}/jobs/{jid}", json={"title": "Hacked"}, headers=auth_headers(professional["token"]))
@@ -141,7 +140,7 @@ class TestJobsIteration4:
         assert r4.json()["location"] == "Remote"
 
     def test_close_reopen(self, session, employer):
-        r = session.post(f"{API}/jobs", json={"title": "Close Me", "description": "d", "open_positions": 1}, headers=auth_headers(employer["token"]))
+        r = session.post(f"{API}/jobs", json={"title": "Close Me", "description": "demo role", "open_positions": 1, "location": "Bangalore", "skills_required": ["Python"]}, headers=auth_headers(employer["token"]))
         jid = r.json()["id"]
         r2 = session.post(f"{API}/jobs/{jid}/close", headers=auth_headers(employer["token"]))
         assert r2.status_code == 200
@@ -154,7 +153,7 @@ class TestJobsIteration4:
         assert j2["status"] == "open"
 
     def test_applicants_owner_only(self, session, employer, student, professional):
-        r = session.post(f"{API}/jobs", json={"title": "TEST apps", "description": "d", "open_positions": 1}, headers=auth_headers(employer["token"]))
+        r = session.post(f"{API}/jobs", json={"title": "TEST apps", "description": "demo role", "open_positions": 1, "location": "Bangalore", "skills_required": ["Python"]}, headers=auth_headers(employer["token"]))
         jid = r.json()["id"]
         session.post(f"{API}/jobs/apply", json={"job_id": jid}, headers=auth_headers(student["token"]))
         # non-owner pro blocked
@@ -176,7 +175,7 @@ class TestInsufficientCredits:
         # create 3 jobs; consume both free uses, then 3rd apply must 402
         job_ids = []
         for i in range(3):
-            r = session.post(f"{API}/jobs", json={"title": f"TEST job{i}", "description": "d", "open_positions": 1}, headers=auth_headers(employer["token"]))
+            r = session.post(f"{API}/jobs", json={"title": f"TEST job{i}", "description": "demo role", "open_positions": 1, "location": "Bangalore", "skills_required": ["Python"]}, headers=auth_headers(employer["token"]))
             job_ids.append(r.json()["id"])
         # apply 1 (free)
         s1 = session.post(f"{API}/jobs/apply", json={"job_id": job_ids[0]}, headers=auth_headers(student["token"]))
@@ -194,7 +193,7 @@ class TestInsufficientCredits:
 class TestApplicationStatusPipeline:
     def test_status_change_proof_and_admin_action_hire(self, session, professional, student, employer, admin_token):
         # create job + application
-        r = session.post(f"{API}/jobs", json={"title": "TEST pipeline", "description": "d", "open_positions": 1}, headers=auth_headers(employer["token"]))
+        r = session.post(f"{API}/jobs", json={"title": "TEST pipeline", "description": "demo role", "open_positions": 1, "location": "Bangalore", "skills_required": ["Python"]}, headers=auth_headers(employer["token"]))
         jid = r.json()["id"]
         # refer student (creates application)
         r2 = session.post(f"{API}/referrals", json={"student_id": student["user"]["id"], "job_id": jid}, headers=auth_headers(professional["token"]))
@@ -231,7 +230,7 @@ class TestApplicationStatusPipeline:
         assert "pending_changes" in tl
 
     def test_status_change_reject_notifies(self, session, professional, student, employer, admin_token):
-        r = session.post(f"{API}/jobs", json={"title": "TEST rej", "description": "d", "open_positions": 1}, headers=auth_headers(employer["token"]))
+        r = session.post(f"{API}/jobs", json={"title": "TEST rej", "description": "demo role", "open_positions": 1, "location": "Bangalore", "skills_required": ["Python"]}, headers=auth_headers(employer["token"]))
         jid = r.json()["id"]
         r2 = session.post(f"{API}/referrals", json={"student_id": student["user"]["id"], "job_id": jid}, headers=auth_headers(professional["token"]))
         app_id = r2.json()["application_id"]
@@ -259,7 +258,7 @@ class TestSlotsIteration4:
 
     def test_slot_min_1h_enforced(self, session, professional):
         s, e = _future(120, 30)  # 30 min < 1h
-        r = session.post(f"{API}/interviews/slots", json={"start_at": s, "end_at": e}, headers=auth_headers(professional["token"]))
+        r = session.post(f"{API}/interviews/slots", json={"start_at": s, "end_at": e, "skill_set": ["Python"]}, headers=auth_headers(professional["token"]))
         assert r.status_code == 400, r.text
 
     def test_slot_max_5h_per_day(self, session, professional):
@@ -268,17 +267,17 @@ class TestSlotsIteration4:
         for i in range(5):  # 5 × 1h on same day = 5h
             s = (base + timedelta(hours=i)).isoformat().replace("+00:00", "Z")
             e = (base + timedelta(hours=i + 1)).isoformat().replace("+00:00", "Z")
-            rr = session.post(f"{API}/interviews/slots", json={"start_at": s, "end_at": e}, headers=auth_headers(professional["token"]))
+            rr = session.post(f"{API}/interviews/slots", json={"start_at": s, "end_at": e, "skill_set": ["Python"]}, headers=auth_headers(professional["token"]))
             assert rr.status_code == 200, f"slot {i}: {rr.text}"
         # 6th hour same day → must fail
         s = (base + timedelta(hours=5)).isoformat().replace("+00:00", "Z")
         e = (base + timedelta(hours=6)).isoformat().replace("+00:00", "Z")
-        rr2 = session.post(f"{API}/interviews/slots", json={"start_at": s, "end_at": e}, headers=auth_headers(professional["token"]))
+        rr2 = session.post(f"{API}/interviews/slots", json={"start_at": s, "end_at": e, "skill_set": ["Python"]}, headers=auth_headers(professional["token"]))
         assert rr2.status_code == 400, rr2.text
 
     def test_book_returns_meeting_url(self, session, professional, student):
         s, e = _future(180, 90)
-        r = session.post(f"{API}/interviews/slots", json={"start_at": s, "end_at": e}, headers=auth_headers(professional["token"]))
+        r = session.post(f"{API}/interviews/slots", json={"start_at": s, "end_at": e, "skill_set": ["Python"]}, headers=auth_headers(professional["token"]))
         sid = r.json()["id"]
         r2 = session.post(f"{API}/interviews/book", json={"slot_id": sid}, headers=auth_headers(student["token"]))
         assert r2.status_code == 200, r2.text
@@ -343,7 +342,7 @@ class TestAdminIteration4:
         assert after - before == 100
 
     def test_admin_delete_job(self, session, employer, admin_token):
-        r = session.post(f"{API}/jobs", json={"title": "Delete Me", "description": "d", "open_positions": 1}, headers=auth_headers(employer["token"]))
+        r = session.post(f"{API}/jobs", json={"title": "Delete Me", "description": "demo role", "open_positions": 1, "location": "Bangalore", "skills_required": ["Python"]}, headers=auth_headers(employer["token"]))
         jid = r.json()["id"]
         r2 = session.delete(f"{API}/admin/jobs/{jid}", headers=auth_headers(admin_token))
         assert r2.status_code == 200
@@ -353,7 +352,7 @@ class TestAdminIteration4:
     def test_admin_delete_interview_refunds_booked_student(self, session, professional, student, admin_token):
         # student earns credits first via referral hire so the deduction matters? booking uses free use here
         s, e = _future(240, 90)
-        r = session.post(f"{API}/interviews/slots", json={"start_at": s, "end_at": e}, headers=auth_headers(professional["token"]))
+        r = session.post(f"{API}/interviews/slots", json={"start_at": s, "end_at": e, "skill_set": ["Python"]}, headers=auth_headers(professional["token"]))
         sid = r.json()["id"]
         # student books with free use
         r2 = session.post(f"{API}/interviews/book", json={"slot_id": sid}, headers=auth_headers(student["token"]))

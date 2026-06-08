@@ -321,16 +321,20 @@ class BookInterviewBody(BaseModel):
     slot_id: str
 
 
+OPEN_POSITIONS_OPTIONS = ["1 to 5", "1 to 10", "1 to 50", "1 to 100", "100+"]
+
+
 class JobPostBody(BaseModel):
-    title: str
+    title: str = Field(min_length=2)
     company: Optional[str] = None  # company name (auto-fallback to poster's company)
-    description: str
-    location: Optional[str] = ""
+    description: str = Field(min_length=2)
+    location: str = Field(min_length=2)
     salary_range: Optional[str] = ""
-    skills_required: Optional[list[str]] = []
-    category: Optional[Literal["fresher", "experienced"]] = "fresher"
+    skills_required: list[str] = Field(min_length=1, description="At least one skill required")
+    category: Literal["fresher", "experienced"] = "fresher"
     experience_required: Optional[int] = 0  # years required if experienced
-    open_positions: int = Field(default=1, ge=1)
+    open_positions: Optional[int] = None  # numeric (legacy)
+    open_positions_label: Optional[Literal["1 to 5", "1 to 10", "1 to 50", "1 to 100", "100+"]] = "1 to 5"
     bulk_openings: Optional[int] = None  # backward compat alias
 
 
@@ -344,6 +348,7 @@ class JobPatchBody(BaseModel):
     category: Optional[Literal["fresher", "experienced"]] = None
     experience_required: Optional[int] = None
     open_positions: Optional[int] = None
+    open_positions_label: Optional[Literal["1 to 5", "1 to 10", "1 to 50", "1 to 100", "100+"]] = None
 
 
 class ApplyJobBody(BaseModel):
@@ -621,6 +626,7 @@ async def get_me(u: dict = Depends(current_user)):
     out = {"user": user_public(u), "profile": u.get("profile", {})}
     if u["role"] == "professional":
         out["profile_completion"] = compute_pro_profile_completion(u)
+        out["missing_fields"] = pro_missing_fields(u)
         out["user"]["gmail_verified"] = bool(u.get("gmail_verified"))
         out["user"]["alternate_gmail"] = u.get("alternate_gmail") or (u.get("profile", {}) or {}).get("alternate_gmail")
         out["user"]["email_verified"] = True  # company email verified at signup
@@ -706,21 +712,37 @@ EMPLOYER_PROFILE_FIELDS = ["company_name", "company_website", "company_size", "c
 
 
 def compute_pro_profile_completion(user: dict) -> int:
-    """Working professional profile completion percentage based on 7 factors.
-    Each factor contributes ~14% (sum 98–100).
+    """Working professional profile completion percentage based on 10 mandatory factors."""
+    return 100 - int(round(len(pro_missing_fields(user)) / 10 * 100))
+
+
+def pro_missing_fields(user: dict) -> list[str]:
+    """Returns the list of mandatory profile fields a pro hasn't filled in.
+    Drives the 'Profile Incomplete - please complete: …' panel.
     """
     p = user.get("profile") or {}
-    factors = [
-        bool(p.get("phone")),  # Mobile Number Added
-        bool(user.get("email_verified", True)),  # Company Email Verified — verified at signup
-        bool(user.get("gmail_verified")),  # Gmail Verified (for Mock Interview)
-        bool((p.get("skills") or []) or (p.get("expertise") or [])),  # Skills Added
-        bool(p.get("experience_years") or p.get("years_of_experience")),  # Experience Added
-        bool(p.get("designation")),  # Designation Added
-        bool(p.get("profile_photo_base64")),  # Profile Photo Uploaded
-    ]
-    pct = round(sum(factors) / len(factors) * 100)
-    return pct
+    missing: list[str] = []
+    if not (user.get("name") or "").strip():
+        missing.append("Full Name")
+    if not (p.get("phone") or "").strip():
+        missing.append("Mobile Number")
+    if not (user.get("email") or "").strip():
+        missing.append("Company Email Address")
+    if not (user.get("gmail_verified") and user.get("alternate_gmail")):
+        missing.append("Alternate Gmail Address")
+    if not (p.get("company") or "").strip():
+        missing.append("Company Name")
+    if not (p.get("designation") or "").strip():
+        missing.append("Designation")
+    if not (p.get("experience_years") or p.get("years_of_experience")):
+        missing.append("Total Experience")
+    if not (p.get("current_location") or "").strip():
+        missing.append("Current Location")
+    if not ((p.get("skills") or []) or (p.get("expertise") or [])):
+        missing.append("Skill Set")
+    if not (p.get("profile_photo_base64") or "").strip():
+        missing.append("Profile Photo")
+    return missing
 
 
 def compute_resume_score(user: dict) -> int:
@@ -1024,6 +1046,13 @@ async def list_professionals(
 async def create_slot(body: InterviewSlotBody, u: dict = Depends(require_role(["professional"]))):
     if not u.get("is_email_verified"):
         raise HTTPException(status_code=403, detail="Verify your email before posting interview slots.")
+    if not u.get("gmail_verified"):
+        raise HTTPException(
+            status_code=403,
+            detail="Gmail verification is required before creating a Mock Interview slot.",
+        )
+    if not (body.skill_set or []):
+        raise HTTPException(status_code=400, detail="Skill Set is required.")
     try:
         start = datetime.fromisoformat(body.start_at.replace("Z", "+00:00"))
         end = datetime.fromisoformat(body.end_at.replace("Z", "+00:00"))
@@ -1335,15 +1364,24 @@ async def mark_interview_joined(slot_id: str, u: dict = Depends(current_user)):
 # ------------------- Jobs & Applications & Referrals -------------------
 @api.post("/jobs")
 async def post_job(body: JobPostBody, u: dict = Depends(require_role(["employer", "professional"]))):
+    # Mandatory-field guards (Pydantic validates length, but emit human messages for the UI).
+    if not body.title or len(body.title.strip()) < 2:
+        raise HTTPException(status_code=400, detail="Job Title is required.")
+    if not body.description or len(body.description.strip()) < 2:
+        raise HTTPException(status_code=400, detail="Job Description is required.")
+    if not body.location or len(body.location.strip()) < 2:
+        raise HTTPException(status_code=400, detail="Location is required.")
+    if not body.skills_required or len([s for s in body.skills_required if s.strip()]) == 0:
+        raise HTTPException(status_code=400, detail="Skill Set is required.")
     profile = u.get("profile", {}) or {}
     default_company = profile.get("company_name") or profile.get("company") or u.get("name") or "Employer"
-    openings = body.open_positions if body.open_positions else (body.bulk_openings or 1)
-    if openings < 1 or openings > 5:
-        # Default allowed range 1-5, manual override accepted up to 50 if explicit > 5
-        if openings > 5 and openings <= 50:
-            pass
-        else:
-            raise HTTPException(status_code=400, detail="open_positions must be between 1 and 50")
+    company_resolved = (body.company or default_company or "").strip()
+    if not company_resolved:
+        raise HTTPException(status_code=400, detail="Company Name is required.")
+    # Numeric open_positions for back-compat; canonical display uses open_positions_label.
+    label = body.open_positions_label or "1 to 5"
+    LABEL_NUMERIC = {"1 to 5": 5, "1 to 10": 10, "1 to 50": 50, "1 to 100": 100, "100+": 100}
+    openings = body.open_positions or LABEL_NUMERIC.get(label, 5)
     category = body.category or ("experienced" if (body.experience_required or 0) > 0 else "fresher")
     exp_req = body.experience_required or 0
     if category == "experienced" and exp_req <= 0:
@@ -1351,18 +1389,19 @@ async def post_job(body: JobPostBody, u: dict = Depends(require_role(["employer"
     job = {
         "id": new_id(),
         "employer_id": u["id"],
-        "employer_name": body.company or default_company,
+        "employer_name": company_resolved,
         "posted_by_role": u["role"],
         "posted_by_name": u.get("name") or u["email"].split("@")[0],
-        "title": body.title,
-        "company": body.company or default_company,
-        "description": body.description,
-        "location": body.location or "",
+        "title": body.title.strip(),
+        "company": company_resolved,
+        "description": body.description.strip(),
+        "location": body.location.strip(),
         "salary_range": body.salary_range or "",
-        "skills_required": body.skills_required or [],
+        "skills_required": [s.strip() for s in body.skills_required if s.strip()],
         "category": category,
         "experience_required": exp_req,
         "open_positions": openings,
+        "open_positions_label": label,
         "bulk_openings": openings,  # back-compat
         "status": "open",
         "created_at": now_iso(),

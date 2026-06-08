@@ -7,8 +7,10 @@ import { Card } from "@/src/components/Card";
 import { Button } from "@/src/components/Button";
 import { Input } from "@/src/components/Input";
 import { DatePickerField, TimePickerField } from "@/src/components/DateTimePicker";
+import { ConfirmDialog } from "@/src/components/ConfirmDialog";
 import { colors, radius } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
+import { useRouter } from "expo-router";
 
 function tomorrowDateStr() {
   const d = new Date();
@@ -27,6 +29,7 @@ function buildISO(date: string, time: string): Date {
 }
 
 export default function ProSlots() {
+  const router = useRouter();
   const [slots, setSlots] = useState<any[]>([]);
   const [date, setDate] = useState(tomorrowDateStr());
   const [fromTime, setFromTime] = useState("11:00");
@@ -42,11 +45,18 @@ export default function ProSlots() {
   const [feedback, setFeedback] = useState("");
   const [submittingComplete, setSubmittingComplete] = useState(false);
 
+  const [gmailVerified, setGmailVerified] = useState<boolean | null>(null);
+  const [gmailGateOpen, setGmailGateOpen] = useState(false);
+
   const load = useCallback(async () => {
     setRefreshing(true);
     try {
       const s = await api<any[]>("/interviews/slots");
       setSlots(s);
+      try {
+        const me = await api<any>("/auth/me");
+        setGmailVerified(!!me?.user?.gmail_verified);
+      } catch {}
     } catch {}
     setRefreshing(false);
   }, []);
@@ -54,6 +64,15 @@ export default function ProSlots() {
   useEffect(() => { load(); }, [load]);
 
   async function createSlot() {
+    // Gmail verification gate
+    if (gmailVerified === false) {
+      setGmailGateOpen(true);
+      return;
+    }
+    const skillArr = skillSet.split(",").map((s) => s.trim()).filter(Boolean);
+    if (skillArr.length === 0) {
+      return Alert.alert("Skill Set is required.");
+    }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       return Alert.alert("Invalid date", "Use YYYY-MM-DD");
     }
@@ -79,7 +98,7 @@ export default function ProSlots() {
           start_at: start.toISOString(),
           end_at: end.toISOString(),
           topic,
-          skill_set: skillSet.split(",").map((s) => s.trim()).filter(Boolean),
+          skill_set: skillArr,
           experience_years: parseInt(expYears || "0", 10),
         },
       });
@@ -152,8 +171,8 @@ export default function ProSlots() {
           </View>
         </View>
         <Input testID="slot-topic" label="Topic (optional)" placeholder="System design / Behavioral" value={topic} onChangeText={setTopic} />
-        <Input testID="slot-skills" label="Skill set (comma-separated)" placeholder="React, System Design" value={skillSet} onChangeText={setSkillSet} />
-        <Input testID="slot-exp" label="Candidate experience (years)" value={expYears} onChangeText={setExpYears} keyboardType="number-pad" />
+        <Input testID="slot-skills" label="Skill Set (comma-separated) *" placeholder="React, System Design" value={skillSet} onChangeText={setSkillSet} />
+        <Input testID="slot-exp" label="Your Total Experience (years)" value={expYears} onChangeText={setExpYears} keyboardType="number-pad" />
         <Txt variant="small" style={{ color: colors.textSecondary, marginBottom: 8 }}>
           Slots use 12-hour AM/PM in IST. Min 1 hour, max 5 hours/day per professional.
         </Txt>
@@ -227,6 +246,15 @@ export default function ProSlots() {
           </View>
         </View>
       </Modal>
+
+      <ConfirmDialog
+        visible={gmailGateOpen}
+        title="Gmail verification is required before creating a Mock Interview slot."
+        confirmLabel="Verify Gmail"
+        cancelLabel="Cancel"
+        onCancel={() => setGmailGateOpen(false)}
+        onConfirm={() => { setGmailGateOpen(false); router.push("/professional/profile"); }}
+      />
     </Screen>
   );
 }

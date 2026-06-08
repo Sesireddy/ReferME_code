@@ -10,8 +10,11 @@ from conftest import _signup_verify, auth_headers, API
 
 # ------------------------- /auth/me for pro -------------------------
 
-def test_auth_me_pro_includes_profile_completion(session, professional):
-    r = session.get(f"{API}/auth/me", headers=auth_headers(professional["token"]))
+def test_auth_me_pro_includes_profile_completion(session):
+    """Raw, un-gmail-verified pro: brand-new — gmail_verified must be False."""
+    from conftest import _signup_verify  # type: ignore
+    pro = _signup_verify(session, "professional")
+    r = session.get(f"{API}/auth/me", headers=auth_headers(pro["token"]))
     assert r.status_code == 200, r.text
     j = r.json()
     assert "profile_completion" in j and isinstance(j["profile_completion"], int)
@@ -142,20 +145,23 @@ def test_gmail_verify_success_sets_user_flags(session, professional):
 
 # ------------------------- profile_completion math -------------------------
 
-def test_profile_completion_increases_with_fields(session, professional):
+def test_profile_completion_increases_with_fields(session):
+    from conftest import _signup_verify  # type: ignore
+    professional = _signup_verify(session, "professional")
     h = auth_headers(professional["token"])
 
     me0 = session.get(f"{API}/auth/me", headers=h).json()
     base = me0["profile_completion"]
-    # Brand-new pro has only Company Email Verified factor -> 1/7 -> ~14
-    assert 10 <= base <= 20, f"expected ~14, got {base}"
+    # Brand-new pro has Full Name + Company Email factors -> 2/10 -> 20%
+    assert 10 <= base <= 30, f"expected 10-30, got {base}"
 
-    # Add phone, designation, experience, skills, profile photo via PUT /profile
+    # Add phone, designation, company, experience, skills, profile photo, location via PUT /profile
     r = session.put(
         f"{API}/profile",
         json={
             "phone": "+919876543210",
             "designation": "Senior Engineer",
+            "company": "Acme Corp",
             "experience_years": 5,
             "skills": ["Python", "FastAPI"],
             "profile_photo_base64": "data:image/png;base64,iVBORw0KGgo=",
@@ -166,11 +172,11 @@ def test_profile_completion_increases_with_fields(session, professional):
     assert r.status_code == 200, r.text
 
     me1 = session.get(f"{API}/auth/me", headers=h).json()
-    # 1 (email) + 5 added = 6 / 7 = ~86
     assert me1["profile_completion"] >= base + 50
-    assert 80 <= me1["profile_completion"] <= 90, f"expected ~86, got {me1['profile_completion']}"
+    # 9 of 10 factors after this PUT (name, email, company, designation, exp, location, skills, photo, phone — but missing gmail+alt_gmail)
+    assert 85 <= me1["profile_completion"] <= 95, f"expected ~90, got {me1['profile_completion']}"
 
-    # Add Gmail verification (last factor) -> 7/7 -> 100
+    # Add Gmail verification (final factor) -> 10/10 -> 100
     alt = f"complete_{uuid.uuid4().hex[:8]}@gmail.com"
     s = session.post(f"{API}/pro/gmail/send-otp", json={"email": alt}, headers=h)
     code = s.json()["mock_otp"]
@@ -208,9 +214,11 @@ def test_pro_profile_fields_persist(session, professional):
     assert p.get("company") == payload["company"]
 
 
-def test_pro_profile_accepts_alternate_gmail_field_but_does_not_verify(session, professional):
+def test_pro_profile_accepts_alternate_gmail_field_but_does_not_verify(session):
     """ProfileBody now accepts alternate_gmail — but writing it via PUT /profile
     should NOT set gmail_verified (that requires the OTP flow)."""
+    from conftest import _signup_verify  # type: ignore
+    professional = _signup_verify(session, "professional")  # raw, un-gmail-verified
     h = auth_headers(professional["token"])
     alt = f"raw_{uuid.uuid4().hex[:6]}@gmail.com"
     r = session.put(f"{API}/profile", json={"alternate_gmail": alt}, headers=h)
@@ -242,11 +250,10 @@ def test_jobs_mine_true_returns_only_caller_jobs(session, professional):
         "title": "TEST iter7 mine=true",
         "description": "test",
         "location": "Bangalore",
-        "skills": ["Python"],
-        "experience_min": 1,
-        "experience_max": 3,
-        "salary_min": 100000,
-        "salary_max": 200000,
+        "skills_required": ["Python"],
+        "category": "experienced",
+        "experience_required": 2,
+        "salary_range": "10-20L",
     }
     cr = session.post(f"{API}/jobs", json=job, headers=h)
     assert cr.status_code == 200, cr.text

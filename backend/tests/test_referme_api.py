@@ -150,7 +150,7 @@ class TestInterviews:
         # pro creates slot in the future
         future_start = (datetime.now(timezone.utc) + timedelta(days=2)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
         future_end = (datetime.now(timezone.utc) + timedelta(days=2, hours=1)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-        r = session.post(f"{API}/interviews/slots", json={"start_at": future_start, "end_at": future_end, "topic": "DSA"}, headers=auth_headers(professional["token"]))
+        r = session.post(f"{API}/interviews/slots", json={"start_at": future_start, "end_at": future_end, "topic": "DSA", "skill_set": ["Python"]}, headers=auth_headers(professional["token"]))
         assert r.status_code == 200, r.text
         slot = r.json()
         assert slot["start_at"] == future_start
@@ -204,7 +204,7 @@ class TestInterviews:
     def test_student_cannot_create_slot(self, session, student):
         future_start = (datetime.now(timezone.utc) + timedelta(days=2)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
         future_end = (datetime.now(timezone.utc) + timedelta(days=2, hours=1)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-        r = session.post(f"{API}/interviews/slots", json={"start_at": future_start, "end_at": future_end}, headers=auth_headers(student["token"]))
+        r = session.post(f"{API}/interviews/slots", json={"start_at": future_start, "end_at": future_end, "skill_set": ["Python"]}, headers=auth_headers(student["token"]))
         assert r.status_code == 403
 
 
@@ -227,7 +227,7 @@ class TestJobs:
 
     def test_referral_and_hire_flow(self, session, professional, student, employer, admin_token):
         # employer posts a job
-        r = session.post(f"{API}/jobs", json={"title": "TEST Role", "description": "test", "location": "X", "salary_range": "10L", "skills_required": ["a"], "bulk_openings": 1}, headers=auth_headers(employer["token"]))
+        r = session.post(f"{API}/jobs", json={"title": "TEST Role", "description": "test", "location": "Bangalore", "salary_range": "10L", "skills_required": ["a"], "bulk_openings": 1}, headers=auth_headers(employer["token"]))
         assert r.status_code == 200, r.text
         job_id = r.json()["id"]
         # pro refers student
@@ -279,7 +279,7 @@ class TestPayouts:
 
     def test_full_payout_approve_flow(self, session, professional, student, employer, admin_token):
         # Earn 500+ credits via referral hire (now requires admin approval)
-        r = session.post(f"{API}/jobs", json={"title": "X", "description": "y", "bulk_openings": 1}, headers=auth_headers(employer["token"]))
+        r = session.post(f"{API}/jobs", json={"title": "X-Role", "description": "demo description y", "bulk_openings": 1, "location": "Bangalore", "skills_required": ["Python"]}, headers=auth_headers(employer["token"]))
         job_id = r.json()["id"]
         r2 = session.post(f"{API}/referrals", json={"student_id": student["user"]["id"], "job_id": job_id}, headers=auth_headers(professional["token"]))
         app_id = r2.json()["application_id"]
@@ -436,45 +436,45 @@ class TestProfileIteration3:
 # ---- Iteration 3: Interview slot start_at/end_at + conflict ----
 class TestSlotIteration3:
     def test_slot_invalid_format(self, session, professional):
-        r = session.post(f"{API}/interviews/slots", json={"start_at": "not-a-date", "end_at": "also-bad"}, headers=auth_headers(professional["token"]))
+        r = session.post(f"{API}/interviews/slots", json={"start_at": "not-a-date", "end_at": "also-bad", "skill_set": ["Python"]}, headers=auth_headers(professional["token"]))
         assert r.status_code == 400
 
     def test_slot_end_before_start(self, session, professional):
         s, e = _future(60, 30)
-        r = session.post(f"{API}/interviews/slots", json={"start_at": e, "end_at": s}, headers=auth_headers(professional["token"]))
+        r = session.post(f"{API}/interviews/slots", json={"start_at": e, "end_at": s, "skill_set": ["Python"]}, headers=auth_headers(professional["token"]))
         assert r.status_code == 400
 
     def test_slot_past(self, session, professional):
         s = (datetime.now(timezone.utc) - timedelta(hours=2)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
         e = (datetime.now(timezone.utc) - timedelta(hours=1)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-        r = session.post(f"{API}/interviews/slots", json={"start_at": s, "end_at": e}, headers=auth_headers(professional["token"]))
+        r = session.post(f"{API}/interviews/slots", json={"start_at": s, "end_at": e, "skill_set": ["Python"]}, headers=auth_headers(professional["token"]))
         assert r.status_code == 400
 
     def test_slot_too_short(self, session, professional):
         s, e = _future(60, 30)
-        r = session.post(f"{API}/interviews/slots", json={"start_at": s, "end_at": e}, headers=auth_headers(professional["token"]))
+        r = session.post(f"{API}/interviews/slots", json={"start_at": s, "end_at": e, "skill_set": ["Python"]}, headers=auth_headers(professional["token"]))
         assert r.status_code == 400
         assert "60" in r.json().get("detail", "")
 
     def test_slot_overlap_rejected_adjacent_allowed(self, session, professional):
         s1, e1 = _future(120, 60)
-        r1 = session.post(f"{API}/interviews/slots", json={"start_at": s1, "end_at": e1}, headers=auth_headers(professional["token"]))
+        r1 = session.post(f"{API}/interviews/slots", json={"start_at": s1, "end_at": e1, "skill_set": ["Python"]}, headers=auth_headers(professional["token"]))
         assert r1.status_code == 200, r1.text
         # overlapping: starts inside [s1,e1]
         s_over = (datetime.fromisoformat(s1.replace("Z", "+00:00")) + timedelta(minutes=10)).isoformat().replace("+00:00", "Z")
         e_over = (datetime.fromisoformat(s1.replace("Z", "+00:00")) + timedelta(minutes=70)).isoformat().replace("+00:00", "Z")
-        r2 = session.post(f"{API}/interviews/slots", json={"start_at": s_over, "end_at": e_over}, headers=auth_headers(professional["token"]))
+        r2 = session.post(f"{API}/interviews/slots", json={"start_at": s_over, "end_at": e_over, "skill_set": ["Python"]}, headers=auth_headers(professional["token"]))
         assert r2.status_code == 400
         # adjacent (back-to-back, no overlap) should succeed
-        r3 = session.post(f"{API}/interviews/slots", json={"start_at": e1, "end_at": (datetime.fromisoformat(e1.replace("Z", "+00:00")) + timedelta(minutes=60)).isoformat().replace("+00:00", "Z")}, headers=auth_headers(professional["token"]))
+        r3 = session.post(f"{API}/interviews/slots", json={"start_at": e1, "end_at": (datetime.fromisoformat(e1.replace("Z", "+00:00")) + timedelta(minutes=60)).isoformat().replace("+00:00", "Z"), "skill_set": ["Python"]}, headers=auth_headers(professional["token"]))
         assert r3.status_code == 200, r3.text
 
     def test_list_slots_sorted(self, session, professional):
         # Create two slots; verify sort by start_at
         s1, e1 = _future(180, 30)
         s2, e2 = _future(240, 30)
-        session.post(f"{API}/interviews/slots", json={"start_at": s2, "end_at": e2}, headers=auth_headers(professional["token"]))
-        session.post(f"{API}/interviews/slots", json={"start_at": s1, "end_at": e1}, headers=auth_headers(professional["token"]))
+        session.post(f"{API}/interviews/slots", json={"start_at": s2, "end_at": e2, "skill_set": ["Python"]}, headers=auth_headers(professional["token"]))
+        session.post(f"{API}/interviews/slots", json={"start_at": s1, "end_at": e1, "skill_set": ["Python"]}, headers=auth_headers(professional["token"]))
         r = session.get(f"{API}/interviews/slots", headers=auth_headers(professional["token"]))
         assert r.status_code == 200
         slots = r.json()
@@ -517,7 +517,7 @@ class TestApplicationsPool:
             "education": "B.Tech", "passed_out_year": 2024, "current_location": "Bangalore",
             "preferred_role": "fresher", "skills": ["Python"], "resume_link": "https://x.io/cv.pdf",
         }, headers=auth_headers(student["token"]))
-        r = session.post(f"{API}/jobs", json={"title": "TEST pool", "description": "d", "bulk_openings": 1}, headers=auth_headers(employer["token"]))
+        r = session.post(f"{API}/jobs", json={"title": "TEST pool", "description": "demo role", "bulk_openings": 1, "location": "Bangalore", "skills_required": ["Python"]}, headers=auth_headers(employer["token"]))
         job_id = r.json()["id"]
         session.post(f"{API}/jobs/apply", json={"job_id": job_id}, headers=auth_headers(student["token"]))
         r2 = session.get(f"{API}/applications/pool", headers=auth_headers(professional["token"]))

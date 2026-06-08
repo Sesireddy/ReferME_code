@@ -42,7 +42,7 @@ class TestInterviewJoinedAndComplete:
     def test_joined_endpoint(self, session, professional, student):
         start = _iso(datetime.now(timezone.utc) + timedelta(days=2))
         end = _iso(datetime.now(timezone.utc) + timedelta(days=2, hours=1))
-        r = session.post(f"{API}/interviews/slots", json={"start_at": start, "end_at": end}, headers=auth_headers(professional["token"]))
+        r = session.post(f"{API}/interviews/slots", json={"start_at": start, "end_at": end, "skill_set": ["Python"]}, headers=auth_headers(professional["token"]))
         assert r.status_code == 200, r.text
         slot_id = r.json()["id"]
         # Student books
@@ -64,7 +64,7 @@ class TestInterviewJoinedAndComplete:
     def test_complete_requires_both_joined(self, session, professional, student):
         start = _iso(datetime.now(timezone.utc) + timedelta(days=2))
         end = _iso(datetime.now(timezone.utc) + timedelta(days=2, hours=1))
-        r = session.post(f"{API}/interviews/slots", json={"start_at": start, "end_at": end}, headers=auth_headers(professional["token"]))
+        r = session.post(f"{API}/interviews/slots", json={"start_at": start, "end_at": end, "skill_set": ["Python"]}, headers=auth_headers(professional["token"]))
         slot_id = r.json()["id"]
         session.post(f"{API}/interviews/book", json={"slot_id": slot_id}, headers=auth_headers(student["token"]))
         # Backdate but DO NOT mark both joined
@@ -79,7 +79,7 @@ class TestInterviewJoinedAndComplete:
     def test_complete_requires_min_duration(self, session, professional, student):
         start = _iso(datetime.now(timezone.utc) + timedelta(days=2))
         end = _iso(datetime.now(timezone.utc) + timedelta(days=2, hours=1))
-        r = session.post(f"{API}/interviews/slots", json={"start_at": start, "end_at": end}, headers=auth_headers(professional["token"]))
+        r = session.post(f"{API}/interviews/slots", json={"start_at": start, "end_at": end, "skill_set": ["Python"]}, headers=auth_headers(professional["token"]))
         slot_id = r.json()["id"]
         session.post(f"{API}/interviews/book", json={"slot_id": slot_id}, headers=auth_headers(student["token"]))
         coll = _mongo().interview_slots
@@ -94,7 +94,7 @@ class TestInterviewJoinedAndComplete:
     def test_complete_happy_returns_35_and_pro_rating(self, session, professional, student):
         start = _iso(datetime.now(timezone.utc) + timedelta(days=2))
         end = _iso(datetime.now(timezone.utc) + timedelta(days=2, hours=1))
-        r = session.post(f"{API}/interviews/slots", json={"start_at": start, "end_at": end}, headers=auth_headers(professional["token"]))
+        r = session.post(f"{API}/interviews/slots", json={"start_at": start, "end_at": end, "skill_set": ["Python"]}, headers=auth_headers(professional["token"]))
         slot_id = r.json()["id"]
         session.post(f"{API}/interviews/book", json={"slot_id": slot_id}, headers=auth_headers(student["token"]))
         coll = _mongo().interview_slots

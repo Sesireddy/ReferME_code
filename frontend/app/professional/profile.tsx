@@ -12,12 +12,29 @@ import { colors, radius } from "@/src/theme/tokens";
 import { api, clearSession } from "@/src/lib/api";
 import { ConfirmDialog } from "@/src/components/ConfirmDialog";
 
+function maskPhone(p?: string): string {
+  if (!p) return "";
+  // keep leading non-digits, mask middle, reveal last 4 digits
+  const digits = p.replace(/\D/g, "");
+  if (digits.length <= 4) return p;
+  const last4 = digits.slice(-4);
+  const masked = "X".repeat(Math.max(4, digits.length - 4)) + last4;
+  // Preserve any country-code prefix like +91 if present
+  if (p.startsWith("+")) {
+    const cc = p.slice(0, p.indexOf(" ") >= 0 ? p.indexOf(" ") : 3);
+    return `${cc} ${masked}`;
+  }
+  return masked;
+}
+
 export default function ProProfile() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<any>({});
   const [completion, setCompletion] = useState<number>(0);
+  const [missingFields, setMissingFields] = useState<string[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [editingPhone, setEditingPhone] = useState(false);
 
   // editable
   const [name, setName] = useState("");
@@ -46,6 +63,7 @@ export default function ProProfile() {
       setUser(me.user);
       setProfile(me.profile || {});
       setCompletion(me.profile_completion ?? 0);
+      setMissingFields(me.missing_fields || []);
       setName(me.user.name || "");
       setPhone(me.profile?.phone || "");
       setCompany(me.profile?.company || "");
@@ -199,6 +217,20 @@ export default function ProProfile() {
         </View>
       </Card>
 
+      {missingFields.length > 0 ? (
+        <Card style={{ marginTop: 12, backgroundColor: "#FFF3E0", borderColor: "#FFB74D", borderWidth: 1 }}>
+          <Txt variant="h3" style={{ color: "#E65100" }}>Profile Incomplete</Txt>
+          <Txt variant="small" style={{ color: "#E65100", marginTop: 4 }}>Please complete:</Txt>
+          {missingFields.map((f) => (
+            <Txt key={f} variant="small" style={{ color: "#BF360C", marginTop: 2 }}>• {f}</Txt>
+          ))}
+        </Card>
+      ) : (
+        <Card style={{ marginTop: 12, backgroundColor: "#E8F5E9", borderColor: "#66BB6A", borderWidth: 1 }}>
+          <Txt variant="h3" style={{ color: "#2E7D32" }}>Profile Completed Successfully ✅</Txt>
+        </Card>
+      )}
+
       {/* Verification badges */}
       <Card style={{ marginTop: 12 }}>
         <Txt variant="h3">Verification</Txt>
@@ -220,14 +252,23 @@ export default function ProProfile() {
       <Card style={{ marginTop: 12 }}>
         <Txt variant="h3">Personal Information</Txt>
         <Input testID="name" label="Full Name" value={name} onChangeText={setName} />
-        <Input testID="phone" label="Mobile Number" value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="+91 9876543210" />
+        <Input
+          testID="phone"
+          label="Mobile Number"
+          value={editingPhone ? phone : maskPhone(phone)}
+          onChangeText={setPhone}
+          onFocus={() => setEditingPhone(true)}
+          onBlur={() => setEditingPhone(false)}
+          keyboardType="phone-pad"
+          placeholder="+91 9876543210"
+        />
         <Input label="Company Email (verified)" value={user?.email || ""} editable={false} />
         <Txt variant="small" style={{ color: colors.textSecondary, marginTop: -8, marginBottom: 8 }}>
           🔒 Read-only after verification.
         </Txt>
         <Input
           testID="alt-gmail"
-          label="Alternate Gmail (optional)"
+          label="Alternate Gmail (Used for Communication)"
           value={altGmail}
           onChangeText={(v) => { setAltGmail(v); if (gmailVerified) setGmailVerified(false); }}
           keyboardType="email-address"
@@ -244,7 +285,7 @@ export default function ProProfile() {
         <Txt variant="h3">Professional Details</Txt>
         <Input testID="company" label="Company Name" value={company} onChangeText={setCompany} />
         <Input testID="designation" label="Designation" value={designation} onChangeText={setDesignation} placeholder="Senior Engineer" />
-        <Input testID="years" label="Years of Experience" value={years} onChangeText={setYears} keyboardType="number-pad" />
+        <Input testID="years" label="Your Total Experience (years)" value={years} onChangeText={setYears} keyboardType="number-pad" />
         <Input testID="location" label="Current Location" value={location} onChangeText={setLocation} placeholder="Bangalore" />
         <Input testID="skills" label="Skill Set (comma-separated)" value={skills} onChangeText={setSkills} placeholder="React, System Design, Java" />
       </Card>

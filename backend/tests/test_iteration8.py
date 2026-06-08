@@ -11,13 +11,14 @@ from datetime import datetime, timedelta, timezone
 import pytest
 import requests
 
-from conftest import API, auth_headers, _signup_verify  # type: ignore
+from conftest import API, auth_headers, _signup_verify, _gmail_verify_in_db  # type: ignore
 
 
 # ---------- helpers ----------
 
 def _make_pro_with_profile(session, *, expertise=None, location=None, exp_years=2):
     pro = _signup_verify(session, "professional")
+    _gmail_verify_in_db(pro["user"]["id"])
     body = {
         "name": pro["user"].get("name") or "Pro Tester",
         "company": "AcmeCorp",
