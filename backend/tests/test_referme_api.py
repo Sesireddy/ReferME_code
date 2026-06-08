@@ -196,10 +196,10 @@ class TestInterviews:
         items = lb["items"] if isinstance(lb, dict) else lb
         me = next((x for x in items if x.get("id") == student["user"]["id"]), None)
         assert me is not None and me.get("interviews_attended", 0) >= 1
-        # Pro leaderboard reflects new rating
-        plb = session.get(f"{API}/leaderboard/professionals", headers=auth_headers(professional["token"])).json()
-        mp = next((x for x in plb if x.get("id") == professional["user"]["id"]), None)
-        assert mp is not None and float(mp.get("rating", 0)) == 8.0
+        # Pro rating reflects the candidate's score. Fetch directly via /auth/me to avoid
+        # leaderboard pagination flake (the pro user collection grows over time across test runs).
+        prof_me = session.get(f"{API}/auth/me", headers=auth_headers(professional["token"])).json()
+        assert float(prof_me["user"].get("rating") or 0) == 8.0, prof_me
 
     def test_student_cannot_create_slot(self, session, student):
         future_start = (datetime.now(timezone.utc) + timedelta(days=2)).replace(microsecond=0).isoformat().replace("+00:00", "Z")

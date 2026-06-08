@@ -154,7 +154,7 @@ def new_id() -> str:
 
 
 def user_public(u: dict) -> dict:
-    return {
+    out = {
         "id": u["id"],
         "email": u["email"],
         "role": u["role"],
@@ -166,6 +166,14 @@ def user_public(u: dict) -> dict:
         "total_deposits": u.get("total_deposits", 0),
         "created_at": u.get("created_at", now_iso()),
     }
+    # Professional-only fields surfaced to clients (rating + reviews + counts).
+    if u.get("role") == "professional":
+        out["rating"] = float(u.get("rating") or 0)
+        out["ratings_count"] = int(u.get("ratings_count") or 0)
+        out["interviews_conducted"] = int(u.get("interviews_conducted") or 0)
+        out["referrals_made"] = int(u.get("referrals_made") or 0)
+        out["successful_referrals"] = int(u.get("successful_referrals") or 0)
+    return out
 
 
 async def send_otp_email(email: str, otp: str, purpose: str) -> bool:
