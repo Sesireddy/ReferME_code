@@ -325,12 +325,12 @@ OPEN_POSITIONS_OPTIONS = ["1 to 5", "1 to 10", "1 to 50", "1 to 100", "100+"]
 
 
 class JobPostBody(BaseModel):
-    title: str = Field(min_length=2)
+    title: Optional[str] = ""
     company: Optional[str] = None  # company name (auto-fallback to poster's company)
-    description: str = Field(min_length=2)
-    location: str = Field(min_length=2)
+    description: Optional[str] = ""
+    location: Optional[str] = ""
     salary_range: Optional[str] = ""
-    skills_required: list[str] = Field(min_length=1, description="At least one skill required")
+    skills_required: Optional[list[str]] = None
     category: Literal["fresher", "experienced"] = "fresher"
     experience_required: Optional[int] = 0  # years required if experienced
     open_positions: Optional[int] = None  # numeric (legacy)
@@ -1374,7 +1374,7 @@ async def post_job(body: JobPostBody, u: dict = Depends(require_role(["employer"
     if not body.skills_required or len([s for s in body.skills_required if s.strip()]) == 0:
         raise HTTPException(status_code=400, detail="Skill Set is required.")
     profile = u.get("profile", {}) or {}
-    default_company = profile.get("company_name") or profile.get("company") or u.get("name") or "Employer"
+    default_company = profile.get("company_name") or profile.get("company")
     company_resolved = (body.company or default_company or "").strip()
     if not company_resolved:
         raise HTTPException(status_code=400, detail="Company Name is required.")

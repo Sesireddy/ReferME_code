@@ -77,7 +77,15 @@ def professional(session):
 
 @pytest.fixture()
 def employer(session):
-    return _signup_verify(session, "employer")
+    emp = _signup_verify(session, "employer")
+    # Provide a default company_name in profile so job posts pass the
+    # mandatory Company Name validation without each test having to set it.
+    session.put(
+        f"{API}/profile",
+        json={"company_name": f"Acme {emp['user']['id'][:6]}"},
+        headers=auth_headers(emp["token"]),
+    )
+    return emp
 
 
 @pytest.fixture()

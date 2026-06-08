@@ -1,0 +1,41 @@
+{
+  "summary": "Iteration 9.1 retest — HIGH backend bug from iter-9 is FIXED. POST /api/jobs now returns 400 with the exact spec'd detail strings for missing/empty title/description/location/skills_required AND for the previously-unguarded company case ('Company Name is required.' when body.company is empty AND poster.profile.company_name is unset). Verified two ways: (1) full pytest suite /app/backend/tests/ → 153/153 GREEN in 291.9s (saved at /app/test_reports/pytest/pytest_iter9_1.xml); (2) standalone curl-style verifier /tmp/verify_post_jobs.py covering 9 negative+happy cases (missing_title, missing_description, missing_location, skills_required=[] / None / ['   '], company missing with profile unset, company field omitted with profile unset, happy_path) → 9/9 PASS against the live public EXPO_PUBLIC_BACKEND_URL. RCA confirmed resolved: JobPostBody (server.py:327-338) now declares title/description/location as Optional[str]='' and skills_required as Optional[list[str]]=None — Pydantic no longer short-circuits the request, and the handler's manual guards at server.py:1368-1375 fire as designed. Frontend smoke (post-job inline errors, Gmail-verify gate ConfirmDialog, slot creation flow) was NOT re-driven in this iter because review_request testing_type='backend'; previously-passing UI flows from iter-9 remain unaffected by this backend-only change (Optional schema + handler 400s are a superset of the previous behavior). SendGrid still 401 (mock_otp keeps tests alive). No deprecated Expo packages newly introduced.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "SendGrid", "issue": "Carried over: SendGrid 401 in env; mock_otp fallback keeps signup/forgot-password tests alive but no real emails are sent."},
+      {"endpoint": "POST /api/jobs", "issue": "Company-name fallback chain at server.py:1377 still pulls from profile.company_name OR profile.company. If a future profile model normalizes only to company_name, the legacy 'company' key fallback is dead code — minor tech debt, not a correctness bug."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "global", "issues": ["Carried over (non-blocking): 'shadow*' style props deprecated (use boxShadow); 'props.pointerEvents' deprecated (move into style). RN-Web warnings visible in expo.err.log on every screen load."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration9.py",
+    "/app/test_reports/pytest/pytest_iter9_1.xml",
+    "/tmp/verify_post_jobs.py"
+  ],
+  "action_items": [
+    "(NONE — HIGH bug is closed.) Optional cleanup: see critical_code_review_comments below — split server.py (still 2306 lines), unify mandatory-field strategy (drop any remaining Pydantic length constraints on user-facing fields and keep handler-side raises as the single source of human messages), and replace shadow*/pointerEvents RN-Web deprecations."
+  ],
+  "critical_code_review_comments": [
+    "server.py is still 2306 lines — splitting into routers (auth, profile, jobs, interviews, applications, leaderboard, wallet, admin, payouts, pro_extras) remains overdue.",
+    "Mandatory-field strategy is now consistent for POST /api/jobs (Optional + handler raises). Recommend auditing other endpoints (e.g., InterviewSlotBody at server.py:~1050, ProfileUpdate*) for the same pattern so all user-facing 'required' messages are emitted as HTTP 400 with handler-side detail strings, never as 422 Pydantic envelopes.",
+    "conftest.py employer fixture now silently PUTs company_name='Acme {id}' so existing job tests pass — be sure to keep test_iteration9 test_missing_company_400 (if/when added) wired to a separate emp_without_company fixture so the negative case is actually exercised by the regression suite. Currently only ad-hoc covered by /tmp/verify_post_jobs.py."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% (153/153) — including iter-9 TestJobPostingMandatoryFields (5/5) which were the 4 failures from iter-9. Standalone /tmp/verify_post_jobs.py adds 9/9 PASS for the spec'd negative cases including the 'Company Name is required.' branch.",
+    "frontend": "not retested this iter (testing_type=backend); iter-9 frontend smoke remains the latest reference (100% on the iter-9 UI scope)."
+  },
+  "seed_data_creation": "Throwaway @referme.io employer accounts created via /auth/signup + /auth/verify-otp during the full pytest run and during /tmp/verify_post_jobs.py. Plus one happy-path TEST_iter9_1_job posted by the with-company employer. All entries are uniquely-suffixed (uuid4 hex) and identifiable for cleanup.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter-9 HIGH bug is closed — POST /api/jobs returns 400 with spec'd messages for empty title/description/location/skills_required AND for empty company when profile.company_name is also unset. Backend regression baseline: 153/153 GREEN, ~5 minutes wall-clock. To re-verify quickly without running the full suite, run: `pytest /app/backend/tests/test_iteration9.py::TestJobPostingMandatoryFields -v` (expect 5/5 GREEN) and `python /tmp/verify_post_jobs.py` (expect 9/9). Note: the iter-9 test file does NOT include an explicit 'Company Name is required.' assertion — main agent may want to add a test_missing_company_400 case to test_iteration9.py for permanent regression coverage; the conftest 'employer' fixture currently auto-sets company_name, so the new test should use a raw _signup_verify(session, 'employer') without the PUT /profile step. Frontend scope was untouched per review_request testing_type='backend'.",
+  "rca_of_issue": "Reviewing the iter-9 RCA against current code: JobPostBody at server.py:327-338 now reads `title: Optional[str] = \"\"`, `company: Optional[str] = None`, `description: Optional[str] = \"\"`, `location: Optional[str] = \"\"`, `skills_required: Optional[list[str]] = None` — the Field(min_length=...) constraints have been removed, so Pydantic no longer short-circuits with 422. The handler at server.py:1368-1380 then runs four `if not body.X or len(body.X.strip()) < 2: raise HTTPException(400, '...')` guards for title/description/location, a list-emptiness/whitespace guard for skills_required, and a final `company_resolved = (body.company or default_company or '').strip(); if not company_resolved: raise 400 'Company Name is required.'` — all five spec'd 400s now fire correctly. Verification log (against https://refer-connect-11.preview.emergentagent.com/api): missing_title→400 'Job Title is required.', missing_description→400 'Job Description is required.', missing_location→400 'Location is required.', skills_required=[] or None or ['   ']→400 'Skill Set is required.', company='' with profile.company_name unset→400 'Company Name is required.', happy_path→200. No mitigation needed; the bug is closed."
+}

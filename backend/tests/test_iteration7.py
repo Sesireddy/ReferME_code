@@ -248,7 +248,8 @@ def test_jobs_mine_true_returns_only_caller_jobs(session, professional):
     # Create a job as this pro
     job = {
         "title": "TEST iter7 mine=true",
-        "description": "test",
+        "description": "test description",
+        "company": "Acme Corp",
         "location": "Bangalore",
         "skills_required": ["Python"],
         "category": "experienced",
