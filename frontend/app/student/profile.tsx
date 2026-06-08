@@ -12,6 +12,7 @@ import { Input } from "@/src/components/Input";
 import { Picker } from "@/src/components/Picker";
 import { colors, radius } from "@/src/theme/tokens";
 import { api, clearSession } from "@/src/lib/api";
+import { ConfirmDialog } from "@/src/components/ConfirmDialog";
 
 const MAX_RESUME_BYTES = 5 * 1024 * 1024;
 
@@ -37,6 +38,7 @@ type ResumeTab = (typeof RESUME_TABS)[number]["id"];
 
 export default function StudentProfile() {
   const router = useRouter();
+  const [signoutOpen, setSignoutOpen] = useState(false);
   const [user, setUser] = useState<any>(null);
 
   // Form state
@@ -189,21 +191,12 @@ export default function StudentProfile() {
   }
 
   async function logout() {
-    Alert.alert(
-      "Are you sure you want to sign out?",
-      undefined,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Yes, Sign Out",
-          style: "destructive",
-          onPress: async () => {
-            await clearSession();
-            router.replace("/welcome");
-          },
-        },
-      ],
-    );
+    setSignoutOpen(true);
+  }
+  async function confirmLogout() {
+    setSignoutOpen(false);
+    await clearSession();
+    router.replace("/welcome");
   }
 
   return (
@@ -389,6 +382,16 @@ export default function StudentProfile() {
           style={{ borderColor: colors.error }}
         />
       </View>
+
+      <ConfirmDialog
+        visible={signoutOpen}
+        title="Are you sure you want to sign out?"
+        confirmLabel="Yes, Sign Out"
+        cancelLabel="Cancel"
+        destructive
+        onCancel={() => setSignoutOpen(false)}
+        onConfirm={confirmLogout}
+      />
     </Screen>
   );
 }

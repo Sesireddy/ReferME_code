@@ -314,7 +314,7 @@ class TestLeaderboardIteration4:
             "resume_link": "https://x.io/cv.pdf",
         }, headers=auth_headers(student["token"]))
         # filter by location matches
-        r = session.get(f"{API}/leaderboard/students?location=Bangalore&skill=Python&category=fresher&page_size=100", headers=auth_headers(student["token"]))
+        r = session.get(f"{API}/leaderboard/students?location=Bangalore&skill=Python&category=fresher&page_size=500", headers=auth_headers(student["token"]))
         assert r.status_code == 200
         items = r.json()["items"]
         me = next((x for x in items if x["id"] == student["user"]["id"]), None)

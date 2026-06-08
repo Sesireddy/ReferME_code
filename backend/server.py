@@ -1898,7 +1898,7 @@ async def leaderboard_students(
     min_jobs_applied: Optional[int] = Query(None),
     min_referrals: Optional[int] = Query(None),
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page_size: int = Query(20, ge=1, le=500),
 ):
     students = await db.users.find({"role": "student"}, {"_id": 0, "password_hash": 0}).to_list(5000)
     out: list[dict] = []

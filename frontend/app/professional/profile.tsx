@@ -10,6 +10,7 @@ import { Button } from "@/src/components/Button";
 import { Input } from "@/src/components/Input";
 import { colors, radius } from "@/src/theme/tokens";
 import { api, clearSession } from "@/src/lib/api";
+import { ConfirmDialog } from "@/src/components/ConfirmDialog";
 
 export default function ProProfile() {
   const router = useRouter();
@@ -36,6 +37,7 @@ export default function ProProfile() {
   const [gmailOtp, setGmailOtp] = useState("");
   const [sentGmailOtp, setSentGmailOtp] = useState<string | null>(null);
   const [gmailBusy, setGmailBusy] = useState(false);
+  const [signoutOpen, setSignoutOpen] = useState(false);
 
   const load = useCallback(async () => {
     setRefreshing(true);
@@ -141,21 +143,12 @@ export default function ProProfile() {
   }
 
   async function logout() {
-    Alert.alert(
-      "Are you sure you want to sign out?",
-      undefined,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Yes, Sign Out",
-          style: "destructive",
-          onPress: async () => {
-            await clearSession();
-            router.replace("/welcome");
-          },
-        },
-      ],
-    );
+    setSignoutOpen(true);
+  }
+  async function confirmLogout() {
+    setSignoutOpen(false);
+    await clearSession();
+    router.replace("/welcome");
   }
 
   const credits = user?.credits ?? 0;
@@ -258,7 +251,23 @@ export default function ProProfile() {
 
       <Button testID="save-profile" title="Save Profile" onPress={save} loading={busy} style={{ marginTop: 14 }} />
 
-      <Button title="Logout" variant="secondary" onPress={logout} style={{ marginTop: 14, marginBottom: 24 }} />
+      <Button
+        testID="sign-out-btn"
+        title="Sign Out"
+        variant="outline"
+        onPress={logout}
+        style={{ marginTop: 14, marginBottom: 24, borderColor: colors.error }}
+      />
+
+      <ConfirmDialog
+        visible={signoutOpen}
+        title="Are you sure you want to sign out?"
+        confirmLabel="Yes, Sign Out"
+        cancelLabel="Cancel"
+        destructive
+        onCancel={() => setSignoutOpen(false)}
+        onConfirm={confirmLogout}
+      />
 
       {/* Gmail OTP modal */}
       <Modal visible={gmailOtpOpen} transparent animationType="slide" onRequestClose={() => setGmailOtpOpen(false)}>

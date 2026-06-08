@@ -1,0 +1,39 @@
+{
+  "summary": "Iter 8.1 re-test PASS for the two targeted fixes. (1) Sign Out cross-platform ConfirmDialog works on web preview for BOTH student (/student/profile) and professional (/professional/profile) — Cancel keeps user on profile; 'Yes, Sign Out' clears session and routes to /welcome; title 'Are you sure you want to sign out?' renders, testIDs confirm-ok / confirm-cancel are reachable. (2) Backend /api/leaderboard/students page_size cap is now 500 — `test_iteration4.TestLeaderboardIteration4::test_leaderboard_filters` is GREEN. Full pytest suite: 135/136 PASS. The single new failure is `test_referme_api.TestInterviews.test_full_interview_flow` which is a PRE-EXISTING DATA-POLLUTION / FLAKY issue UNRELATED to this iteration's changes (/leaderboard/professionals is hard-capped at top-50; the freshly created pro with score=37 has been pushed off the leaderboard by accumulated test runs).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/leaderboard/professionals",
+        "issue": "Endpoint only returns top 50 pros sorted by composite score, with no filtering parameters and no pagination. The fresh pro in test_full_interview_flow (score=37 from a single 8.0 rating) is no longer in top-50 due to accumulated pros from prior test runs. Either add page_size/filter params (location/skill, like /leaderboard/students) OR have the test update the pro to a unique location and filter — currently the test has no way to find its own pro. Returns plain list[dict] (not paginated dict), inconsistent with /leaderboard/students which is now `{items, total, page, page_size}`."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/pytest/pytest_iter8_1.xml",
+    "/app/backend/tests/test_iteration4.py",
+    "/app/backend/tests/test_referme_api.py"
+  ],
+  "action_items": [
+    "Address the pre-existing flaky `test_referme_api.TestInterviews.test_full_interview_flow` by either: (a) adding pagination/filtering to /api/leaderboard/professionals symmetric to /leaderboard/students, OR (b) updating the test to set a unique current_location/skill on the newly-created pro and filter — currently impossible because the endpoint has no filter params. This was already at risk in iter8 (it passed by luck since the pool of pros was smaller).",
+    "OPTIONAL cleanup: react-native-web deprecation warnings ('shadow*' and 'props.pointerEvents'). Non-blocking, but consider migrating to `style={{ boxShadow: ... }}` and `style.pointerEvents` to silence noise in console."
+  ],
+  "critical_code_review_comments": [
+    "ConfirmDialog.tsx is clean, uses Modal + testIDs (confirm-ok / confirm-cancel) and is reused in both student & professional profiles — good DRY pattern.",
+    "/app/backend/server.py:1901 page_size cap is now `le=500` as required.",
+    "Inconsistency: /leaderboard/students returns paginated `{items,total,page,page_size}` while /leaderboard/professionals returns a plain list capped at 50. Worth unifying."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "99.3% (135/136)", "frontend": "100% (Sign Out flow on both profiles)"},
+  "seed_data_creation": "Two ephemeral test users created via /api/auth/signup + verify-otp (one student, one pro @acmecorp.io). Used only for the frontend Sign Out flow; no admin or production data touched.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Sign Out via ConfirmDialog is verified working on web preview for both roles. The only outstanding backend failure (test_full_interview_flow) is a pre-existing flake caused by /leaderboard/professionals being a top-50-only list with no filters — fix at the API or test level. Page_size=500 cap on /leaderboard/students is confirmed (test_iteration4::test_leaderboard_filters GREEN).",
+  "rca_of_issue": "test_full_interview_flow failure: The test creates a pro, runs one interview at rating=8.0 (resulting score per server.py:1962 = 5*1 + 3*0 + 20*0 + round(8*4) = 37), then asserts the pro appears in GET /leaderboard/professionals. That endpoint returns only the top-50 pros sorted by score. After many test-suite runs, accumulated pros in MongoDB with higher composite scores (more interviews, referrals, etc.) push score=37 below rank 50, so `next(...)` returns None. This is unrelated to the iter8.1 changes (ConfirmDialog & page_size cap) — both targeted fixes work correctly."
+}
