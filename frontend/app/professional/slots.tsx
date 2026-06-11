@@ -172,7 +172,14 @@ export default function ProSlots() {
         </View>
         <Input testID="slot-topic" label="Topic (optional)" placeholder="System design / Behavioral" value={topic} onChangeText={setTopic} />
         <Input testID="slot-skills" label="Skill Set (comma-separated) *" placeholder="React, System Design" value={skillSet} onChangeText={setSkillSet} />
-        <Input testID="slot-exp" label="Your Total Experience (years)" value={expYears} onChangeText={setExpYears} keyboardType="number-pad" />
+        <Picker
+          testID="slot-exp"
+          label="Your Total Experience"
+          options={require("@/src/lib/constants").EXPERIENCE_OPTIONS}
+          value={expYears}
+          onChange={(v) => setExpYears(v as string)}
+          placeholder="Select experience"
+        />
         <Txt variant="small" style={{ color: colors.textSecondary, marginBottom: 8 }}>
           Slots use 12-hour AM/PM in IST. Min 1 hour, max 5 hours/day per professional.
         </Txt>

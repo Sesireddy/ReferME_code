@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { View, StyleSheet, Alert, TouchableOpacity, ActivityIndicator } from "react-native";
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
@@ -13,21 +13,39 @@ import { Picker } from "@/src/components/Picker";
 import { colors, radius } from "@/src/theme/tokens";
 import { api, clearSession } from "@/src/lib/api";
 import { ConfirmDialog } from "@/src/components/ConfirmDialog";
+import {
+  EDUCATION_OPTIONS,
+  GENDER_OPTIONS,
+  EXPERIENCE_OPTIONS,
+  LOCATION_OPTIONS,
+  CURRENTLY_WORKING_OPTIONS,
+  NOTICE_PERIOD_OPTIONS,
+  ANNUAL_SALARY_OPTIONS,
+  MONTHS,
+} from "@/src/lib/constants";
 
 const MAX_RESUME_BYTES = 5 * 1024 * 1024;
-
-const EDUCATION_OPTIONS = [
-  { value: "B.Tech", label: "B.Tech" },
-  { value: "Degree", label: "Degree (B.A / B.Com / B.Sc)" },
-  { value: "M.Tech", label: "M.Tech" },
-  { value: "MBA", label: "MBA" },
-  { value: "Others", label: "Others" },
-];
 
 const PREFERRED_ROLE_OPTIONS = [
   { value: "fresher", label: "Fresher" },
   { value: "experienced", label: "Experienced" },
 ];
+
+// DOB ranges: 1950 → (current year - 14). Each as YYYY string.
+const CURRENT_YEAR = new Date().getFullYear();
+const DOB_YEARS = Array.from({ length: CURRENT_YEAR - 14 - 1950 + 1 }, (_, i) => {
+  const y = String(CURRENT_YEAR - 14 - i);
+  return { value: y, label: y };
+});
+const DAYS_31 = Array.from({ length: 31 }, (_, i) => {
+  const d = String(i + 1).padStart(2, "0");
+  return { value: d, label: d };
+});
+// Passed-out year: 1990 → current year + 4 (future grads)
+const PASSED_OUT_YEARS = Array.from({ length: CURRENT_YEAR + 4 - 1990 + 1 }, (_, i) => {
+  const y = String(CURRENT_YEAR + 4 - i);
+  return { value: y, label: y };
+});
 
 const RESUME_TABS = [
   { id: "file", label: "Upload file" },
@@ -41,17 +59,32 @@ export default function StudentProfile() {
   const [signoutOpen, setSignoutOpen] = useState(false);
   const [user, setUser] = useState<any>(null);
 
-  // Form state
+  // Form state — Personal
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [gender, setGender] = useState<string | null>(null);
+  const [dobDay, setDobDay] = useState<string | null>(null);
+  const [dobMonth, setDobMonth] = useState<string | null>(null);
+  const [dobYear, setDobYear] = useState<string | null>(null);
+  // Education
   const [education, setEducation] = useState<string | null>(null);
   const [educationDetails, setEducationDetails] = useState("");
-  const [passedOutYear, setPassedOutYear] = useState("");
-  const [currentLocation, setCurrentLocation] = useState("");
-  const [dob, setDob] = useState("");
+  const [passedOutYear, setPassedOutYear] = useState<string | null>(null);
+  // Role / Experience
   const [preferredRole, setPreferredRole] = useState<string | null>(null);
-  const [yearsExp, setYearsExp] = useState("");
+  const [yearsExp, setYearsExp] = useState<string | null>(null);
+  const [currentLocation, setCurrentLocation] = useState<string | null>(null);
+  const [currentLocationOther, setCurrentLocationOther] = useState("");
   const [skills, setSkills] = useState("");
+  // Current employment (optional)
+  const [company, setCompany] = useState("");
+  const [designation, setDesignation] = useState("");
+  const [currentlyWorking, setCurrentlyWorking] = useState<string | null>(null);
+  const [noticePeriod, setNoticePeriod] = useState<string | null>(null);
+  const [annualSalary, setAnnualSalary] = useState<string | null>(null);
+
+  // Missing-fields dialog
+  const [missingDialog, setMissingDialog] = useState<{ open: boolean; items: string[] }>({ open: false, items: [] });
 
   // Resume state
   const [resumeTab, setResumeTab] = useState<ResumeTab>("file");
@@ -84,14 +117,42 @@ export default function StudentProfile() {
       setName(me.user.name || "");
       const p = me.profile || {};
       setPhone(p.phone || "");
+      setGender(p.gender || null);
       setEducation(p.education || null);
       setEducationDetails(p.education_details || "");
-      setPassedOutYear(p.passed_out_year ? String(p.passed_out_year) : "");
-      setCurrentLocation(p.current_location || "");
-      setDob(p.dob || "");
+      setPassedOutYear(p.passed_out_year ? String(p.passed_out_year) : null);
+      // Location: if existing value is in LOCATION_OPTIONS, set it; otherwise treat as Other.
+      const loc = p.current_location || "";
+      if (loc) {
+        const isStd = LOCATION_OPTIONS.some((o) => o.value === loc);
+        if (isStd) {
+          setCurrentLocation(loc);
+          setCurrentLocationOther("");
+        } else {
+          setCurrentLocation("__OTHER__");
+          setCurrentLocationOther(loc);
+        }
+      } else {
+        setCurrentLocation(null);
+        setCurrentLocationOther("");
+      }
+      // DOB: split YYYY-MM-DD into 3 pickers
+      if (p.dob && /^\d{4}-\d{2}-\d{2}$/.test(p.dob)) {
+        const [yy, mm, dd] = p.dob.split("-");
+        setDobYear(yy);
+        setDobMonth(mm);
+        setDobDay(dd);
+      } else {
+        setDobDay(null); setDobMonth(null); setDobYear(null);
+      }
       setPreferredRole(p.preferred_role || null);
-      setYearsExp(p.years_of_experience ? String(p.years_of_experience) : "");
+      setYearsExp(p.years_of_experience !== undefined && p.years_of_experience !== null ? String(p.years_of_experience) : null);
       setSkills((p.skills || []).join(", "));
+      setCompany(p.company || "");
+      setDesignation(p.designation || "");
+      setCurrentlyWorking(p.currently_working || null);
+      setNoticePeriod(p.notice_period || null);
+      setAnnualSalary(p.annual_salary || null);
       setResumeBase64(p.resume_base64 || "");
       setResumeName(p.resume_filename || "");
       setResumeSize(p.resume_size || 0);
@@ -153,26 +214,64 @@ export default function StudentProfile() {
     setResumeMime("");
   }
 
+  // Composed DOB string (YYYY-MM-DD) if all 3 parts selected
+  const dobIso = useMemo(() => {
+    if (dobYear && dobMonth && dobDay) return `${dobYear}-${dobMonth}-${dobDay}`;
+    return "";
+  }, [dobYear, dobMonth, dobDay]);
+
+  // Resolved location string (handles "Other -> custom")
+  const resolvedLocation = useMemo(() => {
+    if (currentLocation === "__OTHER__") return currentLocationOther.trim();
+    return currentLocation || "";
+  }, [currentLocation, currentLocationOther]);
+
+  function collectMissing(): string[] {
+    const missing: string[] = [];
+    if (!name.trim()) missing.push("Full Name");
+    if (!gender) missing.push("Gender");
+    if (!dobIso) missing.push("Date of Birth");
+    if (!phone.trim()) missing.push("Mobile Number");
+    if (!education) missing.push("Education");
+    if (education === "__OTHER__" && !educationDetails.trim()) missing.push("Education Details");
+    if (!passedOutYear) missing.push("Passed Out Year");
+    if (!preferredRole) missing.push("Preferred Role");
+    if (yearsExp === null || yearsExp === "") missing.push("Years of Experience");
+    if (!resolvedLocation) missing.push("Current Location");
+    if (!skills.trim()) missing.push("Skill Set");
+    const hasResume = (resumeTab === "file" && !!resumeBase64) || (resumeTab === "link" && !!resumeLink.trim());
+    if (!hasResume) missing.push("Resume (upload or link)");
+    return missing;
+  }
+
   async function save() {
-    if (!education) return Alert.alert("Missing", "Select your education.");
-    if (education === "Others" && !educationDetails.trim()) return Alert.alert("Missing", "Enter your education details.");
-    if (!preferredRole) return Alert.alert("Missing", "Select your preferred role.");
-    if (preferredRole === "experienced" && !yearsExp) return Alert.alert("Missing", "Enter your years of experience.");
+    const missing = collectMissing();
+    if (missing.length > 0) {
+      setMissingDialog({ open: true, items: missing });
+      return;
+    }
     setSaving(true);
     try {
+      const yoeNum = yearsExp === "30+" ? 30 : parseInt(yearsExp || "0", 10);
       const res = await api<any>("/profile", {
         method: "PUT",
         body: {
           name,
           phone,
+          gender,
           education,
-          education_details: education === "Others" ? educationDetails : null,
+          education_details: education === "__OTHER__" ? educationDetails : null,
           passed_out_year: passedOutYear ? parseInt(passedOutYear, 10) : null,
-          current_location: currentLocation || null,
-          dob: dob || null,
+          current_location: resolvedLocation || null,
+          dob: dobIso || null,
           preferred_role: preferredRole,
-          years_of_experience: preferredRole === "experienced" ? parseInt(yearsExp || "0", 10) : null,
+          years_of_experience: yoeNum,
           skills: skills.split(",").map((s) => s.trim()).filter(Boolean),
+          company: company || null,
+          designation: designation || null,
+          currently_working: currentlyWorking,
+          notice_period: currentlyWorking === "yes" ? noticePeriod : null,
+          annual_salary: annualSalary,
           resume_base64: resumeTab === "file" ? (resumeBase64 || null) : null,
           resume_filename: resumeTab === "file" ? (resumeName || null) : null,
           resume_size: resumeTab === "file" ? (resumeSize || null) : null,
@@ -180,7 +279,6 @@ export default function StudentProfile() {
           resume_link: resumeTab === "link" ? (resumeLink || null) : null,
         },
       });
-      // Merge fresh profile (with new resume_score) back onto user so the header re-renders
       setUser((prev: any) => ({ ...(prev || {}), ...res.user, profile: res.profile || {} }));
       Alert.alert("Saved", res.user.profile_complete ? "Profile complete!" : "Almost there. Fill any missing fields.");
     } catch (e: any) {
@@ -260,48 +358,150 @@ export default function StudentProfile() {
       {/* --------------- end Wallet section --------------- */}
 
       <View style={{ marginTop: 16 }}>
-        <Input testID="profile-name" label="Full name" value={name} onChangeText={setName} placeholder="Your name" />
-        <Input testID="profile-phone" label="Mobile number" value={phone} onChangeText={setPhone} placeholder="+91 98765 43210" keyboardType="phone-pad" />
+        <Txt variant="h3" style={styles.sectionHeader}>Personal Details</Txt>
+        <Input testID="profile-name" label="Full name *" value={name} onChangeText={setName} placeholder="Your full name" />
 
         <Picker
+          testID="profile-gender"
+          label="Gender *"
+          placeholder="Select gender"
+          options={GENDER_OPTIONS}
+          value={gender}
+          onChange={(v) => setGender(v as string)}
+        />
+
+        <Txt variant="label" style={{ marginBottom: 6 }}>Date of Birth *</Txt>
+        <View style={styles.dobRow}>
+          <View style={{ flex: 1.1 }}>
+            <Picker
+              testID="profile-dob-day"
+              placeholder="Day"
+              options={DAYS_31}
+              value={dobDay}
+              onChange={(v) => setDobDay(v as string)}
+            />
+          </View>
+          <View style={{ flex: 1.3 }}>
+            <Picker
+              testID="profile-dob-month"
+              placeholder="Month"
+              options={MONTHS}
+              value={dobMonth}
+              onChange={(v) => setDobMonth(v as string)}
+            />
+          </View>
+          <View style={{ flex: 1.4 }}>
+            <Picker
+              testID="profile-dob-year"
+              placeholder="Year"
+              options={DOB_YEARS}
+              value={dobYear}
+              onChange={(v) => setDobYear(v as string)}
+            />
+          </View>
+        </View>
+
+        <Input testID="profile-phone" label="Mobile number *" value={phone} onChangeText={setPhone} placeholder="+91 98765 43210" keyboardType="phone-pad" />
+
+        <Txt variant="h3" style={styles.sectionHeader}>Education</Txt>
+        <Picker
           testID="profile-education"
-          label="Education"
+          label="Education *"
           placeholder="Select highest education"
           options={EDUCATION_OPTIONS}
           value={education}
           onChange={(v) => setEducation(v as string)}
         />
 
-        {education === "Others" ? (
+        {education === "__OTHER__" ? (
           <Input
             testID="profile-education-details"
-            label="Education details"
+            label="Education details *"
             placeholder="e.g. PG Diploma in Data Science"
             value={educationDetails}
             onChangeText={setEducationDetails}
           />
         ) : null}
 
-        <Input testID="profile-passed-out" label="Passed out year" placeholder="2026" keyboardType="number-pad" maxLength={4} value={passedOutYear} onChangeText={setPassedOutYear} />
-        <Input testID="profile-location" label="Current location" placeholder="Bengaluru" value={currentLocation} onChangeText={setCurrentLocation} />
-        <Input testID="profile-dob" label="Date of birth" placeholder="YYYY-MM-DD" value={dob} onChangeText={setDob} />
+        <Picker
+          testID="profile-passed-out"
+          label="Passed out year *"
+          placeholder="Select passing year"
+          options={PASSED_OUT_YEARS}
+          value={passedOutYear}
+          onChange={(v) => setPassedOutYear(v as string)}
+        />
 
+        <Txt variant="h3" style={styles.sectionHeader}>Career & Location</Txt>
         <Picker
           testID="profile-preferred-role"
-          label="Preferred role"
+          label="Preferred role *"
           placeholder="Fresher or experienced?"
           options={PREFERRED_ROLE_OPTIONS}
           value={preferredRole}
           onChange={(v) => setPreferredRole(v as string)}
         />
 
-        {preferredRole === "experienced" ? (
-          <Input testID="profile-years-exp" label="Years of experience" placeholder="3" keyboardType="number-pad" value={yearsExp} onChangeText={setYearsExp} />
+        <Picker
+          testID="profile-years-exp"
+          label="Years of experience *"
+          placeholder="Select years"
+          options={EXPERIENCE_OPTIONS}
+          value={yearsExp}
+          onChange={(v) => setYearsExp(v as string)}
+        />
+
+        <Picker
+          testID="profile-location"
+          label="Current location *"
+          placeholder="Select city"
+          options={LOCATION_OPTIONS}
+          value={currentLocation}
+          onChange={(v) => setCurrentLocation(v as string)}
+        />
+        {currentLocation === "__OTHER__" ? (
+          <Input
+            testID="profile-location-other"
+            label="Specify city *"
+            value={currentLocationOther}
+            onChangeText={setCurrentLocationOther}
+            placeholder="Your city"
+          />
         ) : null}
 
-        <Input testID="profile-skills" label="Skills (comma-separated)" value={skills} onChangeText={setSkills} placeholder="React, Python, ML" />
+        <Input testID="profile-skills" label="Skills (comma-separated) *" value={skills} onChangeText={setSkills} placeholder="React, Python, ML" />
 
-        <Txt variant="label" style={{ marginTop: 4, marginBottom: 8 }}>Resume</Txt>
+        <Txt variant="h3" style={styles.sectionHeader}>Current Employment (optional)</Txt>
+        <Input testID="profile-company" label="Company" value={company} onChangeText={setCompany} placeholder="Company name" />
+        <Input testID="profile-designation" label="Designation" value={designation} onChangeText={setDesignation} placeholder="e.g. Software Engineer" />
+        <Picker
+          testID="profile-currently-working"
+          label="Currently working?"
+          placeholder="Select yes / no"
+          options={CURRENTLY_WORKING_OPTIONS}
+          value={currentlyWorking}
+          onChange={(v) => setCurrentlyWorking(v as string)}
+        />
+        {currentlyWorking === "yes" ? (
+          <Picker
+            testID="profile-notice-period"
+            label="Notice period"
+            placeholder="Select notice period"
+            options={NOTICE_PERIOD_OPTIONS}
+            value={noticePeriod}
+            onChange={(v) => setNoticePeriod(v as string)}
+          />
+        ) : null}
+        <Picker
+          testID="profile-annual-salary"
+          label="Annual salary"
+          placeholder="Select salary range"
+          options={ANNUAL_SALARY_OPTIONS}
+          value={annualSalary}
+          onChange={(v) => setAnnualSalary(v as string)}
+        />
+
+        <Txt variant="h3" style={styles.sectionHeader}>Resume *</Txt>
         <View style={styles.tabs}>
           {RESUME_TABS.map((t) => {
             const active = resumeTab === t.id;
@@ -392,6 +592,16 @@ export default function StudentProfile() {
         onCancel={() => setSignoutOpen(false)}
         onConfirm={confirmLogout}
       />
+
+      <ConfirmDialog
+        visible={missingDialog.open}
+        title="Please complete your profile"
+        message={`The following fields are still missing:\n\n• ${missingDialog.items.join("\n• ")}`}
+        confirmLabel="Got it"
+        cancelLabel="Close"
+        onCancel={() => setMissingDialog({ open: false, items: [] })}
+        onConfirm={() => setMissingDialog({ open: false, items: [] })}
+      />
     </Screen>
   );
 }
@@ -407,6 +617,8 @@ const styles = StyleSheet.create({
   tabs: { flexDirection: "row", backgroundColor: colors.surfaceAlt, borderRadius: 999, padding: 4, marginBottom: 12 },
   tab: { flex: 1, paddingVertical: 8, alignItems: "center", borderRadius: 999 },
   tabActive: { backgroundColor: colors.primary },
+  sectionHeader: { marginTop: 18, marginBottom: 8, color: colors.primary },
+  dobRow: { flexDirection: "row", gap: 8 },
   fileBox: {
     flexDirection: "row",
     alignItems: "center",

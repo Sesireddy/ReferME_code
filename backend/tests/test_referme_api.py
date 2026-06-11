@@ -79,15 +79,18 @@ class TestAuth:
 # ---------- Profile ----------
 class TestProfile:
     def test_student_profile_completion(self, session, student):
-        # Iteration 3: required fields are education, passed_out_year, current_location,
-        # preferred_role, skills, and resume_base64 OR resume_link
+        # Required fields: name, phone, gender, dob, education, passed_out_year,
+        # current_location, preferred_role, years_of_experience, skills, resume.
         body = {
             "name": "S One",
+            "phone": "+919876543210",
+            "gender": "male",
             "education": "B.Tech",
             "passed_out_year": 2024,
             "current_location": "Bangalore",
             "dob": "2001-05-12",
             "preferred_role": "fresher",
+            "years_of_experience": 0,
             "skills": ["Python"],
             "resume_base64": "data:application/pdf;base64,xx",
             "resume_mime_type": "application/pdf",
@@ -368,11 +371,22 @@ def _future(minutes_offset: int, duration_min: int = 30):
     return s.isoformat().replace("+00:00", "Z"), e.isoformat().replace("+00:00", "Z")
 
 
+# Common base for completeness tests after schema overhaul
+_BASE_COMPLETE = {
+    "name": "Test Student",
+    "phone": "+919999999999",
+    "gender": "male",
+    "dob": "2000-06-15",
+    "years_of_experience": 0,
+}
+
+
 # ---- Iteration 3: Profile new fields & completeness rules ----
 class TestProfileIteration3:
     def test_others_education_requires_details(self, session, student):
         body = {
-            "education": "Others",
+            **_BASE_COMPLETE,
+            "education": "__OTHER__",
             "passed_out_year": 2024,
             "current_location": "Pune",
             "preferred_role": "fresher",
@@ -389,7 +403,10 @@ class TestProfileIteration3:
         assert r2.json()["profile"]["education_details"] == "BBA Marketing"
 
     def test_experienced_requires_years_of_experience(self, session, student):
+        # Years of experience is now ALWAYS required (0 allowed for freshers).
+        # This test confirms an explicit positive yoe still completes the profile.
         body = {
+            **_BASE_COMPLETE,
             "education": "B.Tech",
             "passed_out_year": 2020,
             "current_location": "Mumbai",
@@ -397,7 +414,9 @@ class TestProfileIteration3:
             "skills": ["Java"],
             "resume_link": "https://example.com/r.pdf",
         }
-        r = session.put(f"{API}/profile", json=body, headers=auth_headers(student["token"]))
+        # Use a body WITHOUT years_of_experience first
+        no_yoe = {k: v for k, v in body.items() if k != "years_of_experience"}
+        r = session.put(f"{API}/profile", json=no_yoe, headers=auth_headers(student["token"]))
         assert r.json()["user"]["profile_complete"] is False
         r2 = session.put(f"{API}/profile", json={**body, "years_of_experience": 4}, headers=auth_headers(student["token"]))
         assert r2.json()["user"]["profile_complete"] is True
@@ -405,6 +424,7 @@ class TestProfileIteration3:
 
     def test_resume_link_alone_satisfies_resume(self, session, student):
         body = {
+            **_BASE_COMPLETE,
             "education": "MBA",
             "passed_out_year": 2023,
             "current_location": "Delhi",

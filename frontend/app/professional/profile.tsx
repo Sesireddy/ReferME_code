@@ -11,6 +11,8 @@ import { Input } from "@/src/components/Input";
 import { colors, radius } from "@/src/theme/tokens";
 import { api, clearSession } from "@/src/lib/api";
 import { ConfirmDialog } from "@/src/components/ConfirmDialog";
+import { Picker } from "@/src/components/Picker";
+import { EXPERIENCE_OPTIONS, LOCATION_OPTIONS } from "@/src/lib/constants";
 
 function maskPhone(p?: string): string {
   if (!p) return "";
@@ -299,8 +301,25 @@ export default function ProProfile() {
         <Txt variant="h3">Professional Details</Txt>
         <Input testID="company" label="Company Name" value={company} onChangeText={setCompany} />
         <Input testID="designation" label="Designation" value={designation} onChangeText={setDesignation} placeholder="Senior Engineer" />
-        <Input testID="years" label="Your Total Experience (years)" value={years} onChangeText={setYears} keyboardType="number-pad" />
-        <Input testID="location" label="Current Location" value={location} onChangeText={setLocation} placeholder="Bangalore" />
+        <Picker
+          testID="years"
+          label="Your Total Experience"
+          options={EXPERIENCE_OPTIONS}
+          value={years}
+          onChange={(v) => setYears(v as string)}
+          placeholder="Select experience"
+        />
+        <Picker
+          testID="location"
+          label="Current Location"
+          options={LOCATION_OPTIONS}
+          value={LOCATION_OPTIONS.some((o) => o.value === location) ? location : (location ? "__OTHER__" : "")}
+          onChange={(v) => setLocation(v === "__OTHER__" ? (location && !LOCATION_OPTIONS.some((o) => o.value === location) ? location : "") : (v as string))}
+          placeholder="Select city"
+        />
+        {(location === "__OTHER__" || (location && !LOCATION_OPTIONS.some((o) => o.value === location))) ? (
+          <Input testID="location-other" label="Specify location" value={location === "__OTHER__" ? "" : location} onChangeText={setLocation} placeholder="Enter your city" />
+        ) : null}
         <Input testID="skills" label="Skill Set (comma-separated)" value={skills} onChangeText={setSkills} placeholder="React, System Design, Java" />
       </Card>
 

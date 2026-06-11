@@ -7,6 +7,7 @@ import { Input } from "@/src/components/Input";
 import { Button } from "@/src/components/Button";
 import { Picker } from "@/src/components/Picker";
 import { ConfirmDialog } from "@/src/components/ConfirmDialog";
+import { LOCATION_OPTIONS } from "@/src/lib/constants";
 import { colors } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
 
@@ -100,7 +101,17 @@ export default function ProPostJob() {
         {errors.company ? <Txt style={styles.err}>{errors.company}</Txt> : null}
         <Input testID="pj-desc" label="Job Description *" value={desc} onChangeText={(v) => { setDesc(v); setErrors((e) => ({ ...e, desc: undefined })); }} multiline placeholder="Role, responsibilities, etc." />
         {errors.desc ? <Txt style={styles.err}>{errors.desc}</Txt> : null}
-        <Input testID="pj-loc" label="Location *" value={location} onChangeText={(v) => { setLocation(v); setErrors((e) => ({ ...e, location: undefined })); }} placeholder="Bengaluru / Remote" />
+        <Picker
+          testID="pj-loc"
+          label="Location *"
+          options={LOCATION_OPTIONS}
+          value={LOCATION_OPTIONS.some((o) => o.value === location) ? location : (location ? "__OTHER__" : null)}
+          onChange={(v) => { setLocation(v === "__OTHER__" ? "" : (v as string)); setErrors((e) => ({ ...e, location: undefined })); }}
+          placeholder="Select city"
+        />
+        {(location === "" || (location && !LOCATION_OPTIONS.some((o) => o.value === location))) ? (
+          <Input testID="pj-loc-other" label="Specify location (if Others)" value={location} onChangeText={(v) => { setLocation(v); setErrors((e) => ({ ...e, location: undefined })); }} placeholder="Enter city name" />
+        ) : null}
         {errors.location ? <Txt style={styles.err}>{errors.location}</Txt> : null}
         <Picker
           testID="pj-category"

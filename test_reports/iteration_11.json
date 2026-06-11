@@ -1,0 +1,35 @@
+{
+  "summary": "Iteration 11 — Phase A Task #6 (Student Profile redesign). BOTH backend and frontend GREEN on every spec item. Backend: full suite /app/backend/tests/ → 162/162 PASS in 286s (XML at /app/test_reports/pytest/pytest_iter11_full.xml); the targeted test_referme_api.py (47 tests, includes the updated TestProfileIteration3 covering ('__OTHER__' education requires education_details, years_of_experience always required incl 0 for fresher, resume_link alone satisfies resume, resume_score server-computed)) → 47/47 PASS in 68s (pytest_iter11_referme.xml). PUT /api/profile correctly flips profile_complete True only when name+phone+gender+dob+education+passed_out_year+current_location+preferred_role+years_of_experience(>=0)+skills+resume are all present, and education='__OTHER__' additionally requires education_details — verified at server.py:823-846 (is_student_complete). Frontend (390x844 mobile viewport, public URL): all 4 in-scope flows verified on a freshly-signed-up student. (1) Screen renders all 4 section headers: 'Personal Details', 'Education', 'Career & Location', 'Current Employment' + 'Resume *'. DOB rendered as 3 separate pickers (Day / Month / Year). All 16 expected testIDs found (profile-name, profile-gender, profile-dob-day/month/year, profile-phone, profile-education, profile-passed-out, profile-preferred-role, profile-years-exp, profile-location, profile-skills, profile-currently-working, profile-annual-salary, save-profile, resume-tab-link). (2) Tapping 'Save profile' with everything empty pops a SINGLE ConfirmDialog (title 'Please complete your profile') listing all 11 missing fields as a bulleted list: Full Name, Gender, Date of Birth, Mobile Number, Education, Passed Out Year, Preferred Role, Years of Experience, Current Location, Skill Set, Resume (upload or link). No PUT /api/profile was issued. (3) Selecting Education='Other (specify)' reveals testID='profile-education-details' input; selecting Current Location='Others (specify)' reveals testID='profile-location-other' input; selecting Currently Working='Yes' reveals testID='profile-notice-period' Picker. (4) Happy path: filled Name='Test Student', Gender=Male, DOB=15/Jun/2000, phone=+919876543210, Education=B.Tech, Passed-out=2024, Preferred Role=Fresher, Years exp=0, Location=Bangalore, Skills='Python, React', Annual salary=0-3 LPA, Resume link=https://example.com/resume.pdf → PUT /api/profile returned 200 with user.profile_complete=True. End-to-end verified. SendGrid still 401 (mock_otp fallback), Razorpay still mocked — unchanged from iter-10.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "global", "issues": ["Carried over from iter-9/10: 'shadow*' style props and props.pointerEvents deprecated warnings still flood the Metro logs. Non-blocking but worth a follow-up."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/pytest/pytest_iter11_full.xml",
+    "/app/test_reports/pytest/pytest_iter11_referme.xml",
+    "/app/backend/tests/test_referme_api.py"
+  ],
+  "action_items": [
+    "(NONE BLOCKING.) Optional: the Alert.alert('Saved', ...) success popup at student/profile.tsx:283 fires via React Native's web Alert shim, which on Playwright does not surface inside document.body.innerText (it shows as a transient browser dialog). Behavior is correct, but adding a testID-marked success toast/banner would make this much easier to verify in automation.",
+    "Optional: keep an eye on the metro on-disk cache at /app/frontend/.metro-cache — see context_for_next_testing_agent for the stale-cache incident."
+  ],
+  "critical_code_review_comments": [
+    "server.py is still 2360+ lines (carried over). Splitting into routers remains overdue.",
+    "student/profile.tsx (705 lines) is large but self-contained; if it grows further consider extracting the WalletHistory sub-component (lines 642-704) into its own file."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% (162/162 PASS). The 47-test test_referme_api.py — which contains the iter-11-touched TestProfileIteration3 class — is also 47/47.",
+    "frontend": "100% on the 4 in-scope items from review_request (sections + DOB pickers + all dropdowns render with correct testIDs; single ConfirmDialog with all 11 missing fields; Education/Location='Other' + Currently-working='Yes' conditional reveals; happy-path PUT /api/profile -> profile_complete=True)."
+  },
+  "seed_data_creation": "Created two throwaway student accounts via /auth/signup + /auth/verify-otp using mock_otp: iter11_stu_ea485c0f@referme.io and iter11_stu_61a0a307@referme.io (both Test@12345). Second one was driven to profile_complete=True with name='Test Student' + Bangalore + B.Tech 2024 + Fresher + 0 yoe + 'Python,React' skills + Salary 0-3 LPA + resume_link=https://example.com/resume.pdf.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "BEFORE testing UI, be aware: when I first hit /student/profile the Metro bundler was returning 500 with 'Unable to resolve module @/src/lib/constants from /app/frontend/app/professional/post-job.tsx' — even though /app/frontend/src/lib/constants.ts exists and tsconfig.json maps '@/*' -> './*'. Root cause was a stale on-disk Metro cache (METRO_CACHE_ROOT=/app/frontend/.metro-cache). Fixed by `rm -rf /app/frontend/.metro-cache /app/frontend/.expo/static-tmp && sudo supervisorctl restart expo`. After ~25s the bundler re-built cleanly and all routes load. If you see a blank/white screen + a 500 on the HTML asset, do the same cache-clear first. Backend baseline is 162/162 GREEN; the new Phase-A Task-6 fields (gender, dob, years_of_experience, currently_working, notice_period, annual_salary, education_details) are wired into ProfileBody / STUDENT_PROFILE_FIELDS / is_student_complete at server.py:263-281, 706-715, 823-846. Public URL https://refer-connect-11.preview.emergentagent.com still pointing to the same backend.",
+  "rca_of_issue": "N/A — feature verification batch, not a bug fix. The only friction was the stale Metro cache (see context_for_next_testing_agent) which is an environment issue, not a code defect."
+}

@@ -264,13 +264,17 @@ class ProfileBody(BaseModel):
     name: Optional[str] = None
     phone: Optional[str] = None
     # student / job-seeker
-    education: Optional[str] = None  # e.g. "B.Tech" | "Degree" | "M.Tech" | "MBA" | "Others"
-    education_details: Optional[str] = None  # when education == "Others" or extra detail
+    gender: Optional[Literal["male", "female", "other", "prefer_not_to_say"]] = None
+    education: Optional[str] = None  # one of EDUCATION_OPTIONS values or "__OTHER__"
+    education_details: Optional[str] = None  # when education == "__OTHER__" or extra detail
     passed_out_year: Optional[int] = None
     current_location: Optional[str] = None
     dob: Optional[str] = None  # YYYY-MM-DD
     preferred_role: Optional[Literal["fresher", "experienced"]] = None
-    years_of_experience: Optional[int] = None  # for experienced
+    years_of_experience: Optional[int] = None  # mandatory; 0 means fresher
+    currently_working: Optional[Literal["yes", "no"]] = None
+    notice_period: Optional[str] = None  # immediate | 15d | 30d | 60d | 90d
+    annual_salary: Optional[str] = None  # range string e.g. "3-6 LPA"
     skills: Optional[list[str]] = None
     resume_base64: Optional[str] = None
     resume_filename: Optional[str] = None
@@ -704,8 +708,9 @@ STUDENT_PROFILE_FIELDS_END = True  # marker
 
 
 STUDENT_PROFILE_FIELDS = [
-    "phone", "education", "education_details", "passed_out_year", "current_location",
+    "phone", "gender", "education", "education_details", "passed_out_year", "current_location",
     "dob", "preferred_role", "years_of_experience", "skills",
+    "company", "designation", "currently_working", "notice_period", "annual_salary",
     "resume_base64", "resume_filename", "resume_size", "resume_mime_type", "resume_link",
     "profile_photo_base64", "certifications", "projects",
 ]
@@ -816,16 +821,28 @@ def compute_resume_score(user: dict) -> int:
 
 
 def is_student_complete(profile: dict) -> bool:
-    required = ["education", "passed_out_year", "current_location", "preferred_role", "skills"]
+    # Mandatory: phone, gender, dob, education, passed_out_year, preferred_role,
+    # years_of_experience (>= 0), current_location, skills + resume.
+    required = [
+        "phone", "gender", "dob", "education", "passed_out_year",
+        "current_location", "preferred_role", "skills",
+    ]
     has_resume = bool(profile.get("resume_base64") or profile.get("resume_link"))
     if not has_resume:
         return False
     for r in required:
-        if not profile.get(r):
+        v = profile.get(r)
+        if v is None or v == "" or v == []:
             return False
-    if profile.get("preferred_role") == "experienced" and not profile.get("years_of_experience"):
+    # years_of_experience must be provided (0 allowed for freshers)
+    yoe = profile.get("years_of_experience")
+    if yoe is None:
         return False
-    if profile.get("education") == "Others" and not profile.get("education_details"):
+    try:
+        int(yoe)
+    except (TypeError, ValueError):
+        return False
+    if profile.get("education") == "__OTHER__" and not profile.get("education_details"):
         return False
     return True
 
