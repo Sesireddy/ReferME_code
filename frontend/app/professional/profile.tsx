@@ -55,6 +55,8 @@ export default function ProProfile() {
   const [sentGmailOtp, setSentGmailOtp] = useState<string | null>(null);
   const [gmailBusy, setGmailBusy] = useState(false);
   const [signoutOpen, setSignoutOpen] = useState(false);
+  const [missingDialogOpen, setMissingDialogOpen] = useState(false);
+  const [savedOk, setSavedOk] = useState(false);
 
   const load = useCallback(async () => {
     setRefreshing(true);
@@ -97,6 +99,22 @@ export default function ProProfile() {
   }
 
   async function save() {
+    // 1) Validate mandatory fields client-side first (mirror of backend pro_missing_fields)
+    const localMissing: string[] = [];
+    if (!name.trim()) localMissing.push("Full Name");
+    if (!phone.trim()) localMissing.push("Mobile Number");
+    if (!gmailVerified || !altGmail.trim()) localMissing.push("Alternate Gmail Address");
+    if (!company.trim()) localMissing.push("Company Name");
+    if (!designation.trim()) localMissing.push("Designation");
+    if (!years.trim() || parseInt(years, 10) <= 0) localMissing.push("Total Experience");
+    if (!location.trim()) localMissing.push("Current Location");
+    if (skills.split(",").map((s) => s.trim()).filter(Boolean).length === 0) localMissing.push("Skill Set");
+    if (!photoB64) localMissing.push("Profile Photo");
+    if (localMissing.length > 0) {
+      setMissingFields(localMissing);
+      setMissingDialogOpen(true);
+      return;
+    }
     setBusy(true);
     try {
       const skillsArr = skills.split(",").map((s) => s.trim()).filter(Boolean);
@@ -107,14 +125,15 @@ export default function ProProfile() {
           phone,
           company,
           designation,
-          experience_years: years ? parseInt(years, 10) : null,
+          experience_years: parseInt(years, 10),
           current_location: location,
           skills: skillsArr,
           expertise: skillsArr,
           profile_photo_base64: photoB64,
         },
       });
-      Alert.alert("Saved", "Your profile has been updated.");
+      setSavedOk(true);
+      setMissingDialogOpen(false);
       load();
     } catch (e: any) {
       Alert.alert("Cannot save", e.message);
@@ -217,19 +236,14 @@ export default function ProProfile() {
         </View>
       </Card>
 
-      {missingFields.length > 0 ? (
+      {missingDialogOpen && missingFields.length > 0 ? (
         <Card style={{ marginTop: 12, backgroundColor: "#FFF3E0", borderColor: "#FFB74D", borderWidth: 1 }}>
-          <Txt variant="h3" style={{ color: "#E65100" }}>Profile Incomplete</Txt>
-          <Txt variant="small" style={{ color: "#E65100", marginTop: 4 }}>Please complete:</Txt>
+          <Txt variant="h3" style={{ color: "#E65100" }}>Please complete the following fields:</Txt>
           {missingFields.map((f) => (
-            <Txt key={f} variant="small" style={{ color: "#BF360C", marginTop: 2 }}>• {f}</Txt>
+            <Txt key={f} variant="small" style={{ color: "#BF360C", marginTop: 4 }}>• {f}</Txt>
           ))}
         </Card>
-      ) : (
-        <Card style={{ marginTop: 12, backgroundColor: "#E8F5E9", borderColor: "#66BB6A", borderWidth: 1 }}>
-          <Txt variant="h3" style={{ color: "#2E7D32" }}>Profile Completed Successfully ✅</Txt>
-        </Card>
-      )}
+      ) : null}
 
       {/* Verification badges */}
       <Card style={{ marginTop: 12 }}>
@@ -262,7 +276,7 @@ export default function ProProfile() {
           keyboardType="phone-pad"
           placeholder="+91 9876543210"
         />
-        <Input label="Company Email (verified)" value={user?.email || ""} editable={false} />
+        <Input label="Company Email (Used Only For Verification)" value={user?.email || ""} editable={false} />
         <Txt variant="small" style={{ color: colors.textSecondary, marginTop: -8, marginBottom: 8 }}>
           🔒 Read-only after verification.
         </Txt>
@@ -290,7 +304,16 @@ export default function ProProfile() {
         <Input testID="skills" label="Skill Set (comma-separated)" value={skills} onChangeText={setSkills} placeholder="React, System Design, Java" />
       </Card>
 
-      <Button testID="save-profile" title="Save Profile" onPress={save} loading={busy} style={{ marginTop: 14 }} />
+      <Button testID="save-profile" title={completion >= 100 ? "Edit Profile" : "Save Profile"} onPress={save} loading={busy} style={{ marginTop: 14 }} />
+
+      <ConfirmDialog
+        visible={savedOk}
+        title="Profile saved successfully."
+        confirmLabel="OK"
+        cancelLabel=""
+        onCancel={() => setSavedOk(false)}
+        onConfirm={() => setSavedOk(false)}
+      />
 
       <Button
         testID="sign-out-btn"

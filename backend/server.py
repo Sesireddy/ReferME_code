@@ -449,6 +449,11 @@ async def root():
 async def signup(body: SignupBody):
     if body.role == "admin":
         raise HTTPException(status_code=400, detail="Cannot self-register as admin")
+    if body.role == "employer":
+        raise HTTPException(
+            status_code=400,
+            detail="For employer assistance, please contact our team at Team@referme.today",
+        )
     email_lower = body.email.lower().strip()
     domain = email_lower.split("@")[-1] if "@" in email_lower else ""
     if body.role == "professional" and domain in PERSONAL_EMAIL_DOMAINS:
@@ -1932,6 +1937,55 @@ async def admin_status_action(body: AdminStatusActionBody, _: dict = Depends(adm
 
 
 # ------------------- Leaderboards -------------------
+@api.get("/leaderboard/student/me/ranks")
+async def my_student_ranks(u: dict = Depends(require_role(["student"]))):
+    """Return three independent ranks for the current student:
+    - overall_rank: among ALL students (sorted by composite/resume score desc)
+    - category_rank: among students in the same category (fresher/experienced)
+    - skill_rank: among students who share the user's PRIMARY (first) skill
+    Each rank starts at 1. Returns null when the user has no profile data to compare.
+    """
+    me = await db.users.find_one({"id": u["id"]}, {"_id": 0})
+    p = me.get("profile", {}) or {}
+    my_score = int(p.get("resume_score") or 0)
+    me_year = int(p.get("passed_out_year") or 0)
+    me_role = (p.get("preferred_role") or "").lower().strip()
+    skills = p.get("skills") or []
+    primary_skill = (skills[0] if skills else "").strip()
+
+    # Compute overall: count students with strictly higher score → my position = count+1
+    async def _rank_above(filter_q: dict) -> int:
+        agg = await db.users.aggregate([
+            {"$match": filter_q},
+            {"$project": {"score": {"$ifNull": ["$profile.resume_score", 0]}}},
+            {"$match": {"score": {"$gt": my_score}}},
+            {"$count": "n"},
+        ]).to_list(1)
+        return (agg[0]["n"] if agg else 0) + 1
+
+    overall_rank = await _rank_above({"role": "student"})
+    # Category infer: fresher if no exp, else experienced. Match on preferred_role+passed_out_year proximity.
+    cat_filter: dict = {"role": "student"}
+    if me_role:
+        cat_filter["profile.preferred_role"] = me_role
+    elif me_year:
+        cat_filter["profile.passed_out_year"] = me_year
+    category_rank = await _rank_above(cat_filter) if (me_role or me_year) else None
+
+    skill_rank = None
+    if primary_skill:
+        skill_filter = {"role": "student", "profile.skills": {"$regex": f"^{re.escape(primary_skill)}$", "$options": "i"}}
+        skill_rank = await _rank_above(skill_filter)
+    return {
+        "overall_rank": overall_rank,
+        "category_rank": category_rank,
+        "skill_rank": skill_rank,
+        "primary_skill": primary_skill or None,
+        "category_label": me_role or (str(me_year) if me_year else None),
+        "resume_score": my_score,
+    }
+
+
 @api.get("/leaderboard/students")
 async def leaderboard_students(
     u: dict = Depends(current_user),

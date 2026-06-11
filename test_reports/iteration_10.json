@@ -1,0 +1,43 @@
+{
+  "summary": "Iteration 10 review — BOTH backend and frontend green for the spec'd scope. Backend: added /app/backend/tests/test_iteration10.py with 8 new tests covering (a) employer signup block (3 cases — exact message + cross-domain + student-still-works), (b) GET /api/leaderboard/student/me/ranks (5 cases — key contract for fresh student, post-profile-update primary_skill/category_label, 403 for pro, 403 for employer, 401/403 without auth). Full pytest suite /app/backend/tests/ → 162/162 GREEN in 279s (saved at /app/test_reports/pytest/pytest_iter10.xml). Baseline was 154 → 162 after adding the 8 new iter-10 tests; existing 154 remain GREEN, including the refactored conftest employer fixture which now seeds employer accounts directly into MongoDB (with passlib bcrypt hash) so all employer-dependent flows still work after the production-side /auth/signup block. Frontend smoke (390x844 mobile viewport, https://refer-connect-11.preview.emergentagent.com): all 7 in-scope flows from review_request VERIFIED. Item-by-item: (1) Student Home Rankings card 'Your Rankings' with Overall/Category/Skill Set columns renders below Leaderboard card (pulls from /leaderboard/student/me/ranks → overall=500 on a fresh student, category=— skill=— as expected). (2) Job Seeker subtitle 'Book Mock Interviews & Get Referred' + Pro subtitle 'Conduct Interviews, Refer Candidates & Earn Credits' visible on /signup. (3) 'I'm an Employer' tile opens ConfirmDialog 'Employer access — For employer assistance, please contact our team at Team@referme.today' with 'Close' + 'Contact Team' buttons. (4) Pro tab bar shows label 'Post a Job' (not 'Post'). (5) Pro Home leaderboard card REMOVED — only YOUR IMPACT + 4 action cards (Conduct Interview / Post a Job / My Posted Jobs / Refer Candidate); no 'Leaderboard' text on the screen. (6) Pro Profile shows 'COMPANY EMAIL (USED ONLY FOR VERIFICATION)' label and 'Save Profile' button (no 'Edit Profile' because completion is 20%, expected). Incomplete banner does NOT appear on initial load — only after Save+validation-fail. (7) Student Jobs filter modal renders 'Apply Filter' bottom-left button with 'Clear filters' to its right. Job cards show 'X to Y Openings' pills (1 to 5 / 1 to 50 visible). Apply on a job card opens ConfirmDialog 'Free pass available! Apply to this job using your free pass?' (since the fresh test student has free_uses_left > 0). (8) Mock Interview flow: View slots → tap slot → ConfirmDialog 'Do you want to book this mock interview slot?' with Cancel/Confirm → tap Confirm → 'Mock Interview booked successfully.' popup with OK button. All popups & dialogs verified end-to-end. SendGrid still 401 (mock_otp fallback), Razorpay still mocked — both documented in test_credentials.md and noted in iter9 baseline.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/auth/signup (role=employer)", "issue": "Spec-compliant 400 block is in place at server.py:452-456 — no bug, but note that any future employer-self-onboarding feature will need to remove this guard AND backfill conftest.employer fixture (currently bypasses block via direct DB insert at conftest.py:79-111)."},
+      {"endpoint": "SendGrid", "issue": "Carried over from iter-9: SendGrid 401 in this env; mock_otp keeps tests/UI flows alive but no real OTP emails are sent."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "global", "issues": ["Carried over: 'shadow*' style props deprecated (use boxShadow) and props.pointerEvents deprecated (move into style.pointerEvents). RN-Web warnings still visible in expo.err.log on every screen load — non-blocking but should be addressed."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration10.py",
+    "/app/test_reports/pytest/pytest_iter10.xml"
+  ],
+  "action_items": [
+    "(NONE BLOCKING for iter-10 scope.) Optional cleanups carried over from prior iters: replace 'shadow*' and props.pointerEvents RN-Web deprecations across the codebase; continue splitting /app/backend/server.py (currently 2360 lines).",
+    "Optional: add a testID='book-slot-<id>' on the slot row in /app/frontend/app/student/mock-interviews.tsx so the Book → Confirm tap can be triggered by testID instead of by text/date locator (currently I relied on the date-row text to fire the tap; works but is brittle). Same suggestion for an 'apply-filter-btn' testID inside the Jobs filter modal."
+  ],
+  "critical_code_review_comments": [
+    "server.py is still 2360 lines — splitting into routers (auth, profile, jobs, interviews, applications, leaderboard, wallet, admin, payouts, pro_extras) remains overdue.",
+    "/leaderboard/student/me/ranks compares using 'profile.resume_score' but profile update doesn't actually persist client-set resume_score (PUT /profile re-computes it). For tests, this means resume_score in the response stays low for a fresh student even when you push 'resume_score: 72' in the body — expected, but worth a doc note so future tests don't assume the client value is honored.",
+    "conftest employer fixture writes user docs directly to Mongo. Keep this fixture in sync with hash_password() in server.py if the bcrypt scheme/rounds change — otherwise login will silently fail and the whole employer-dependent test class will skip/fail."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration10.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (162/162 GREEN; new iter-10 contributes 8/8). Pytest XML: /app/test_reports/pytest/pytest_iter10.xml.",
+    "frontend": "100% on the 7 UI scope items in review_request (Student Home Rankings card, Signup subtitles + Employer ConfirmDialog, Pro tab 'Post a Job', Pro Home no-leaderboard, Pro Profile Company-Email label + Save-Profile button, Jobs filter 'Apply Filter' + open_positions_label + apply ConfirmDialog + Free-pass branch, Mock Interview Book ConfirmDialog + success popup)."
+  },
+  "seed_data_creation": "Created two iter-10 throwaway accounts via /auth/signup → /auth/verify-otp: student iter10_stu_05a644@referme.io and professional iter10_pro_51b875@acmecorp.io (both password Test@12345). The pro was gmail-flipped + given a profile.company_name via direct Mongo write so a new slot could be created for the booking flow. Plus 8 employer accounts inserted directly into DB by the conftest fixture during the full pytest run.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter-10 baseline: 162/162 GREEN, ~5min wall-clock. The new iter-10 backend tests cover the employer signup block (3 cases) and the new student-ranks endpoint (5 cases). Frontend: all 7 in-scope UI changes verified on mobile viewport against the public URL. Test student account iter10_stu_05a644@referme.io (Test@12345) is alive and has 1 active booking after the mock-interview flow; pro account iter10_pro_51b875@acmecorp.io is gmail-verified with company_name='AcmeCorp'. To quickly re-verify a single backend pillar without the full suite: pytest /app/backend/tests/test_iteration10.py -v (expect 8/8). SendGrid 401 / mock_payments=True still the same as iter-9; nothing changed there.",
+  "rca_of_issue": "N/A — review_request was a feature-verification batch, not a bug. The only friction during testing: (1) PUT /profile rejects preferred_role='frontend' with 422 (Literal must be 'fresher'|'experienced') — corrected my test data to 'fresher' which is the documented enum; this is a backend-side validation that's intentional, not a bug. (2) Pro slot creation requires gmail_verified=true — bypassed in setup by direct Mongo update (same approach as conftest._gmail_verify_in_db). (3) Student Mock Interview booking is triggered by tapping the slot ROW inside the View-slots modal (no button labeled 'Book'); this is a UX choice — main agent may want a dedicated 'Book' button or an explicit testID for the slot row to make future automation more robust."
+}

@@ -9,12 +9,14 @@ import { Input } from "@/src/components/Input";
 import { Card } from "@/src/components/Card";
 import { colors, radius } from "@/src/theme/tokens";
 import { api, setSession } from "@/src/lib/api";
+import { ConfirmDialog } from "@/src/components/ConfirmDialog";
+import * as Linking from "expo-linking";
 
 type Role = "student" | "professional" | "employer";
 
 const ROLES: { id: Role; title: string; subtitle: string; icon: any; color: string }[] = [
-  { id: "student", title: "I'm a Job Seeker", subtitle: "Get referred & book mock interviews", icon: "school", color: colors.primary },
-  { id: "professional", title: "I'm a Professional", subtitle: "Conduct interviews & earn credits", icon: "briefcase", color: "#7C3AED" },
+  { id: "student", title: "I'm a Job Seeker", subtitle: "Book Mock Interviews & Get Referred", icon: "school", color: colors.primary },
+  { id: "professional", title: "I'm a Professional", subtitle: "Conduct Interviews, Refer Candidates & Earn Credits", icon: "briefcase", color: "#7C3AED" },
   { id: "employer", title: "I'm an Employer", subtitle: "Post jobs & hire great talent", icon: "business", color: "#2563EB" },
 ];
 
@@ -25,6 +27,15 @@ export default function Signup() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [employerDialog, setEmployerDialog] = useState(false);
+
+  function selectRole(r: Role) {
+    if (r === "employer") {
+      setEmployerDialog(true);
+      return;
+    }
+    setRole(r);
+  }
 
   async function handleSignup() {
     if (!role) return Alert.alert("Pick a role", "Choose Student, Professional, or Employer.");
@@ -62,7 +73,7 @@ export default function Signup() {
                 <TouchableOpacity
                   key={r.id}
                   testID={`role-${r.id}`}
-                  onPress={() => setRole(r.id)}
+                  onPress={() => selectRole(r.id)}
                   activeOpacity={0.85}
                 >
                   <Card highlight={active} style={{ borderColor: active ? r.color : colors.border, borderWidth: 2 }}>
@@ -92,6 +103,19 @@ export default function Signup() {
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <ConfirmDialog
+        visible={employerDialog}
+        title="Employer access"
+        message="For employer assistance, please contact our team at Team@referme.today"
+        confirmLabel="Contact Team"
+        cancelLabel="Close"
+        onCancel={() => setEmployerDialog(false)}
+        onConfirm={() => {
+          setEmployerDialog(false);
+          Linking.openURL("mailto:Team@referme.today?subject=Employer%20Onboarding%20-%20ReferME");
+        }}
+      />
     </SafeAreaView>
   );
 }

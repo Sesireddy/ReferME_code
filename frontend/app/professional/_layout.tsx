@@ -17,7 +17,7 @@ export default function ProLayout() {
       <Tabs.Screen name="dashboard" options={{ title: "Home", tabBarIcon: ({ color, size }) => <Ionicons name="home" size={size} color={color} /> }} />
       <Tabs.Screen name="slots" options={{ title: "Interviews", tabBarIcon: ({ color, size }) => <Ionicons name="videocam" size={size} color={color} /> }} />
       <Tabs.Screen name="my-jobs" options={{ title: "My Jobs", tabBarIcon: ({ color, size }) => <Ionicons name="folder-open" size={size} color={color} /> }} />
-      <Tabs.Screen name="post-job" options={{ title: "Post", tabBarIcon: ({ color, size }) => <Ionicons name="add-circle" size={size} color={color} /> }} />
+      <Tabs.Screen name="post-job" options={{ title: "Post a Job", tabBarIcon: ({ color, size }) => <Ionicons name="add-circle" size={size} color={color} /> }} />
       <Tabs.Screen name="profile" options={{ title: "Profile", tabBarIcon: ({ color, size }) => <Ionicons name="person" size={size} color={color} /> }} />
       <Tabs.Screen name="refer" options={{ href: null }} />
       <Tabs.Screen name="payout" options={{ href: null }} />

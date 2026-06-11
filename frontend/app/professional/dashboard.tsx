@@ -79,7 +79,7 @@ export default function ProDashboard() {
         </View>
       </LinearGradient>
 
-      <Card style={{ marginTop: 12 }}>
+      <Card style={{ marginTop: 12, display: "none" }}>
         <View style={{ flexDirection: "row", alignItems: "center" }}>
           <View style={[styles.rankIcon, { backgroundColor: "#FFF4E0" }]}>
             <Ionicons name="trophy" size={28} color={colors.accent} />

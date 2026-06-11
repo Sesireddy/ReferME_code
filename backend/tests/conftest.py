@@ -77,15 +77,38 @@ def professional(session):
 
 @pytest.fixture()
 def employer(session):
-    emp = _signup_verify(session, "employer")
-    # Provide a default company_name in profile so job posts pass the
-    # mandatory Company Name validation without each test having to set it.
-    session.put(
-        f"{API}/profile",
-        json={"company_name": f"Acme {emp['user']['id'][:6]}"},
-        headers=auth_headers(emp["token"]),
-    )
-    return emp
+    # Employer signup is intentionally blocked in production (see /auth/signup), but
+    # tests still need an employer user to validate job-posting flows. Create one
+    # directly in the DB to bypass the block. Hash matches the format produced by
+    # server.hash_password (passlib bcrypt).
+    from pymongo import MongoClient
+    from passlib.context import CryptContext
+    eid = uuid.uuid4().hex
+    email = f"test_employer_{eid[:8]}@referme.io"
+    password = "Test@12345"
+    pw_hash = CryptContext(schemes=["bcrypt"], deprecated="auto").hash(password)
+    mc = MongoClient(os.environ["MONGO_URL"])
+    db = mc[os.environ["DB_NAME"]]
+    user_doc = {
+        "id": eid,
+        "email": email,
+        "role": "employer",
+        "name": f"TEST employer",
+        "password_hash": pw_hash,
+        "is_email_verified": True,
+        "credits": 0,
+        "profile_complete": True,
+        "profile": {"company_name": f"Acme {eid[:6]}"},
+        "free_uses_left": 2,
+        "created_at": "2025-01-01T00:00:00+00:00",
+    }
+    db.users.insert_one(user_doc)
+    mc.close()
+    # Log in to obtain token via the normal endpoint
+    r = session.post(f"{API}/auth/login", json={"email": email, "password": password})
+    assert r.status_code == 200, r.text
+    data = r.json()
+    return {"email": email, "password": password, "token": data["token"], "user": data["user"]}
 
 
 @pytest.fixture()

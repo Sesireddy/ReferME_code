@@ -6,6 +6,7 @@ import { Card } from "@/src/components/Card";
 import { Input } from "@/src/components/Input";
 import { Button } from "@/src/components/Button";
 import { Picker } from "@/src/components/Picker";
+import { ConfirmDialog } from "@/src/components/ConfirmDialog";
 import { colors } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
 
@@ -83,9 +84,14 @@ export default function ProPostJob() {
       <Txt variant="h1">Post a job opening</Txt>
       <Txt variant="muted">Open jobs at your company — refer candidates and earn ₹1500/hire.</Txt>
       {success ? (
-        <Card style={{ marginTop: 12, backgroundColor: "#E8F5E9", borderColor: "#2E7D32", borderWidth: 1 }}>
-          <Txt style={{ color: "#2E7D32", fontWeight: "700" }}>Job Posted Successfully ✅</Txt>
-        </Card>
+        <ConfirmDialog
+          visible={success}
+          title="Job posted successfully."
+          confirmLabel="OK"
+          cancelLabel=""
+          onCancel={() => setSuccess(false)}
+          onConfirm={() => setSuccess(false)}
+        />
       ) : null}
       <Card style={{ marginTop: 16 }}>
         <Input testID="pj-title" label="Job Title *" value={title} onChangeText={(v) => { setTitle(v); setErrors((e) => ({ ...e, title: undefined })); }} placeholder="Frontend Engineer" />

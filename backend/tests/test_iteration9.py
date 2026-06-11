@@ -276,13 +276,28 @@ def test_missing_company_400_when_profile_blank(session):
     """Raw employer with no company_name set in profile → POST /jobs without
     `company` should fail with 'Company Name is required.'.
 
-    This bypasses the conftest `employer` fixture (which auto-sets company_name)
-    by calling _signup_verify directly so the new branch stays regression-covered.
+    Employer signup is blocked in production (intentional). Insert directly
+    via DB to test the validation path that's reachable via existing employers.
     """
-    emp = _signup_verify(session, "employer")
+    from pymongo import MongoClient
+    from passlib.context import CryptContext
+    import uuid as _uuid
+    import os as _os
+    eid = _uuid.uuid4().hex
+    email = f"raw_emp_{eid[:8]}@referme.io"
+    pw_hash = CryptContext(schemes=["bcrypt"], deprecated="auto").hash("Test@12345")
+    mc = MongoClient(_os.environ["MONGO_URL"])
+    mc[_os.environ["DB_NAME"]].users.insert_one({
+        "id": eid, "email": email, "role": "employer", "name": "E", "password_hash": pw_hash,
+        "is_email_verified": True, "credits": 0, "profile_complete": False, "profile": {},
+        "free_uses_left": 2, "created_at": "2025-01-01T00:00:00+00:00",
+    })
+    mc.close()
+    r = session.post(f"{API}/auth/login", json={"email": email, "password": "Test@12345"})
+    token = r.json()["token"]
     r = session.post(
         f"{API}/jobs",
-        headers=auth_headers(emp["token"]),
+        headers=auth_headers(token),
         json={
             "title": "TEST iter9 no-company",
             "description": "Senior role",

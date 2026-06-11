@@ -8,6 +8,7 @@ import { Button } from "@/src/components/Button";
 import { Input } from "@/src/components/Input";
 import { Picker } from "@/src/components/Picker";
 import { DatePickerField } from "@/src/components/DateTimePicker";
+import { ConfirmDialog } from "@/src/components/ConfirmDialog";
 import { colors, radius } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
 import { useRouter } from "expo-router";
@@ -17,6 +18,8 @@ export default function MockInterviews() {
   const [pros, setPros] = useState<any[]>([]);
   const [slots, setSlots] = useState<any[]>([]);
   const [selectedPro, setSelectedPro] = useState<any | null>(null);
+  const [pendingBookSlotId, setPendingBookSlotId] = useState<string | null>(null);
+  const [bookSuccessOpen, setBookSuccessOpen] = useState(false);
   const [skillFilter, setSkillFilter] = useState("");
   const [dateFilter, setDateFilter] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string | null>("");
@@ -55,17 +58,18 @@ export default function MockInterviews() {
   }
 
   async function bookSlot(slotId: string) {
+    setPendingBookSlotId(slotId);
+  }
+
+  async function confirmBookSlot() {
+    if (!pendingBookSlotId) return;
+    const slotId = pendingBookSlotId;
+    setPendingBookSlotId(null);
     try {
       const r = await api<{ used_free?: boolean; meeting_url?: string }>("/interviews/book", { method: "POST", body: { slot_id: slotId } });
       setSelectedPro(null);
-      Alert.alert(
-        "Booked ✅",
-        `${r.used_free ? "Used a free token!" : "49 credits spent."}\n\nMeeting link emailed to you and shown on the dashboard.`,
-        [
-          { text: "View on Dashboard", onPress: () => router.push("/student/dashboard") },
-          { text: "OK", style: "cancel" },
-        ],
-      );
+      setBookSuccessOpen(true);
+      void r;
       load();
     } catch (e: any) {
       const msg = e.message || "";
@@ -192,6 +196,23 @@ export default function MockInterviews() {
           </View>
         </View>
       </Modal>
+
+      <ConfirmDialog
+        visible={!!pendingBookSlotId}
+        title="Do you want to book this mock interview slot?"
+        confirmLabel="Confirm"
+        cancelLabel="Cancel"
+        onCancel={() => setPendingBookSlotId(null)}
+        onConfirm={confirmBookSlot}
+      />
+      <ConfirmDialog
+        visible={bookSuccessOpen}
+        title="Mock Interview booked successfully."
+        confirmLabel="OK"
+        cancelLabel=""
+        onCancel={() => setBookSuccessOpen(false)}
+        onConfirm={() => setBookSuccessOpen(false)}
+      />
     </Screen>
   );
 }

@@ -8,6 +8,7 @@ import { Card } from "@/src/components/Card";
 import { Button } from "@/src/components/Button";
 import { Input } from "@/src/components/Input";
 import { Picker } from "@/src/components/Picker";
+import { ConfirmDialog } from "@/src/components/ConfirmDialog";
 import { colors } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
 
@@ -24,6 +25,7 @@ export default function StudentJobs() {
   const [tab, setTab] = useState<Tab>("jobs");
   const [jobs, setJobs] = useState<any[]>([]);
   const [apps, setApps] = useState<any[]>([]);
+  const [user, setUser] = useState<any>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
 
@@ -46,12 +48,14 @@ export default function StudentJobs() {
       if (expMax) params.set("exp_max", expMax);
       if (company) params.set("company", company);
       const qs = params.toString();
-      const [j, a] = await Promise.all([
+      const [j, a, me] = await Promise.all([
         api<any[]>(`/jobs${qs ? "?" + qs : ""}`),
         api<any[]>("/applications"),
+        api<any>("/auth/me"),
       ]);
       setJobs(j);
       setApps(a);
+      setUser(me?.user || null);
     } catch {}
     setRefreshing(false);
   }, [skill, location, category, expMin, expMax, company]);
@@ -60,11 +64,22 @@ export default function StudentJobs() {
     load();
   }, [load]);
 
-  async function apply(jobId: string) {
+  const [applyTarget, setApplyTarget] = useState<any | null>(null);
+  const [appliedOk, setAppliedOk] = useState(false);
+
+  function askApply(job: any) {
+    setApplyTarget(job);
+  }
+  async function confirmApply() {
+    if (!applyTarget) return;
+    const jobId = applyTarget.id;
+    setApplyTarget(null);
     try {
       const r = await api<{ used_free?: boolean }>("/jobs/apply", { method: "POST", body: { job_id: jobId } });
-      Alert.alert("Applied", r.used_free ? "Used a free token!" : "49 credits spent.");
+      setAppliedOk(true);
       load();
+      // Wait a beat, then no-op; user dismisses popup
+      void r;
     } catch (e: any) {
       const msg = e.message || "";
       if (/insufficient credit/i.test(msg)) {
@@ -113,9 +128,17 @@ export default function StudentJobs() {
             <View style={{ flex: 1 }}><Input testID="f-expmax" label="Max exp" value={expMax} onChangeText={setExpMax} keyboardType="number-pad" /></View>
           </View>
           <Input testID="f-company" label="Company" value={company} onChangeText={setCompany} placeholder="Acme" />
-          <TouchableOpacity testID="f-clear" onPress={clearFilters} style={{ alignSelf: "flex-end" }}>
-            <Txt style={{ color: colors.primary, fontWeight: "700" }}>Clear filters</Txt>
-          </TouchableOpacity>
+          <View style={{ flexDirection: "row", alignItems: "center", marginTop: 4 }}>
+            <Button
+              testID="f-apply"
+              title="Apply Filter"
+              onPress={() => { load(); setShowFilters(false); }}
+              style={{ paddingHorizontal: 20 }}
+            />
+            <TouchableOpacity testID="f-clear" onPress={clearFilters} style={{ marginLeft: 16 }}>
+              <Txt style={{ color: colors.primary, fontWeight: "700" }}>Clear filters</Txt>
+            </TouchableOpacity>
+          </View>
         </Card>
       ) : null}
 
@@ -140,9 +163,11 @@ export default function StudentJobs() {
                     {j.category || "fresher"}{j.experience_required ? ` · ${j.experience_required}y+` : ""}
                   </Txt>
                 </View>
-                {(j.open_positions || j.bulk_openings) > 1 ? (
+                {(j.open_positions_label || (j.open_positions || j.bulk_openings) > 1) ? (
                   <View style={styles.badge}>
-                    <Txt variant="small" style={{ fontWeight: "700", color: colors.primary }}>{j.open_positions || j.bulk_openings} openings</Txt>
+                    <Txt variant="small" style={{ fontWeight: "700", color: colors.primary }}>
+                      {j.open_positions_label ? `${j.open_positions_label} Openings` : `${j.open_positions || j.bulk_openings} Openings`}
+                    </Txt>
                   </View>
                 ) : null}
               </View>
@@ -162,7 +187,7 @@ export default function StudentJobs() {
                   </Txt>
                 </View>
               ) : (
-                <Button testID={`apply-${j.id}`} title="Apply" onPress={() => apply(j.id)} style={{ marginTop: 12 }} />
+                <Button testID={`apply-${j.id}`} title="Apply" onPress={() => askApply(j)} style={{ marginTop: 12 }} />
               )}
             </Card>
             </TouchableOpacity>
@@ -199,6 +224,28 @@ export default function StudentJobs() {
           ))}
         </View>
       ) : null}
+
+      <ConfirmDialog
+        visible={!!applyTarget}
+        title={applyTarget?.applied
+          ? "Already applied"
+          : (((user?.free_uses_left ?? 0) > 0)
+              ? "Free pass available! Apply to this job using your free pass?"
+              : "This application will use 49 credits. Do you want to continue?")}
+        confirmLabel="Apply"
+        cancelLabel="Cancel"
+        onCancel={() => setApplyTarget(null)}
+        onConfirm={confirmApply}
+      />
+
+      <ConfirmDialog
+        visible={appliedOk}
+        title="Application submitted successfully."
+        confirmLabel="OK"
+        cancelLabel=""
+        onCancel={() => setAppliedOk(false)}
+        onConfirm={() => setAppliedOk(false)}
+      />
     </Screen>
   );
 }

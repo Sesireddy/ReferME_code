@@ -15,6 +15,7 @@ export default function StudentDashboard() {
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
   const [rank, setRank] = useState<number | null>(null);
+  const [ranks, setRanks] = useState<{ overall_rank?: number; category_rank?: number | null; skill_rank?: number | null; primary_skill?: string | null; category_label?: string | null } | null>(null);
   const [bookings, setBookings] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -28,6 +29,10 @@ export default function StudentDashboard() {
       const items = Array.isArray(lb) ? lb : (lb?.items || []);
       const meRank = items.find((s: any) => s.is_me);
       setRank(meRank?.rank ?? null);
+      try {
+        const r = await api<any>("/leaderboard/student/me/ranks");
+        setRanks(r);
+      } catch {}
       try {
         const bk = await api<any[]>("/interviews/my-bookings");
         setBookings(bk || []);
@@ -68,10 +73,18 @@ export default function StudentDashboard() {
         style={styles.heroCard}
       >
         <View style={{ flex: 1 }}>
-          <Txt style={{ color: "#fff", opacity: 0.85 }} variant="label">Your resume score</Txt>
-          <Txt style={{ color: "#fff", fontSize: 44, fontWeight: "800", marginTop: 4 }} testID="student-score">
-            {score}<Txt style={{ color: "#fff", fontSize: 22, opacity: 0.85 }}> /100</Txt>
-          </Txt>
+          <Txt style={{ color: "#fff", opacity: 0.85 }} variant="label">Resume Score</Txt>
+          <View style={{ flexDirection: "row", alignItems: "baseline", marginTop: 4 }}>
+            <Txt
+              style={{ color: "#fff", fontSize: 44, fontWeight: "800" }}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              testID="student-score"
+            >
+              {score}
+            </Txt>
+            <Txt style={{ color: "#fff", fontSize: 22, opacity: 0.85, marginLeft: 4 }} numberOfLines={1}> /100</Txt>
+          </View>
           <View style={styles.progressTrack}>
             <View style={[styles.progressFill, { width: `${Math.min(100, score)}%` }]} />
           </View>
@@ -129,6 +142,41 @@ export default function StudentDashboard() {
         </View>
       </Card>
 
+      {ranks ? (
+        <Card style={{ marginTop: 16 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}>
+            <Ionicons name="trending-up" size={20} color={colors.primary} />
+            <Txt variant="h3" style={{ marginLeft: 8 }}>Your Rankings</Txt>
+          </View>
+          <View style={{ flexDirection: "row", marginTop: 6 }}>
+            <View style={styles.rankBox}>
+              <Txt variant="small" style={{ color: colors.textSecondary, textAlign: "center" }} numberOfLines={2}>Overall Rank</Txt>
+              <Txt style={{ fontWeight: "800", fontSize: 18, marginTop: 4 }} numberOfLines={1} adjustsFontSizeToFit>
+                {ranks.overall_rank ?? "—"}
+              </Txt>
+            </View>
+            <View style={styles.rankBox}>
+              <Txt variant="small" style={{ color: colors.textSecondary, textAlign: "center" }} numberOfLines={2}>Category Rank</Txt>
+              <Txt style={{ fontWeight: "800", fontSize: 18, marginTop: 4 }} numberOfLines={1} adjustsFontSizeToFit>
+                {ranks.category_rank ?? "—"}
+              </Txt>
+              {ranks.category_label ? (
+                <Txt variant="small" style={{ color: colors.textSecondary, fontSize: 10, marginTop: 2 }} numberOfLines={1}>{ranks.category_label}</Txt>
+              ) : null}
+            </View>
+            <View style={styles.rankBox}>
+              <Txt variant="small" style={{ color: colors.textSecondary, textAlign: "center" }} numberOfLines={2}>Skill Set Rank</Txt>
+              <Txt style={{ fontWeight: "800", fontSize: 18, marginTop: 4 }} numberOfLines={1} adjustsFontSizeToFit>
+                {ranks.skill_rank ?? "—"}
+              </Txt>
+              {ranks.primary_skill ? (
+                <Txt variant="small" style={{ color: colors.textSecondary, fontSize: 10, marginTop: 2 }} numberOfLines={1}>{ranks.primary_skill}</Txt>
+              ) : null}
+            </View>
+          </View>
+        </Card>
+      ) : null}
+
       {bookings.length > 0 ? (
         <Card style={{ marginTop: 16 }}>
           <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}>
@@ -151,7 +199,7 @@ export default function StudentDashboard() {
                   </View>
                   <Button
                     testID={`join-${b.id}`}
-                    title={b.join_enabled ? "Join" : "Details"}
+                    title={b.join_enabled ? "Join Meeting" : "Join Meeting"}
                     variant={b.join_enabled ? "primary" : "secondary"}
                     onPress={() => router.push(`/video/${b.id}`)}
                     style={{ height: 38, paddingHorizontal: 16 }}
@@ -186,4 +234,5 @@ const styles = StyleSheet.create({
   actionRow: { flexDirection: "row", gap: 12 },
   actionIcon: { width: 44, height: 44, borderRadius: 14, alignItems: "center", justifyContent: "center" },
   rankIcon: { width: 56, height: 56, borderRadius: 18, alignItems: "center", justifyContent: "center" },
+  rankBox: { flex: 1, alignItems: "center", paddingVertical: 8, paddingHorizontal: 4 },
 });
