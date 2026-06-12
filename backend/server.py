@@ -97,7 +97,7 @@ APP_STATUSES = ["applied", "shortlisted", "referred", "awaiting_interview", "int
 # Slot rules
 SLOT_MIN_HOURS = 1
 SLOT_MAX_HOURS_PER_DAY = 5
-SLOT_MIN_DURATION_MIN = 60  # 1 hour
+SLOT_MIN_DURATION_MIN = 30  # 30 min per sub-slot; sessions must be a multiple of 30 min
 
 # Jitsi room base
 JITSI_BASE = "https://meet.jit.si"
@@ -190,13 +190,24 @@ async def send_otp_email(email: str, otp: str, purpose: str) -> bool:
     return await send_html_email(email, subject, html, mock_purpose=purpose, fallback_text=f"Your OTP is {otp}")
 
 
-async def send_html_email(to_email: str, subject: str, html: str, mock_purpose: str = "", fallback_text: str = "") -> bool:
+async def send_html_email(
+    to_email: str,
+    subject: str,
+    html: str,
+    mock_purpose: str = "",
+    fallback_text: str = "",
+    attachments: Optional[list[dict]] = None,
+) -> bool:
+    """Send HTML email via SendGrid; supports optional file attachments.
+    Each attachment dict: {filename, content_bytes (bytes), mime_type}.
+    Returns True on success."""
     if MOCK_OTP_MODE:
         logger.info("[MOCK-EMAIL] to=%s purpose=%s subject=%s", to_email, mock_purpose, subject)
         return False  # treated as not sent → caller may include OTP in response
     try:
+        import base64 as _b64
         from sendgrid import SendGridAPIClient  # type: ignore
-        from sendgrid.helpers.mail import Mail  # type: ignore
+        from sendgrid.helpers.mail import Mail, Attachment, FileContent, FileName, FileType, Disposition  # type: ignore
 
         msg = Mail(
             from_email=SENDGRID_FROM_EMAIL,
@@ -204,11 +215,106 @@ async def send_html_email(to_email: str, subject: str, html: str, mock_purpose: 
             subject=subject,
             html_content=html or fallback_text,
         )
+        if attachments:
+            for a in attachments:
+                encoded = _b64.b64encode(a["content_bytes"]).decode("ascii")
+                msg.attachment = Attachment(
+                    FileContent(encoded),
+                    FileName(a.get("filename", "attachment")),
+                    FileType(a.get("mime_type", "application/octet-stream")),
+                    Disposition("attachment"),
+                )
         resp = SendGridAPIClient(SENDGRID_API_KEY).send(msg)
         return 200 <= resp.status_code < 300
     except Exception as e:
         logger.warning("SendGrid send failed (%s): %s", subject, e)
         return False
+
+
+def build_interview_ics(summary: str, description: str, location: str, start_iso: str, end_iso: str, uid: str) -> bytes:
+    """Build a minimal RFC-5545 .ics calendar invite for a single VEVENT."""
+    def _fmt(iso: str) -> str:
+        try:
+            d = datetime.fromisoformat((iso or "").replace("Z", "+00:00"))
+            return d.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        except Exception:
+            return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    dtstart = _fmt(start_iso)
+    dtend = _fmt(end_iso)
+    dtstamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    desc_safe = (description or "").replace("\\n", "\\\\n").replace(",", "\\,").replace(";", "\\;")
+    summary_safe = (summary or "").replace(",", "\\,").replace(";", "\\;")
+    location_safe = (location or "").replace(",", "\\,").replace(";", "\\;")
+    ics = "\r\n".join([
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//ReferME//Mock Interview//EN",
+        "CALSCALE:GREGORIAN",
+        "METHOD:REQUEST",
+        "BEGIN:VEVENT",
+        f"UID:{uid}@referme.app",
+        f"DTSTAMP:{dtstamp}",
+        f"DTSTART:{dtstart}",
+        f"DTEND:{dtend}",
+        f"SUMMARY:{summary_safe}",
+        f"DESCRIPTION:{desc_safe}",
+        f"LOCATION:{location_safe}",
+        "STATUS:CONFIRMED",
+        "SEQUENCE:0",
+        "END:VEVENT",
+        "END:VCALENDAR",
+        "",
+    ])
+    return ics.encode("utf-8")
+
+
+def _build_candidate_summary(u: dict) -> str:
+    p = u.get("profile", {}) or {}
+    bits = []
+    if p.get("preferred_role"):
+        bits.append(p["preferred_role"].title())
+    yoe = p.get("years_of_experience")
+    if isinstance(yoe, int):
+        bits.append(f"{yoe} yrs exp")
+    if p.get("current_location"):
+        bits.append(p["current_location"])
+    skills = (p.get("skills") or [])[:5]
+    if skills:
+        bits.append("Skills: " + ", ".join(skills))
+    return " • ".join(bits) or "—"
+
+
+def _booking_email_html(role: str, slot: dict, candidate: dict, pro: dict, meeting: str, candidate_summary: str) -> str:
+    when = slot.get("start_at", "")
+    end_when = slot.get("end_at", "")
+    pro_name = slot.get("pro_name") or (pro or {}).get("name") or "(pro)"
+    student_name = candidate.get("name") or candidate.get("email", "").split("@")[0]
+    skills = ", ".join(slot.get("skill_set", []) or []) or "—"
+    accent = "#FF5A5F" if role == "student" else "#7C3AED"
+    title = "Interview confirmed 🎉" if role == "student" else "New Mock Interview booking"
+    intro = (
+        f"You're booked with <b>{pro_name}</b>." if role == "student"
+        else f"<b>{student_name}</b> just booked your mock interview slot."
+    )
+    extra_block = "" if role == "student" else f"""
+      <p style="margin:8px 0 4px"><b>Candidate Profile Summary</b></p>
+      <p style="margin:0;color:#374151">{candidate_summary}</p>
+    """
+    return f"""
+      <div style="font-family:-apple-system,Arial; max-width:560px; margin:0 auto; padding:24px; background:#FDFBF7; color:#1A1A1A;">
+        <h2 style="color:{accent}; margin:0 0 12px">{title}</h2>
+        <p>{intro}</p>
+        <ul style="line-height:1.6">
+          <li><b>Candidate:</b> {student_name}</li>
+          <li><b>Working Professional:</b> {pro_name}</li>
+          <li><b>Skill Set:</b> {skills}</li>
+          <li><b>Interview Date / Time:</b> {when} – {end_when} <span style="color:#6B7280">(IST)</span></li>
+          <li><b>Meeting Link:</b> <a href="{meeting}">{meeting}</a></li>
+        </ul>
+        {extra_block}
+        <p style="color:#6B7280;font-size:13px;margin-top:18px">An .ics calendar invitation is attached — open it on your device to add this meeting to your calendar.</p>
+      </div>
+    """
 
 
 async def push_notification(user_id: str, title: str, body: str, kind: str = "info") -> None:
@@ -1128,12 +1234,15 @@ async def list_professionals(
             return "experienced" if y > 0 else "fresher"
         pros = [p for p in pros if _cat(p) == category]
 
-    # Filter to pros with future-available slots (and optional date match) for students.
+    # Filter to pros with active (future + non-cancelled) slots — either available OR booked.
+    # Per UX spec: a pro must appear if they have ANY active slot. The button is "View Slots"
+    # when at least one slot is still available and "Booked" when all are taken.
     if has_available_slots:
         now_dt = datetime.now(timezone.utc)
-        slot_q: dict = {"status": "available"}
-        slots = await db.interview_slots.find(slot_q, {"_id": 0, "pro_id": 1, "start_at": 1, "skill_set": 1}).to_list(5000)
-        pros_with_slots: set = set()
+        slot_q: dict = {"status": {"$in": ["available", "booked"]}}
+        slots = await db.interview_slots.find(slot_q, {"_id": 0, "pro_id": 1, "status": 1, "start_at": 1, "skill_set": 1}).to_list(5000)
+        # Map pro_id -> {total, available}
+        agg: dict[str, dict] = {}
         for s in slots:
             try:
                 sd = datetime.fromisoformat((s.get("start_at") or "").replace("Z", "+00:00"))
@@ -1143,13 +1252,16 @@ async def list_professionals(
                 continue
             if date and sd.strftime("%Y-%m-%d") != date:
                 continue
-            if skill:
-                sk = skill.lower().strip()
-                if not any(sk in (x or "").lower() for x in (s.get("skill_set") or [])):
-                    # still allow match via pro expertise, so don't strictly exclude
-                    pass
-            pros_with_slots.add(s["pro_id"])
-        pros = [p for p in pros if p["id"] in pros_with_slots]
+            d = agg.setdefault(s["pro_id"], {"total": 0, "available": 0})
+            d["total"] += 1
+            if s.get("status") == "available":
+                d["available"] += 1
+        pros = [p for p in pros if p["id"] in agg]
+        # attach counts onto pros so the serializer below can include them
+        for p in pros:
+            stats = agg.get(p["id"], {"total": 0, "available": 0})
+            p["_slots_total"] = stats["total"]
+            p["_slots_available"] = stats["available"]
 
     return [
         {
@@ -1162,6 +1274,10 @@ async def list_professionals(
             "current_location": p.get("profile", {}).get("current_location"),
             "rating": float(p.get("rating") or 0),
             "ratings_count": int(p.get("ratings_count") or 0),
+            # Aggregated slot status — drives "View Slots" vs "Booked" CTA on the listing card.
+            "slots_total": int(p.get("_slots_total") or 0),
+            "slots_available": int(p.get("_slots_available") or 0),
+            "fully_booked": int(p.get("_slots_total") or 0) > 0 and int(p.get("_slots_available") or 0) == 0,
         }
         for p in pros
     ]
@@ -1190,6 +1306,12 @@ async def create_slot(body: InterviewSlotBody, u: dict = Depends(require_role(["
         raise HTTPException(status_code=400, detail=f"Slot must be at least {SLOT_MIN_DURATION_MIN} minutes")
     if duration_min > SLOT_MAX_HOURS_PER_DAY * 60:
         raise HTTPException(status_code=400, detail=f"Single slot cannot exceed {SLOT_MAX_HOURS_PER_DAY} hours")
+    # Session duration must be a multiple of 30 minutes — required for the auto-split rule.
+    if int(duration_min) % 30 != 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Interview slot duration must be a multiple of 30 minutes (e.g. 30, 60, 90, 120 min).",
+        )
     if start <= datetime.now(timezone.utc):
         raise HTTPException(status_code=400, detail="Slot must be in the future")
 
@@ -1222,26 +1344,59 @@ async def create_slot(body: InterviewSlotBody, u: dict = Depends(require_role(["
             detail=f"Daily limit {SLOT_MAX_HOURS_PER_DAY}h exceeded (already booked {day_hours:.1f}h on this day).",
         )
 
-    slot_id = new_id()
-    meeting_url = f"{JITSI_BASE}/ReferME-{slot_id.split('-')[0]}"
-    slot = {
-        "id": slot_id,
-        "pro_id": u["id"],
-        "pro_name": u.get("name") or u["email"].split("@")[0],
+    # ----------------------------- Auto-split into 30-min sub-slots -----------------------------
+    # One session = N child slots. All children share `session_id`. Each child has its own
+    # meeting_url so that bookings stay isolated per 30-min window.
+    session_id = new_id()
+    pro_name = u.get("name") or u["email"].split("@")[0]
+    sub_slots: list[dict] = []
+    cursor = start
+    while cursor < end:
+        sub_end = cursor + timedelta(minutes=30)
+        slot_id = new_id()
+        meeting_url = f"{JITSI_BASE}/ReferME-{slot_id.split('-')[0]}"
+        sub_slots.append({
+            "id": slot_id,
+            "session_id": session_id,
+            "pro_id": u["id"],
+            "pro_name": pro_name,
+            "start_at": cursor.isoformat().replace("+00:00", "Z"),
+            "end_at": sub_end.isoformat().replace("+00:00", "Z"),
+            "scheduled_at": cursor.isoformat().replace("+00:00", "Z"),  # legacy alias
+            "skill_set": body.skill_set or [],
+            "experience_years": body.experience_years or 0,
+            "topic": body.topic or "",
+            "status": "available",
+            "student_id": None,
+            "student_name": None,
+            "meeting_url": meeting_url,
+            "created_at": now_iso(),
+        })
+        cursor = sub_end
+    await db.interview_slots.insert_many(sub_slots)
+    # Build a response shape that's both new (session-aware) AND backwards-compatible
+    # with callers that read `id`/`start_at`/`end_at` at the top level.
+    first = sub_slots[0]
+    last = sub_slots[-1]
+    return {
+        # Legacy/back-compat shim (the FIRST sub-slot's id, plus full session bounds):
+        "id": first["id"],
         "start_at": body.start_at,
         "end_at": body.end_at,
-        "scheduled_at": body.start_at,  # legacy alias
-        "skill_set": body.skill_set or [],
-        "experience_years": body.experience_years or 0,
-        "topic": body.topic or "",
+        "skill_set": first["skill_set"],
+        "experience_years": first["experience_years"],
+        "topic": first["topic"],
         "status": "available",
-        "student_id": None,
-        "student_name": None,
-        "meeting_url": meeting_url,
-        "created_at": now_iso(),
+        "meeting_url": first["meeting_url"],
+        "pro_id": first["pro_id"],
+        "pro_name": first["pro_name"],
+        # New session-aware fields:
+        "session_id": session_id,
+        "slot_count": len(sub_slots),
+        "session_start_at": first["start_at"],
+        "session_end_at": last["end_at"],
+        "slots": [{k: v for k, v in s.items() if k != "_id"} for s in sub_slots],
     }
-    await db.interview_slots.insert_one(slot)
-    return {k: v for k, v in slot.items() if k != "_id"}
 
 
 @api.get("/interviews/slots")
@@ -1262,7 +1417,7 @@ async def list_slots(
     if skill:
         q["skill_set"] = {"$regex": skill, "$options": "i"}
     slots = await db.interview_slots.find(q, {"_id": 0}).sort("start_at", 1).to_list(500)
-    # Apply date / category / future-only filters (students never see expired or non-future)
+    # Apply date / category / future-only filters (students never see expired slots).
     out = []
     now_dt = datetime.now(timezone.utc)
     for s in slots:
@@ -1270,11 +1425,16 @@ async def list_slots(
             sd = datetime.fromisoformat((s.get("start_at") or s.get("scheduled_at") or "").replace("Z", "+00:00"))
         except Exception:
             sd = None
-        # Students: only future + available
+        # Students:
+        #   - Listing only (no pro_id): hide expired AND only show available (top-level filter).
+        #   - When pro_id is supplied (drill-down view), show the FULL grid for that pro —
+        #     available + booked — but still hide expired slots.
         if u["role"] == "student":
             if not sd or sd <= now_dt:
                 continue
-            if s.get("status") != "available":
+            if not pro_id and s.get("status") != "available":
+                continue
+            if pro_id and s.get("status") == "cancelled":
                 continue
         if date and sd:
             if sd.strftime("%Y-%m-%d") != date:
@@ -1283,6 +1443,10 @@ async def list_slots(
             slot_cat = "experienced" if int(s.get("experience_years") or 0) > 0 else "fresher"
             if slot_cat != category:
                 continue
+        # Strip sensitive fields when surfacing to students (the booked student_id stays
+        # opaque so other students can't profile bookings).
+        if u["role"] == "student" and s.get("status") == "booked":
+            s = {**s, "student_id": None, "student_name": None}
         out.append(s)
     return out
 
@@ -1293,54 +1457,93 @@ def _can_use_free(u: dict, kind: str) -> bool:
 
 @api.post("/interviews/book")
 async def book_interview(body: BookInterviewBody, u: dict = Depends(require_role(["student"]))):
-    slot = await db.interview_slots.find_one({"id": body.slot_id}, {"_id": 0})
-    if not slot or slot["status"] != "available":
+    # Atomic claim: only one student can flip available -> booked.
+    booked_at_iso = now_iso()
+    res = await db.interview_slots.find_one_and_update(
+        {"id": body.slot_id, "status": "available"},
+        {
+            "$set": {
+                "status": "booked",
+                "student_id": u["id"],
+                "student_name": u.get("name") or u["email"].split("@")[0],
+                "student_email": u.get("email"),
+                "booked_at": booked_at_iso,
+            }
+        },
+        return_document=True,
+        projection={"_id": 0},
+    )
+    if not res:
+        # Either non-existent or already taken by someone else (race-safe).
         raise HTTPException(status_code=400, detail="Slot not available")
+    slot = res
     use_free = _can_use_free(u, "interview")
     if not use_free and u.get("credits", 0) < ACTION_COST:
+        # Roll back the booking since the user can't pay for it.
+        await db.interview_slots.update_one(
+            {"id": slot["id"]},
+            {"$set": {"status": "available", "student_id": None, "student_name": None, "student_email": None, "booked_at": None}},
+        )
         raise HTTPException(status_code=400, detail="Insufficient credits. Please add credits to continue booking this interview.")
     if use_free:
         await db.users.update_one({"id": u["id"]}, {"$inc": {"free_uses_left": -1}})
     else:
         await _credit_user(u["id"], -ACTION_COST, "interview_booking", {"slot_id": slot["id"]})
-    await db.interview_slots.update_one(
-        {"id": slot["id"]},
-        {"$set": {"status": "booked", "student_id": u["id"], "student_name": u.get("name") or u["email"].split("@")[0], "booked_at": now_iso()}},
-    )
     pro = await db.users.find_one({"id": slot["pro_id"]}, {"_id": 0, "password_hash": 0})
     when = slot.get("start_at", "")
     end_when = slot.get("end_at", "")
     # In-app notifications
     await push_notification(u["id"], "Interview booked ✅", f"With {slot['pro_name']} at {when}", "success")
     await push_notification(slot["pro_id"], "New interview booked", f"Student booked your slot at {when}", "info")
-    # Email both parties
+    # Email both parties — with .ics calendar attachment
     meeting = slot.get("meeting_url", "")
-    student_html = f"""
-        <div style="font-family:-apple-system,Arial; max-width:520px; margin:0 auto; padding:24px; background:#FDFBF7;">
-          <h2 style="color:#FF5A5F">Interview confirmed 🎉</h2>
-          <p>You're booked with <b>{slot['pro_name']}</b>.</p>
-          <ul>
-            <li><b>Date / Time:</b> {when} – {end_when}</li>
-            <li><b>Topic:</b> {slot.get('topic') or '—'}</li>
-            <li><b>Skill set:</b> {', '.join(slot.get('skill_set', []) or []) or '—'}</li>
-            <li><b>Meeting link:</b> <a href="{meeting}">{meeting}</a></li>
-          </ul>
-          <p>Good luck!</p>
-        </div>
-    """
-    pro_html = f"""
-        <div style="font-family:-apple-system,Arial; max-width:520px; margin:0 auto; padding:24px; background:#FDFBF7;">
-          <h2 style="color:#7C3AED">New interview booked</h2>
-          <p><b>Candidate:</b> {u.get('name') or u['email']}</p>
-          <p><b>Date / Time:</b> {when} – {end_when}</p>
-          <p><b>Topic:</b> {slot.get('topic') or '—'}</p>
-          <p><b>Meeting link:</b> <a href="{meeting}">{meeting}</a></p>
-        </div>
-    """
-    await send_html_email(u["email"], "ReferME · Interview confirmed", student_html, mock_purpose="booking_student")
+    student_name = u.get("name") or u["email"].split("@")[0]
+    candidate_summary = _build_candidate_summary(u)
+    ics_bytes = build_interview_ics(
+        summary=f"ReferME Mock Interview — {slot['pro_name']} & {student_name}",
+        description=f"Skill Set: {', '.join(slot.get('skill_set', []) or []) or '—'}\\nMeeting link: {meeting}",
+        location=meeting,
+        start_iso=when,
+        end_iso=end_when,
+        uid=slot["id"],
+    )
+    student_html = _booking_email_html(role="student", slot=slot, candidate=u, pro=pro, meeting=meeting, candidate_summary=candidate_summary)
+    pro_html = _booking_email_html(role="pro", slot=slot, candidate=u, pro=pro, meeting=meeting, candidate_summary=candidate_summary)
+    student_sent = await send_html_email(
+        u["email"], "ReferME · Mock Interview confirmed", student_html,
+        mock_purpose="booking_student",
+        attachments=[{"filename": "invite.ics", "content_bytes": ics_bytes, "mime_type": "text/calendar"}],
+    )
+    pro_sent = False
     if pro and pro.get("email"):
-        await send_html_email(pro["email"], "ReferME · New interview booking", pro_html, mock_purpose="booking_pro")
-    return {"message": "Booked", "used_free": use_free, "meeting_url": meeting}
+        pro_sent = await send_html_email(
+            pro["email"], "ReferME · New Mock Interview booking", pro_html,
+            mock_purpose="booking_pro",
+            attachments=[{"filename": "invite.ics", "content_bytes": ics_bytes, "mime_type": "text/calendar"}],
+        )
+    # Persist booking record for admin tracking + email delivery audit
+    await db.interview_bookings.insert_one({
+        "id": new_id(),
+        "slot_id": slot["id"],
+        "session_id": slot.get("session_id"),
+        "pro_id": slot["pro_id"],
+        "pro_name": slot.get("pro_name"),
+        "pro_email": (pro or {}).get("email"),
+        "student_id": u["id"],
+        "student_name": student_name,
+        "student_email": u.get("email"),
+        "start_at": when,
+        "end_at": end_when,
+        "skill_set": slot.get("skill_set", []),
+        "meeting_url": meeting,
+        "booked_at": booked_at_iso,
+        "status": "booked",
+        "student_email_status": "sent" if student_sent else "queued",
+        "pro_email_status": "sent" if pro_sent else "queued",
+    })
+    return {"message": "Booked", "used_free": use_free, "meeting_url": meeting,
+            "student_email_status": "sent" if student_sent else "queued",
+            "pro_email_status": "sent" if pro_sent else "queued"}
 
 
 @api.get("/interviews/my-bookings")
@@ -2460,6 +2663,37 @@ async def on_startup() -> None:
                 "created_at": now_iso(),
             })
         logger.info("Seeded sample jobs")
+
+    # One-time slot data wipe — Item 3-7 (Jun 2026 sub-slot migration).
+    # Marker doc in `settings` keeps this idempotent so we never wipe twice.
+    marker = await db.settings.find_one({"key": "slot_v2_wiped"})
+    if not marker:
+        d_slots = await db.interview_slots.delete_many({})
+        # Also wipe legacy booking history for clean slate
+        try:
+            await db.interview_bookings.delete_many({})
+        except Exception:
+            pass
+        await db.settings.insert_one({"key": "slot_v2_wiped", "wiped_at": now_iso(),
+                                       "slots_removed": d_slots.deleted_count if d_slots else 0})
+        logger.info("Wiped %s legacy interview_slots for sub-slot v2 migration.", d_slots.deleted_count if d_slots else 0)
+
+
+# ------------------- Admin: Mock Interview Booking Tracking (Item 10) -------------------
+@api.get("/admin/interview-bookings")
+async def admin_list_interview_bookings(u: dict = Depends(require_role(["admin"]))):
+    """List every Mock Interview booking with full Pro & Student details, slot info,
+    meeting link, status, booking timestamp and per-recipient email delivery status."""
+    bookings = await db.interview_bookings.find({}, {"_id": 0}).sort("booked_at", -1).to_list(2000)
+    # Hydrate latest slot status (in case it was cancelled/completed after booking)
+    slot_ids = [b["slot_id"] for b in bookings if b.get("slot_id")]
+    slot_map = {}
+    if slot_ids:
+        slots = await db.interview_slots.find({"id": {"$in": slot_ids}}, {"_id": 0, "id": 1, "status": 1}).to_list(2000)
+        slot_map = {s["id"]: s.get("status") for s in slots}
+    for b in bookings:
+        b["current_slot_status"] = slot_map.get(b.get("slot_id"), "deleted")
+    return bookings
 
 
 # Register router

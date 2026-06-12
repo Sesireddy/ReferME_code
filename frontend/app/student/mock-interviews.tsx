@@ -13,6 +13,21 @@ import { colors, radius } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
 import { useRouter } from "expo-router";
 
+// Format a slot's time range like "10:00 AM – 10:30 AM"
+function fmtSlotRange(start: string, end?: string) {
+  const opts: Intl.DateTimeFormatOptions = { hour: "numeric", minute: "2-digit", hour12: true };
+  const s = new Date(start);
+  const e = end ? new Date(end) : null;
+  const sStr = s.toLocaleTimeString([], opts);
+  if (!e) return sStr;
+  return `${sStr} – ${e.toLocaleTimeString([], opts)}`;
+}
+
+function fmtDateHeader(start: string) {
+  const d = new Date(start);
+  return d.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+}
+
 export default function MockInterviews() {
   const router = useRouter();
   const [pros, setPros] = useState<any[]>([]);
@@ -28,7 +43,6 @@ export default function MockInterviews() {
   const load = useCallback(async () => {
     setRefreshing(true);
     try {
-      // Only fetch pros who CURRENTLY have available, future slots — backend filters this.
       const params = new URLSearchParams({ has_available_slots: "true" });
       if (skillFilter.trim()) params.set("skill", skillFilter.trim());
       if (dateFilter) params.set("date", dateFilter);
@@ -44,6 +58,7 @@ export default function MockInterviews() {
   useEffect(() => { load(); }, [load]);
 
   async function openPro(pro: any) {
+    if (pro.fully_booked) return; // disabled
     setSelectedPro(pro);
     try {
       const params = new URLSearchParams({ pro_id: pro.id });
@@ -51,9 +66,20 @@ export default function MockInterviews() {
       if (dateFilter) params.set("date", dateFilter);
       if (categoryFilter) params.set("category", categoryFilter);
       const s = await api<any[]>(`/interviews/slots?${params.toString()}`);
-      setSlots(s.filter((x) => x.status === "available"));
+      // Backend already excludes expired & cancelled for students drilling into a pro.
+      setSlots(s);
     } catch {
       setSlots([]);
+    }
+  }
+
+  async function refreshOpenProSlots(proId: string) {
+    try {
+      const params = new URLSearchParams({ pro_id: proId });
+      const s = await api<any[]>(`/interviews/slots?${params.toString()}`);
+      setSlots(s);
+    } catch {
+      /* ignore */
     }
   }
 
@@ -66,10 +92,10 @@ export default function MockInterviews() {
     const slotId = pendingBookSlotId;
     setPendingBookSlotId(null);
     try {
-      const r = await api<{ used_free?: boolean; meeting_url?: string }>("/interviews/book", { method: "POST", body: { slot_id: slotId } });
-      setSelectedPro(null);
+      await api<{ used_free?: boolean; meeting_url?: string }>("/interviews/book", { method: "POST", body: { slot_id: slotId } });
       setBookSuccessOpen(true);
-      void r;
+      // Refresh the open pro's slot grid AND the outer listing so "fully_booked" updates immediately.
+      if (selectedPro) await refreshOpenProSlots(selectedPro.id);
       load();
     } catch (e: any) {
       const msg = e.message || "";
@@ -84,8 +110,18 @@ export default function MockInterviews() {
     }
   }
 
-  // Pros are already filtered server-side by skill + date + category, and only those
-  // with currently available future slots are returned. No additional client filter needed.
+  // Group slots by date so the modal shows per-day buckets (matches the spec table format).
+  const groupedSlots: { date: string; items: any[] }[] = (() => {
+    const buckets: Record<string, any[]> = {};
+    for (const s of slots) {
+      const k = new Date(s.start_at || s.scheduled_at).toDateString();
+      (buckets[k] ||= []).push(s);
+    }
+    return Object.entries(buckets).map(([k, v]) => ({
+      date: k,
+      items: v.sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime()),
+    }));
+  })();
 
   return (
     <Screen refreshing={refreshing} onRefresh={load}>
@@ -134,63 +170,98 @@ export default function MockInterviews() {
             </Txt>
           </Card>
         ) : null}
-        {pros.map((p) => (
-          <Card key={p.id}>
-            <View style={{ flexDirection: "row", alignItems: "center" }}>
-              <View style={styles.avatar}>
-                <Txt style={{ fontWeight: "800", color: "#7C3AED" }}>{(p.name || "?")[0].toUpperCase()}</Txt>
-              </View>
-              <View style={{ flex: 1, marginLeft: 12 }}>
-                <Txt variant="h3">{p.name}</Txt>
-                <Txt variant="small" style={{ color: colors.textSecondary }}>
-                  {p.designation || ""}{p.company ? ` @ ${p.company}` : ""}
-                </Txt>
-                {(p.expertise || []).length ? (
-                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
-                    {(p.expertise || []).slice(0, 4).map((s: string) => (
-                      <View key={s} style={styles.chip}><Txt variant="small">{s}</Txt></View>
-                    ))}
+        {pros.map((p) => {
+          const fully = !!p.fully_booked;
+          return (
+            <Card key={p.id}>
+              <View style={{ flexDirection: "row", alignItems: "center" }}>
+                <View style={styles.avatar}>
+                  <Txt style={{ fontWeight: "800", color: "#7C3AED" }}>{(p.name || "?")[0].toUpperCase()}</Txt>
+                </View>
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Txt variant="h3">{p.name}</Txt>
+                  <Txt variant="small" style={{ color: colors.textSecondary }}>
+                    {p.designation || ""}{p.company ? ` @ ${p.company}` : ""}
+                    {p.experience_years ? ` • ${p.experience_years} Years Experience` : ""}
+                  </Txt>
+                  {(p.expertise || []).length ? (
+                    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+                      {(p.expertise || []).slice(0, 4).map((s: string) => (
+                        <View key={s} style={styles.chip}><Txt variant="small">{s}</Txt></View>
+                      ))}
+                    </View>
+                  ) : null}
+                  {p.slots_total ? (
+                    <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 4 }}>
+                      {p.slots_available} of {p.slots_total} slots available
+                    </Txt>
+                  ) : null}
+                </View>
+                {fully ? (
+                  <View testID={`pro-booked-${p.id}`} style={styles.bookedPill}>
+                    <Ionicons name="lock-closed" size={14} color="#9CA3AF" />
+                    <Txt style={{ marginLeft: 4, color: "#9CA3AF", fontWeight: "700" }}>Booked</Txt>
                   </View>
-                ) : null}
+                ) : (
+                  <Button testID={`pick-pro-${p.id}`} title="View Slots" onPress={() => openPro(p)} style={{ height: 40, paddingHorizontal: 14 }} />
+                )}
               </View>
-              <Button testID={`pick-pro-${p.id}`} title="View slots" onPress={() => openPro(p)} style={{ height: 40, paddingHorizontal: 14 }} />
-            </View>
-          </Card>
-        ))}
+            </Card>
+          );
+        })}
       </View>
 
       <Modal visible={!!selectedPro} animationType="slide" transparent onRequestClose={() => setSelectedPro(null)}>
         <View style={styles.modalBg}>
           <View style={styles.modal}>
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-              <Txt variant="h2">{selectedPro?.name}</Txt>
-              <TouchableOpacity onPress={() => setSelectedPro(null)}>
+              <View style={{ flex: 1 }}>
+                <Txt variant="h2">{selectedPro?.name}</Txt>
+                <Txt variant="small" style={{ color: colors.textSecondary }}>
+                  {selectedPro?.designation || ""}{selectedPro?.company ? ` @ ${selectedPro.company}` : ""}
+                </Txt>
+              </View>
+              <TouchableOpacity onPress={() => setSelectedPro(null)} hitSlop={10}>
                 <Ionicons name="close" size={26} color={colors.textPrimary} />
               </TouchableOpacity>
             </View>
             <Txt variant="muted" style={{ marginTop: 4 }}>Available slots</Txt>
             <ScrollView style={{ marginTop: 12 }} contentContainerStyle={{ gap: 8 }}>
               {slots.length === 0 ? <Txt variant="muted">No slots available right now.</Txt> : null}
-              {slots.map((s) => (
-                <TouchableOpacity key={s.id} testID={`slot-${s.id}`} onPress={() => bookSlot(s.id)}>
-                  <Card style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-                    <View style={{ flex: 1 }}>
-                      <Txt variant="h3">{new Date(s.start_at || s.scheduled_at).toLocaleString()}</Txt>
-                      {s.end_at ? (
-                        <Txt variant="small" style={{ color: colors.textSecondary }}>
-                          → {new Date(s.end_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                        </Txt>
-                      ) : null}
-                      {(s.skill_set || []).length ? (
-                        <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 2 }}>
-                          {(s.skill_set || []).join(", ")}
-                        </Txt>
-                      ) : null}
-                      {s.topic ? <Txt variant="small" style={{ color: colors.textSecondary }}>{s.topic}</Txt> : null}
-                    </View>
-                    <Ionicons name="arrow-forward-circle" size={28} color={colors.primary} />
-                  </Card>
-                </TouchableOpacity>
+              {groupedSlots.map((g) => (
+                <View key={g.date} style={{ marginBottom: 8 }}>
+                  <Txt variant="label" style={{ marginBottom: 6, color: colors.primary }}>
+                    {fmtDateHeader(g.items[0]?.start_at || g.date)}
+                  </Txt>
+                  {g.items.map((s) => {
+                    const isBooked = s.status === "booked";
+                    return (
+                      <Card key={s.id} style={styles.slotRow}>
+                        <View style={{ flex: 1 }}>
+                          <Txt variant="h3" style={{ fontSize: 16 }}>{fmtSlotRange(s.start_at, s.end_at)}</Txt>
+                          {(s.skill_set || []).length ? (
+                            <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 2 }}>
+                              {(s.skill_set || []).join(", ")}
+                            </Txt>
+                          ) : null}
+                        </View>
+                        {isBooked ? (
+                          <View testID={`slot-${s.id}-booked`} style={styles.bookedTag}>
+                            <Ionicons name="lock-closed" size={14} color="#9CA3AF" />
+                            <Txt style={{ marginLeft: 4, color: "#9CA3AF", fontWeight: "700" }}>Booked</Txt>
+                          </View>
+                        ) : (
+                          <Button
+                            testID={`slot-${s.id}-book`}
+                            title="Book"
+                            onPress={() => bookSlot(s.id)}
+                            style={{ height: 36, paddingHorizontal: 18 }}
+                          />
+                        )}
+                      </Card>
+                    );
+                  })}
+                </View>
               ))}
             </ScrollView>
           </View>
@@ -208,6 +279,7 @@ export default function MockInterviews() {
       <ConfirmDialog
         visible={bookSuccessOpen}
         title="Mock Interview booked successfully."
+        message="Meeting invitation has been sent to both participants."
         confirmLabel="OK"
         cancelLabel=""
         onCancel={() => setBookSuccessOpen(false)}
@@ -221,5 +293,8 @@ const styles = StyleSheet.create({
   avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: "#EDE9FE", alignItems: "center", justifyContent: "center" },
   chip: { backgroundColor: colors.surfaceAlt, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
   modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
-  modal: { backgroundColor: colors.bg, borderTopLeftRadius: radius.xxl, borderTopRightRadius: radius.xxl, padding: 24, maxHeight: "80%" },
+  modal: { backgroundColor: colors.bg, borderTopLeftRadius: radius.xxl, borderTopRightRadius: radius.xxl, padding: 24, maxHeight: "82%" },
+  bookedPill: { flexDirection: "row", alignItems: "center", backgroundColor: "#F3F4F6", borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8, borderWidth: 1, borderColor: "#E5E7EB" },
+  bookedTag: { flexDirection: "row", alignItems: "center", backgroundColor: "#F3F4F6", borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: "#E5E7EB" },
+  slotRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
 });

@@ -257,7 +257,8 @@ class TestSlotsIteration4:
         assert slot.get("experience_years") == 3
 
     def test_slot_min_1h_enforced(self, session, professional):
-        s, e = _future(120, 30)  # 30 min < 1h
+        # New rule: minimum slot is 30 min — use 20 min to test the lower bound rejection.
+        s, e = _future(120, 20)
         r = session.post(f"{API}/interviews/slots", json={"start_at": s, "end_at": e, "skill_set": ["Python"]}, headers=auth_headers(professional["token"]))
         assert r.status_code == 400, r.text
 

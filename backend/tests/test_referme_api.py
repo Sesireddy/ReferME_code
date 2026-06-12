@@ -485,10 +485,11 @@ class TestSlotIteration3:
         assert r.status_code == 400
 
     def test_slot_too_short(self, session, professional):
-        s, e = _future(60, 30)
+        # New min is 30 min — use 20-min to trigger the "too short" path.
+        s, e = _future(60, 20)
         r = session.post(f"{API}/interviews/slots", json={"start_at": s, "end_at": e, "skill_set": ["Python"]}, headers=auth_headers(professional["token"]))
         assert r.status_code == 400
-        assert "60" in r.json().get("detail", "")
+        assert "30" in r.json().get("detail", "")
 
     def test_slot_overlap_rejected_adjacent_allowed(self, session, professional):
         s1, e1 = _future(120, 60)
