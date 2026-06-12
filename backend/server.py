@@ -270,11 +270,15 @@ class ProfileBody(BaseModel):
     passed_out_year: Optional[int] = None
     current_location: Optional[str] = None
     dob: Optional[str] = None  # YYYY-MM-DD
-    preferred_role: Optional[Literal["fresher", "experienced"]] = None
-    years_of_experience: Optional[int] = None  # mandatory; 0 means fresher
+    preferred_role: Optional[Literal["fresher", "experienced", "intern"]] = None
+    years_of_experience: Optional[int] = None  # required when experienced; 0 allowed
     currently_working: Optional[Literal["yes", "no"]] = None
-    notice_period: Optional[str] = None  # immediate | 15d | 30d | 60d | 90d
-    annual_salary: Optional[str] = None  # range string e.g. "3-6 LPA"
+    working_since_from_year: Optional[str] = None  # "2010" - "2030"
+    working_since_from_month: Optional[str] = None  # "01" - "12"
+    working_since_to_year: Optional[str] = None  # null when currently_working = yes (Present)
+    working_since_to_month: Optional[str] = None
+    notice_period: Optional[str] = None  # 15d_or_less | 1m | 2m | 3m | serving
+    annual_salary: Optional[str] = None  # CTC range string e.g. "3-6 LPA"
     skills: Optional[list[str]] = None
     resume_base64: Optional[str] = None
     resume_filename: Optional[str] = None
@@ -710,7 +714,10 @@ STUDENT_PROFILE_FIELDS_END = True  # marker
 STUDENT_PROFILE_FIELDS = [
     "phone", "gender", "education", "education_details", "passed_out_year", "current_location",
     "dob", "preferred_role", "years_of_experience", "skills",
-    "company", "designation", "currently_working", "notice_period", "annual_salary",
+    "company", "designation", "currently_working",
+    "working_since_from_year", "working_since_from_month",
+    "working_since_to_year", "working_since_to_month",
+    "notice_period", "annual_salary",
     "resume_base64", "resume_filename", "resume_size", "resume_mime_type", "resume_link",
     "profile_photo_base64", "certifications", "projects",
 ]
@@ -821,29 +828,48 @@ def compute_resume_score(user: dict) -> int:
 
 
 def is_student_complete(profile: dict) -> bool:
-    # Mandatory: phone, gender, dob, education, passed_out_year, preferred_role,
-    # years_of_experience (>= 0), current_location, skills + resume.
-    required = [
+    # Always-required: phone, gender, dob, education, passed_out_year, current_location,
+    # preferred_role, skills + resume.
+    required_common = [
         "phone", "gender", "dob", "education", "passed_out_year",
         "current_location", "preferred_role", "skills",
     ]
     has_resume = bool(profile.get("resume_base64") or profile.get("resume_link"))
     if not has_resume:
         return False
-    for r in required:
+    for r in required_common:
         v = profile.get(r)
         if v is None or v == "" or v == []:
             return False
-    # years_of_experience must be provided (0 allowed for freshers)
-    yoe = profile.get("years_of_experience")
-    if yoe is None:
-        return False
-    try:
-        int(yoe)
-    except (TypeError, ValueError):
-        return False
     if profile.get("education") == "__OTHER__" and not profile.get("education_details"):
         return False
+
+    pref = profile.get("preferred_role")
+    # Experienced career details are mandatory only when preferred_role == "experienced".
+    if pref == "experienced":
+        # years_of_experience must be numeric (0 allowed but discouraged for "experienced")
+        yoe = profile.get("years_of_experience")
+        if yoe is None:
+            return False
+        try:
+            int(yoe)
+        except (TypeError, ValueError):
+            return False
+        for k in ("company", "designation", "currently_working",
+                  "working_since_from_year", "working_since_from_month",
+                  "annual_salary"):
+            v = profile.get(k)
+            if v is None or v == "":
+                return False
+        cw = profile.get("currently_working")
+        if cw == "yes":
+            if not profile.get("notice_period"):
+                return False
+        elif cw == "no":
+            if not profile.get("working_since_to_year") or not profile.get("working_since_to_month"):
+                return False
+        else:
+            return False
     return True
 
 

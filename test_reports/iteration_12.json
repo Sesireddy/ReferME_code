@@ -1,0 +1,34 @@
+{
+  "summary": "Iteration 12 — Phase A Task #6 REFINEMENT (Career Information conditional cascade + Intern role). BACKEND and FRONTEND both fully GREEN on every spec item from the review request. Backend: existing test_referme_api.py 47/47 PASS (pytest_iter12_referme.xml) + new test_iteration12_career_cascade.py 8/8 PASS — total 55/55. The 8 new tests directly cover: (a) fresher completes without experienced fields, (b) fresher completes when client explicitly nulls experienced fields (mirrors student/profile.tsx save()), (c) intern completes the same way (new value plumbed end-to-end), (d) experienced with partial payload stays profile_complete=False, (e) experienced + currently_working=yes requires notice_period, (f) experienced + currently_working=no requires working_since_to_year+month (NOT notice_period), (g) new notice_period value '15d_or_less' is accepted, (h) round-trip experienced→fresher with nulled exp fields correctly flips back to complete. Frontend (390x844 mobile, public URL https://refer-connect-11.preview.emergentagent.com): exhaustively verified 8 cascade transitions on a fresh signed-up student: [1] no role → Experience Details block hidden; [2] Fresher → block hidden; [3] Intern → block hidden (new option works); [4] Experienced → all 5 fields appear (profile-years-exp, profile-company, profile-designation, profile-currently-working, profile-annual-salary) and Working Since group + Notice Period stay hidden until currently_working is picked; [5] Currently Working=Yes → 'Working Since' label + From-month/year pickers + 'Present' badge (testID=profile-working-to-present) + Notice Period picker all appear, To-month/year pickers correctly absent; [6] Currently Working=No → Present badge gone, Notice Period gone, To-month + To-year pickers appear; [7] Notice Period dropdown shows the new values 15d_or_less, 1m, serving (verified testIDs profile-notice-period-opt-15d_or_less / -1m / -serving); [8] tapping Save with experienced selected + everything else empty opens a SINGLE ConfirmDialog titled 'Please complete your profile' listing ALL 15 missing mandatory fields aggregated under the new conditional logic: Full Name, Gender, Date of Birth, Mobile Number, Education, Passed Out Year, Current Location, Skill Set, Years of Experience, Company Name, Designation, Working Since (From), Notice Period, Annual Salary (CTC), Resume (upload or link) — screenshot confirms 15/15 present. Final API smoke: PUT /api/profile with experienced + currently_working=no + working_since_to_*=2024/12 + annual_salary=10-15 LPA → 200 with user.profile_complete=True and notice_period correctly null. No regressions on auth, wallet, jobs, applications, interviews (all 47 baseline tests pass).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "global", "issues": ["Carry-over from iter-9/10/11: 'shadow*' style props and props.pointerEvents deprecation warnings still flood the Metro logs. Non-blocking."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/pytest/pytest_iter12_referme.xml",
+    "/app/backend/tests/test_referme_api.py",
+    "/app/backend/tests/test_iteration12_career_cascade.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is now 2403 lines (was 2360 in iter-11). Still well over the 700-line threshold — splitting into routers (auth, profile, wallet, jobs, interviews, admin) remains overdue but is non-blocking.",
+    "student/profile.tsx is now 806 lines (was 705 in iter-11). The added experienced-cascade UI is densely packed but readable; consider extracting an <ExperienceDetails/> sub-component on next touch."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration12_career_cascade.py (NEW — 8 tests covering the conditional career cascade and the new 'intern' value)"
+  ],
+  "success_rate": {
+    "backend": "100% — 55/55 (47 existing test_referme_api.py + 8 new test_iteration12_career_cascade.py). No regressions.",
+    "frontend": "100% — every one of the 8 cascade transitions in the review_request verified on a freshly signed-up student; ConfirmDialog correctly aggregates ALL 15 missing fields under the new conditional logic; happy-path PUT /api/profile flips profile_complete=True for experienced + currently_working=no."
+  },
+  "seed_data_creation": "Created throwaway student accounts iter12_<rand>@referme.io (Test@12345) for UI cascade testing and iter12hp_<rand>@referme.io for the experienced/cw=no happy-path API check.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend baseline is now 55/55 GREEN (47 referme_api + 8 career_cascade). The new 8-test file at /app/backend/tests/test_iteration12_career_cascade.py is the canonical regression for the Phase-A Task-6 REFINEMENT. The 'intern' preferred_role value is wired through ProfileBody (server.py:273) and is_student_complete (server.py:847) — interns do NOT require any experienced-only field. Frontend cascade logic lives at student/profile.tsx:486-591; the single ConfirmDialog aggregation at student/profile.tsx:235-265 was verified to include all 15 fields. SendGrid still 401 (mock_otp fallback in TEST_RETURN_OTP mode). Razorpay still mocked. No env changes since iter-11. Metro cache occasionally goes stale — fix is `rm -rf /app/frontend/.metro-cache && sudo supervisorctl restart expo` (took ~5s in this run, no incident). Public URL unchanged: https://refer-connect-11.preview.emergentagent.com.",
+  "rca_of_issue": "N/A — feature refinement verification, not a bug fix. Implementation matches spec exactly."
+}

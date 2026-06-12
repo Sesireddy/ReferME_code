@@ -38,11 +38,11 @@ export const CURRENTLY_WORKING_OPTIONS = [
 ];
 
 export const NOTICE_PERIOD_OPTIONS = [
-  { value: "immediate", label: "Immediate" },
-  { value: "15d", label: "15 Days" },
-  { value: "30d", label: "30 Days" },
-  { value: "60d", label: "60 Days" },
-  { value: "90d", label: "90 Days" },
+  { value: "15d_or_less", label: "15 Days or Less" },
+  { value: "1m", label: "1 Month" },
+  { value: "2m", label: "2 Months" },
+  { value: "3m", label: "3 Months" },
+  { value: "serving", label: "Serving Notice Period" },
 ];
 
 export const ANNUAL_SALARY_OPTIONS = [

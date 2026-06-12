@@ -18,18 +18,15 @@ import {
   GENDER_OPTIONS,
   EXPERIENCE_OPTIONS,
   LOCATION_OPTIONS,
+  PREFERRED_ROLE_OPTIONS,
   CURRENTLY_WORKING_OPTIONS,
   NOTICE_PERIOD_OPTIONS,
   ANNUAL_SALARY_OPTIONS,
   MONTHS,
+  YEARS_2010_2030,
 } from "@/src/lib/constants";
 
 const MAX_RESUME_BYTES = 5 * 1024 * 1024;
-
-const PREFERRED_ROLE_OPTIONS = [
-  { value: "fresher", label: "Fresher" },
-  { value: "experienced", label: "Experienced" },
-];
 
 // DOB ranges: 1950 → (current year - 14). Each as YYYY string.
 const CURRENT_YEAR = new Date().getFullYear();
@@ -76,10 +73,14 @@ export default function StudentProfile() {
   const [currentLocation, setCurrentLocation] = useState<string | null>(null);
   const [currentLocationOther, setCurrentLocationOther] = useState("");
   const [skills, setSkills] = useState("");
-  // Current employment (optional)
+  // Current employment (optional / experienced-only mandatory)
   const [company, setCompany] = useState("");
   const [designation, setDesignation] = useState("");
   const [currentlyWorking, setCurrentlyWorking] = useState<string | null>(null);
+  const [workingFromYear, setWorkingFromYear] = useState<string | null>(null);
+  const [workingFromMonth, setWorkingFromMonth] = useState<string | null>(null);
+  const [workingToYear, setWorkingToYear] = useState<string | null>(null);
+  const [workingToMonth, setWorkingToMonth] = useState<string | null>(null);
   const [noticePeriod, setNoticePeriod] = useState<string | null>(null);
   const [annualSalary, setAnnualSalary] = useState<string | null>(null);
 
@@ -151,6 +152,10 @@ export default function StudentProfile() {
       setCompany(p.company || "");
       setDesignation(p.designation || "");
       setCurrentlyWorking(p.currently_working || null);
+      setWorkingFromYear(p.working_since_from_year || null);
+      setWorkingFromMonth(p.working_since_from_month || null);
+      setWorkingToYear(p.working_since_to_year || null);
+      setWorkingToMonth(p.working_since_to_month || null);
       setNoticePeriod(p.notice_period || null);
       setAnnualSalary(p.annual_salary || null);
       setResumeBase64(p.resume_base64 || "");
@@ -236,9 +241,19 @@ export default function StudentProfile() {
     if (education === "__OTHER__" && !educationDetails.trim()) missing.push("Education Details");
     if (!passedOutYear) missing.push("Passed Out Year");
     if (!preferredRole) missing.push("Preferred Role");
-    if (yearsExp === null || yearsExp === "") missing.push("Years of Experience");
     if (!resolvedLocation) missing.push("Current Location");
     if (!skills.trim()) missing.push("Skill Set");
+    // Experienced-only mandatory fields
+    if (preferredRole === "experienced") {
+      if (yearsExp === null || yearsExp === "") missing.push("Years of Experience");
+      if (!company.trim()) missing.push("Company Name");
+      if (!designation.trim()) missing.push("Designation");
+      if (!currentlyWorking) missing.push("Currently Working");
+      if (!workingFromYear || !workingFromMonth) missing.push("Working Since (From)");
+      if (currentlyWorking === "no" && (!workingToYear || !workingToMonth)) missing.push("Working Since (To)");
+      if (currentlyWorking === "yes" && !noticePeriod) missing.push("Notice Period");
+      if (!annualSalary) missing.push("Annual Salary (CTC)");
+    }
     const hasResume = (resumeTab === "file" && !!resumeBase64) || (resumeTab === "link" && !!resumeLink.trim());
     if (!hasResume) missing.push("Resume (upload or link)");
     return missing;
@@ -252,7 +267,8 @@ export default function StudentProfile() {
     }
     setSaving(true);
     try {
-      const yoeNum = yearsExp === "30+" ? 30 : parseInt(yearsExp || "0", 10);
+      const isExp = preferredRole === "experienced";
+      const yoeNum = !isExp ? 0 : (yearsExp === "30+" ? 30 : parseInt(yearsExp || "0", 10));
       const res = await api<any>("/profile", {
         method: "PUT",
         body: {
@@ -267,11 +283,16 @@ export default function StudentProfile() {
           preferred_role: preferredRole,
           years_of_experience: yoeNum,
           skills: skills.split(",").map((s) => s.trim()).filter(Boolean),
-          company: company || null,
-          designation: designation || null,
-          currently_working: currentlyWorking,
-          notice_period: currentlyWorking === "yes" ? noticePeriod : null,
-          annual_salary: annualSalary,
+          // Experienced-only fields (null otherwise so server overrides stale values)
+          company: isExp ? company || null : null,
+          designation: isExp ? designation || null : null,
+          currently_working: isExp ? currentlyWorking : null,
+          working_since_from_year: isExp ? workingFromYear : null,
+          working_since_from_month: isExp ? workingFromMonth : null,
+          working_since_to_year: isExp && currentlyWorking === "no" ? workingToYear : null,
+          working_since_to_month: isExp && currentlyWorking === "no" ? workingToMonth : null,
+          notice_period: isExp && currentlyWorking === "yes" ? noticePeriod : null,
+          annual_salary: isExp ? annualSalary : null,
           resume_base64: resumeTab === "file" ? (resumeBase64 || null) : null,
           resume_filename: resumeTab === "file" ? (resumeName || null) : null,
           resume_size: resumeTab === "file" ? (resumeSize || null) : null,
@@ -432,23 +453,14 @@ export default function StudentProfile() {
           onChange={(v) => setPassedOutYear(v as string)}
         />
 
-        <Txt variant="h3" style={styles.sectionHeader}>Career & Location</Txt>
+        <Txt variant="h3" style={styles.sectionHeader}>Career Information</Txt>
         <Picker
           testID="profile-preferred-role"
           label="Preferred role *"
-          placeholder="Fresher or experienced?"
+          placeholder="Fresher / Experienced / Intern"
           options={PREFERRED_ROLE_OPTIONS}
           value={preferredRole}
           onChange={(v) => setPreferredRole(v as string)}
-        />
-
-        <Picker
-          testID="profile-years-exp"
-          label="Years of experience *"
-          placeholder="Select years"
-          options={EXPERIENCE_OPTIONS}
-          value={yearsExp}
-          onChange={(v) => setYearsExp(v as string)}
         />
 
         <Picker
@@ -471,35 +483,112 @@ export default function StudentProfile() {
 
         <Input testID="profile-skills" label="Skills (comma-separated) *" value={skills} onChangeText={setSkills} placeholder="React, Python, ML" />
 
-        <Txt variant="h3" style={styles.sectionHeader}>Current Employment (optional)</Txt>
-        <Input testID="profile-company" label="Company" value={company} onChangeText={setCompany} placeholder="Company name" />
-        <Input testID="profile-designation" label="Designation" value={designation} onChangeText={setDesignation} placeholder="e.g. Software Engineer" />
-        <Picker
-          testID="profile-currently-working"
-          label="Currently working?"
-          placeholder="Select yes / no"
-          options={CURRENTLY_WORKING_OPTIONS}
-          value={currentlyWorking}
-          onChange={(v) => setCurrentlyWorking(v as string)}
-        />
-        {currentlyWorking === "yes" ? (
-          <Picker
-            testID="profile-notice-period"
-            label="Notice period"
-            placeholder="Select notice period"
-            options={NOTICE_PERIOD_OPTIONS}
-            value={noticePeriod}
-            onChange={(v) => setNoticePeriod(v as string)}
-          />
+        {preferredRole === "experienced" ? (
+          <>
+            <Txt variant="h3" style={styles.sectionHeader}>Experience Details</Txt>
+
+            <Picker
+              testID="profile-years-exp"
+              label="Years of experience *"
+              placeholder="Select years"
+              options={EXPERIENCE_OPTIONS}
+              value={yearsExp}
+              onChange={(v) => setYearsExp(v as string)}
+            />
+
+            <Input testID="profile-company" label="Company name *" value={company} onChangeText={setCompany} placeholder="e.g. Acme Corp" />
+            <Input testID="profile-designation" label="Designation *" value={designation} onChangeText={setDesignation} placeholder="e.g. Software Engineer" />
+
+            <Picker
+              testID="profile-currently-working"
+              label="Currently working? *"
+              placeholder="Select yes / no"
+              options={CURRENTLY_WORKING_OPTIONS}
+              value={currentlyWorking}
+              onChange={(v) => setCurrentlyWorking(v as string)}
+            />
+
+            {currentlyWorking ? (
+              <>
+                <Txt variant="label" style={{ marginBottom: 6, marginTop: 4 }}>Working Since *</Txt>
+                <View style={styles.workingSinceRow}>
+                  <View style={styles.workingSinceCol}>
+                    <Txt variant="small" style={styles.smallLabel}>From</Txt>
+                    <View style={styles.dobRow}>
+                      <View style={{ flex: 1 }}>
+                        <Picker
+                          testID="profile-working-from-month"
+                          placeholder="Month"
+                          options={MONTHS}
+                          value={workingFromMonth}
+                          onChange={(v) => setWorkingFromMonth(v as string)}
+                        />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Picker
+                          testID="profile-working-from-year"
+                          placeholder="Year"
+                          options={YEARS_2010_2030}
+                          value={workingFromYear}
+                          onChange={(v) => setWorkingFromYear(v as string)}
+                        />
+                      </View>
+                    </View>
+                  </View>
+                  <View style={styles.workingSinceCol}>
+                    <Txt variant="small" style={styles.smallLabel}>To</Txt>
+                    {currentlyWorking === "yes" ? (
+                      <View style={styles.presentBox} testID="profile-working-to-present">
+                        <Txt variant="body" style={{ color: colors.primary }}>Present</Txt>
+                      </View>
+                    ) : (
+                      <View style={styles.dobRow}>
+                        <View style={{ flex: 1 }}>
+                          <Picker
+                            testID="profile-working-to-month"
+                            placeholder="Month"
+                            options={MONTHS}
+                            value={workingToMonth}
+                            onChange={(v) => setWorkingToMonth(v as string)}
+                          />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Picker
+                            testID="profile-working-to-year"
+                            placeholder="Year"
+                            options={YEARS_2010_2030}
+                            value={workingToYear}
+                            onChange={(v) => setWorkingToYear(v as string)}
+                          />
+                        </View>
+                      </View>
+                    )}
+                  </View>
+                </View>
+              </>
+            ) : null}
+
+            {currentlyWorking === "yes" ? (
+              <Picker
+                testID="profile-notice-period"
+                label="Notice period *"
+                placeholder="Select notice period"
+                options={NOTICE_PERIOD_OPTIONS}
+                value={noticePeriod}
+                onChange={(v) => setNoticePeriod(v as string)}
+              />
+            ) : null}
+
+            <Picker
+              testID="profile-annual-salary"
+              label="Annual salary (CTC) *"
+              placeholder="Select CTC range"
+              options={ANNUAL_SALARY_OPTIONS}
+              value={annualSalary}
+              onChange={(v) => setAnnualSalary(v as string)}
+            />
+          </>
         ) : null}
-        <Picker
-          testID="profile-annual-salary"
-          label="Annual salary"
-          placeholder="Select salary range"
-          options={ANNUAL_SALARY_OPTIONS}
-          value={annualSalary}
-          onChange={(v) => setAnnualSalary(v as string)}
-        />
 
         <Txt variant="h3" style={styles.sectionHeader}>Resume *</Txt>
         <View style={styles.tabs}>
@@ -619,6 +708,18 @@ const styles = StyleSheet.create({
   tabActive: { backgroundColor: colors.primary },
   sectionHeader: { marginTop: 18, marginBottom: 8, color: colors.primary },
   dobRow: { flexDirection: "row", gap: 8 },
+  workingSinceRow: { flexDirection: "row", gap: 12, marginBottom: 6 },
+  workingSinceCol: { flex: 1 },
+  smallLabel: { marginBottom: 4, color: colors.textSecondary, fontWeight: "600" },
+  presentBox: {
+    height: 48,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: "#FFF5F5",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   fileBox: {
     flexDirection: "row",
     alignItems: "center",

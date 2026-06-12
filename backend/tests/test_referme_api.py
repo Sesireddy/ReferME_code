@@ -403,24 +403,38 @@ class TestProfileIteration3:
         assert r2.json()["profile"]["education_details"] == "BBA Marketing"
 
     def test_experienced_requires_years_of_experience(self, session, student):
-        # Years of experience is now ALWAYS required (0 allowed for freshers).
-        # This test confirms an explicit positive yoe still completes the profile.
-        body = {
+        # Experienced profile now requires: years_of_experience, company, designation,
+        # currently_working, working_since_from_*, annual_salary, and (notice_period if working)
+        # or (working_since_to_* if not working).
+        full = {
             **_BASE_COMPLETE,
             "education": "B.Tech",
             "passed_out_year": 2020,
             "current_location": "Mumbai",
             "preferred_role": "experienced",
+            "years_of_experience": 4,
+            "company": "Acme",
+            "designation": "SDE-2",
+            "currently_working": "yes",
+            "working_since_from_year": "2022",
+            "working_since_from_month": "01",
+            "notice_period": "1m",
+            "annual_salary": "6-10",
             "skills": ["Java"],
             "resume_link": "https://example.com/r.pdf",
         }
-        # Use a body WITHOUT years_of_experience first
-        no_yoe = {k: v for k, v in body.items() if k != "years_of_experience"}
+        # Missing yoe -> incomplete
+        no_yoe = {k: v for k, v in full.items() if k != "years_of_experience"}
         r = session.put(f"{API}/profile", json=no_yoe, headers=auth_headers(student["token"]))
         assert r.json()["user"]["profile_complete"] is False
-        r2 = session.put(f"{API}/profile", json={**body, "years_of_experience": 4}, headers=auth_headers(student["token"]))
-        assert r2.json()["user"]["profile_complete"] is True
-        assert r2.json()["profile"]["years_of_experience"] == 4
+        # notice_period explicitly null with currently_working=yes -> incomplete
+        no_notice = {**full, "notice_period": None}
+        r2 = session.put(f"{API}/profile", json=no_notice, headers=auth_headers(student["token"]))
+        assert r2.json()["user"]["profile_complete"] is False
+        # Full payload -> complete
+        r3 = session.put(f"{API}/profile", json=full, headers=auth_headers(student["token"]))
+        assert r3.json()["user"]["profile_complete"] is True, r3.text
+        assert r3.json()["profile"]["years_of_experience"] == 4
 
     def test_resume_link_alone_satisfies_resume(self, session, student):
         body = {
