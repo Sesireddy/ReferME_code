@@ -240,6 +240,15 @@ class VerifyOtpBody(BaseModel):
     purpose: Literal["verify_email", "reset_password"] = "verify_email"
 
 
+class PhoneOtpSendBody(BaseModel):
+    phone: str
+
+
+class PhoneOtpVerifyBody(BaseModel):
+    phone: str
+    otp: str
+
+
 class LoginBody(BaseModel):
     email: EmailStr
     password: str
@@ -537,6 +546,63 @@ async def verify_otp(body: VerifyOtpBody):
     return {"message": "OTP verified", "reset_token": body.otp}
 
 
+# ------------------- Phone (SMS) OTP — MOCK MODE -------------------
+# In mock mode we generate a 6-digit OTP and return it in the response payload
+# (under `mock_otp`) so the client can complete verification without an SMS gateway.
+@api.post("/profile/phone/send-otp")
+async def phone_send_otp(body: PhoneOtpSendBody, u: dict = Depends(current_user)):
+    phone = (body.phone or "").strip()
+    digits = "".join(ch for ch in phone if ch.isdigit())
+    if len(digits) < 7:
+        raise HTTPException(status_code=400, detail="Invalid phone number")
+    otp_code = f"{secrets.randbelow(10**6):06d}"
+    await db.otps.insert_one({
+        "id": new_id(),
+        "user_id": u["id"],
+        "phone": phone,
+        "otp_hash": hash_password(otp_code),
+        "purpose": "verify_phone",
+        "expires_at": now_ts() + 600,
+        "consumed": False,
+        "created_at": now_iso(),
+    })
+    # Mock SMS: always include the OTP in response. When real SMS is wired,
+    # gate this behind MOCK_OTP_MODE / send-failure like the email flow.
+    return {"message": "Mock SMS sent", "phone": phone, "mock_otp": otp_code}
+
+
+@api.post("/profile/phone/verify-otp")
+async def phone_verify_otp(body: PhoneOtpVerifyBody, u: dict = Depends(current_user)):
+    phone = (body.phone or "").strip()
+    otp_doc = await db.otps.find_one(
+        {
+            "user_id": u["id"],
+            "phone": phone,
+            "purpose": "verify_phone",
+            "consumed": False,
+            "expires_at": {"$gt": now_ts()},
+        },
+        {"_id": 0},
+        sort=[("created_at", -1)],
+    )
+    if not otp_doc:
+        raise HTTPException(status_code=400, detail="OTP invalid or expired")
+    if not verify_password(body.otp, otp_doc["otp_hash"]):
+        raise HTTPException(status_code=400, detail="Incorrect OTP")
+    await db.otps.update_one({"id": otp_doc["id"]}, {"$set": {"consumed": True}})
+    # mark phone as verified on the user's profile
+    profile = dict(u.get("profile", {}) or {})
+    profile["phone"] = phone
+    profile["phone_verified"] = True
+    profile["phone_verified_at"] = now_iso()
+    update = {"profile": profile}
+    if u["role"] == "student":
+        update["profile_complete"] = is_student_complete(profile)
+    await db.users.update_one({"id": u["id"]}, {"$set": update})
+    u2 = await db.users.find_one({"id": u["id"]}, {"_id": 0})
+    return {"message": "Phone verified", "user": user_public(u2), "profile": u2.get("profile", {})}
+
+
 @api.post("/auth/login")
 async def login(body: LoginBody):
     u = await db.users.find_one({"email": body.email.lower()}, {"_id": 0})
@@ -712,7 +778,8 @@ STUDENT_PROFILE_FIELDS_END = True  # marker
 
 
 STUDENT_PROFILE_FIELDS = [
-    "phone", "gender", "education", "education_details", "passed_out_year", "current_location",
+    "phone", "phone_verified", "phone_verified_at",
+    "gender", "education", "education_details", "passed_out_year", "current_location",
     "dob", "preferred_role", "years_of_experience", "skills",
     "company", "designation", "currently_working",
     "working_since_from_year", "working_since_from_month",
@@ -887,9 +954,19 @@ async def update_profile(body: ProfileBody, u: dict = Depends(current_user)):
         "professional": PRO_PROFILE_FIELDS,
         "employer": EMPLOYER_PROFILE_FIELDS,
     }.get(role, [])
+    prev_phone = (profile.get("phone") or "").strip()
     for k in role_fields:
         if k in payload:
             profile[k] = payload[k]  # allow None to clear
+    # SECURITY: clients cannot self-set phone_verified via PUT /profile —
+    # only the /profile/phone/verify-otp flow may set it. Reset it if phone changed.
+    new_phone = (profile.get("phone") or "").strip()
+    if "phone" in payload and new_phone != prev_phone:
+        profile["phone_verified"] = False
+        profile["phone_verified_at"] = None
+    elif "phone_verified" in payload:
+        # ignore client-supplied value; preserve prior or default to False
+        profile["phone_verified"] = bool(profile.get("phone_verified", False))
 
     # Auto compute completion
     if role == "student":

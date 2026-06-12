@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react";
-import { View, StyleSheet, Alert, TouchableOpacity, ActivityIndicator } from "react-native";
+import { View, StyleSheet, Alert, TouchableOpacity, ActivityIndicator, Modal } from "react-native";
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
@@ -87,6 +87,18 @@ export default function StudentProfile() {
   // Missing-fields dialog
   const [missingDialog, setMissingDialog] = useState<{ open: boolean; items: string[] }>({ open: false, items: [] });
 
+  // View / Edit mode (profile is read-only after first successful save).
+  const [mode, setMode] = useState<"view" | "edit">("edit");
+  const isEditing = mode === "edit";
+
+  // Phone verification (Mock SMS OTP)
+  const [phoneVerified, setPhoneVerified] = useState(false);
+  const [verifiedPhone, setVerifiedPhone] = useState<string>("");
+  const [otpModal, setOtpModal] = useState<{ open: boolean; mockOtp: string }>({ open: false, mockOtp: "" });
+  const [otpInput, setOtpInput] = useState("");
+  const [sendingOtp, setSendingOtp] = useState(false);
+  const [verifyingOtp, setVerifyingOtp] = useState(false);
+
   // Resume state
   const [resumeTab, setResumeTab] = useState<ResumeTab>("file");
   const [resumeBase64, setResumeBase64] = useState("");
@@ -118,6 +130,11 @@ export default function StudentProfile() {
       setName(me.user.name || "");
       const p = me.profile || {};
       setPhone(p.phone || "");
+      // Phone verification state
+      setPhoneVerified(!!p.phone_verified);
+      setVerifiedPhone(p.phone_verified ? (p.phone || "") : "");
+      // Initial view mode: locked for completed profiles, open for new users.
+      setMode(me.user.profile_complete ? "view" : "edit");
       setGender(p.gender || null);
       setEducation(p.education || null);
       setEducationDetails(p.education_details || "");
@@ -219,6 +236,62 @@ export default function StudentProfile() {
     setResumeMime("");
   }
 
+  // Wrap phone setter so any edit invalidates current verification.
+  function onPhoneChange(v: string) {
+    setPhone(v);
+    if (v.trim() !== verifiedPhone.trim()) setPhoneVerified(false);
+    else setPhoneVerified(true);
+  }
+
+  async function sendPhoneOtp() {
+    const trimmed = phone.trim();
+    if (!trimmed || trimmed.replace(/\D/g, "").length < 7) {
+      Alert.alert("Invalid number", "Enter a valid mobile number first.");
+      return;
+    }
+    setSendingOtp(true);
+    try {
+      const res = await api<any>("/profile/phone/send-otp", { method: "POST", body: { phone: trimmed } });
+      setOtpInput("");
+      setOtpModal({ open: true, mockOtp: res.mock_otp || "" });
+    } catch (e: any) {
+      Alert.alert("Could not send OTP", e.message || String(e));
+    } finally {
+      setSendingOtp(false);
+    }
+  }
+
+  async function submitPhoneOtp() {
+    if (!otpInput.trim() || otpInput.trim().length < 4) {
+      Alert.alert("Enter OTP", "Please enter the 6-digit code.");
+      return;
+    }
+    setVerifyingOtp(true);
+    try {
+      const res = await api<any>("/profile/phone/verify-otp", {
+        method: "POST",
+        body: { phone: phone.trim(), otp: otpInput.trim() },
+      });
+      setPhoneVerified(true);
+      setVerifiedPhone(phone.trim());
+      setOtpModal({ open: false, mockOtp: "" });
+      setOtpInput("");
+      // refresh user object so any downstream UI updates
+      if (res.user) setUser((prev: any) => ({ ...(prev || {}), ...res.user, profile: res.profile || prev?.profile }));
+      Alert.alert("Verified", "Your mobile number has been verified.");
+    } catch (e: any) {
+      Alert.alert("OTP failed", e.message || "Incorrect or expired code.");
+    } finally {
+      setVerifyingOtp(false);
+    }
+  }
+
+  // Reload state and switch back to view mode (cancel edits).
+  async function cancelEdit() {
+    await load();
+    setMode("view");
+  }
+
   // Composed DOB string (YYYY-MM-DD) if all 3 parts selected
   const dobIso = useMemo(() => {
     if (dobYear && dobMonth && dobDay) return `${dobYear}-${dobMonth}-${dobDay}`;
@@ -237,6 +310,7 @@ export default function StudentProfile() {
     if (!gender) missing.push("Gender");
     if (!dobIso) missing.push("Date of Birth");
     if (!phone.trim()) missing.push("Mobile Number");
+    if (phone.trim() && !phoneVerified) missing.push("Mobile Number (verify with OTP)");
     if (!education) missing.push("Education");
     if (education === "__OTHER__" && !educationDetails.trim()) missing.push("Education Details");
     if (!passedOutYear) missing.push("Passed Out Year");
@@ -301,6 +375,9 @@ export default function StudentProfile() {
         },
       });
       setUser((prev: any) => ({ ...(prev || {}), ...res.user, profile: res.profile || {} }));
+      if (res.user?.profile_complete) {
+        setMode("view");
+      }
       Alert.alert("Saved", res.user.profile_complete ? "Profile complete!" : "Almost there. Fill any missing fields.");
     } catch (e: any) {
       Alert.alert("Save failed", e.message);
@@ -379,8 +456,34 @@ export default function StudentProfile() {
       {/* --------------- end Wallet section --------------- */}
 
       <View style={{ marginTop: 16 }}>
+        {/* Edit / View mode banner */}
+        <Card style={styles.modeBanner}>
+          <View style={{ flex: 1 }}>
+            <Txt variant="label" style={{ color: colors.primary }}>
+              {isEditing ? "Edit Mode" : "View Mode"}
+            </Txt>
+            <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 2 }}>
+              {isEditing
+                ? "Make changes below and tap Save Changes."
+                : "Your saved profile. Tap Edit Profile to update."}
+            </Txt>
+          </View>
+          {isEditing ? (
+            user?.profile_complete ? (
+              <TouchableOpacity testID="cancel-edit-btn" onPress={cancelEdit} style={styles.modeBtnGhost}>
+                <Txt style={{ fontWeight: "700", color: colors.textSecondary }}>Cancel</Txt>
+              </TouchableOpacity>
+            ) : null
+          ) : (
+            <TouchableOpacity testID="edit-profile-btn" onPress={() => setMode("edit")} style={styles.modeBtn}>
+              <Ionicons name="create-outline" size={16} color="#fff" />
+              <Txt style={{ color: "#fff", fontWeight: "700", marginLeft: 6 }}>Edit Profile</Txt>
+            </TouchableOpacity>
+          )}
+        </Card>
+
         <Txt variant="h3" style={styles.sectionHeader}>Personal Details</Txt>
-        <Input testID="profile-name" label="Full name *" value={name} onChangeText={setName} placeholder="Your full name" />
+        <Input testID="profile-name" label="Full name *" value={name} onChangeText={setName} placeholder="Your full name" editable={isEditing} />
 
         <Picker
           testID="profile-gender"
@@ -389,6 +492,7 @@ export default function StudentProfile() {
           options={GENDER_OPTIONS}
           value={gender}
           onChange={(v) => setGender(v as string)}
+          disabled={!isEditing}
         />
 
         <Txt variant="label" style={{ marginBottom: 6 }}>Date of Birth *</Txt>
@@ -400,6 +504,7 @@ export default function StudentProfile() {
               options={DAYS_31}
               value={dobDay}
               onChange={(v) => setDobDay(v as string)}
+              disabled={!isEditing}
             />
           </View>
           <View style={{ flex: 1.3 }}>
@@ -409,6 +514,7 @@ export default function StudentProfile() {
               options={MONTHS}
               value={dobMonth}
               onChange={(v) => setDobMonth(v as string)}
+              disabled={!isEditing}
             />
           </View>
           <View style={{ flex: 1.4 }}>
@@ -418,11 +524,46 @@ export default function StudentProfile() {
               options={DOB_YEARS}
               value={dobYear}
               onChange={(v) => setDobYear(v as string)}
+              disabled={!isEditing}
             />
           </View>
         </View>
 
-        <Input testID="profile-phone" label="Mobile number *" value={phone} onChangeText={setPhone} placeholder="+91 98765 43210" keyboardType="phone-pad" />
+        {/* Mobile + Verify */}
+        <View style={styles.phoneRow}>
+          <View style={{ flex: 1 }}>
+            <Input
+              testID="profile-phone"
+              label="Mobile number *"
+              value={phone}
+              onChangeText={onPhoneChange}
+              placeholder="+91 98765 43210"
+              keyboardType="phone-pad"
+              editable={isEditing}
+            />
+          </View>
+          <View style={styles.phoneVerifyWrap}>
+            {phoneVerified ? (
+              <View style={styles.verifiedBadge} testID="phone-verified-badge">
+                <Ionicons name="checkmark-circle" size={16} color={colors.success} />
+                <Txt style={{ color: colors.success, fontWeight: "700", marginLeft: 4 }}>Verified</Txt>
+              </View>
+            ) : (
+              <TouchableOpacity
+                testID="phone-verify-btn"
+                onPress={sendPhoneOtp}
+                disabled={!isEditing || sendingOtp || !phone.trim()}
+                style={[styles.verifyBtn, (!isEditing || sendingOtp || !phone.trim()) && styles.verifyBtnDisabled]}
+              >
+                {sendingOtp ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Txt style={{ color: "#fff", fontWeight: "700" }}>Verify</Txt>
+                )}
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
 
         <Txt variant="h3" style={styles.sectionHeader}>Education</Txt>
         <Picker
@@ -432,6 +573,7 @@ export default function StudentProfile() {
           options={EDUCATION_OPTIONS}
           value={education}
           onChange={(v) => setEducation(v as string)}
+          disabled={!isEditing}
         />
 
         {education === "__OTHER__" ? (
@@ -441,6 +583,7 @@ export default function StudentProfile() {
             placeholder="e.g. PG Diploma in Data Science"
             value={educationDetails}
             onChangeText={setEducationDetails}
+            editable={isEditing}
           />
         ) : null}
 
@@ -451,6 +594,7 @@ export default function StudentProfile() {
           options={PASSED_OUT_YEARS}
           value={passedOutYear}
           onChange={(v) => setPassedOutYear(v as string)}
+          disabled={!isEditing}
         />
 
         <Txt variant="h3" style={styles.sectionHeader}>Career Information</Txt>
@@ -461,6 +605,7 @@ export default function StudentProfile() {
           options={PREFERRED_ROLE_OPTIONS}
           value={preferredRole}
           onChange={(v) => setPreferredRole(v as string)}
+          disabled={!isEditing}
         />
 
         <Picker
@@ -470,6 +615,7 @@ export default function StudentProfile() {
           options={LOCATION_OPTIONS}
           value={currentLocation}
           onChange={(v) => setCurrentLocation(v as string)}
+          disabled={!isEditing}
         />
         {currentLocation === "__OTHER__" ? (
           <Input
@@ -478,10 +624,11 @@ export default function StudentProfile() {
             value={currentLocationOther}
             onChangeText={setCurrentLocationOther}
             placeholder="Your city"
+            editable={isEditing}
           />
         ) : null}
 
-        <Input testID="profile-skills" label="Skills (comma-separated) *" value={skills} onChangeText={setSkills} placeholder="React, Python, ML" />
+        <Input testID="profile-skills" label="Skills (comma-separated) *" value={skills} onChangeText={setSkills} placeholder="React, Python, ML" editable={isEditing} />
 
         {preferredRole === "experienced" ? (
           <>
@@ -494,10 +641,11 @@ export default function StudentProfile() {
               options={EXPERIENCE_OPTIONS}
               value={yearsExp}
               onChange={(v) => setYearsExp(v as string)}
+              disabled={!isEditing}
             />
 
-            <Input testID="profile-company" label="Company name *" value={company} onChangeText={setCompany} placeholder="e.g. Acme Corp" />
-            <Input testID="profile-designation" label="Designation *" value={designation} onChangeText={setDesignation} placeholder="e.g. Software Engineer" />
+            <Input testID="profile-company" label="Company name *" value={company} onChangeText={setCompany} placeholder="e.g. Acme Corp" editable={isEditing} />
+            <Input testID="profile-designation" label="Designation *" value={designation} onChangeText={setDesignation} placeholder="e.g. Software Engineer" editable={isEditing} />
 
             <Picker
               testID="profile-currently-working"
@@ -506,6 +654,7 @@ export default function StudentProfile() {
               options={CURRENTLY_WORKING_OPTIONS}
               value={currentlyWorking}
               onChange={(v) => setCurrentlyWorking(v as string)}
+              disabled={!isEditing}
             />
 
             {currentlyWorking ? (
@@ -522,6 +671,7 @@ export default function StudentProfile() {
                           options={MONTHS}
                           value={workingFromMonth}
                           onChange={(v) => setWorkingFromMonth(v as string)}
+                          disabled={!isEditing}
                         />
                       </View>
                       <View style={{ flex: 1 }}>
@@ -531,6 +681,7 @@ export default function StudentProfile() {
                           options={YEARS_2010_2030}
                           value={workingFromYear}
                           onChange={(v) => setWorkingFromYear(v as string)}
+                          disabled={!isEditing}
                         />
                       </View>
                     </View>
@@ -550,6 +701,7 @@ export default function StudentProfile() {
                             options={MONTHS}
                             value={workingToMonth}
                             onChange={(v) => setWorkingToMonth(v as string)}
+                            disabled={!isEditing}
                           />
                         </View>
                         <View style={{ flex: 1 }}>
@@ -559,6 +711,7 @@ export default function StudentProfile() {
                             options={YEARS_2010_2030}
                             value={workingToYear}
                             onChange={(v) => setWorkingToYear(v as string)}
+                            disabled={!isEditing}
                           />
                         </View>
                       </View>
@@ -576,6 +729,7 @@ export default function StudentProfile() {
                 options={NOTICE_PERIOD_OPTIONS}
                 value={noticePeriod}
                 onChange={(v) => setNoticePeriod(v as string)}
+                disabled={!isEditing}
               />
             ) : null}
 
@@ -586,6 +740,7 @@ export default function StudentProfile() {
               options={ANNUAL_SALARY_OPTIONS}
               value={annualSalary}
               onChange={(v) => setAnnualSalary(v as string)}
+              disabled={!isEditing}
             />
           </>
         ) : null}
@@ -598,8 +753,9 @@ export default function StudentProfile() {
               <TouchableOpacity
                 key={t.id}
                 testID={`resume-tab-${t.id}`}
-                onPress={() => setResumeTab(t.id)}
-                style={[styles.tab, active && styles.tabActive]}
+                onPress={() => isEditing && setResumeTab(t.id)}
+                disabled={!isEditing}
+                style={[styles.tab, active && styles.tabActive, !isEditing && { opacity: 0.55 }]}
               >
                 <Txt style={{ fontWeight: "700", color: active ? "#fff" : colors.textPrimary }}>{t.label}</Txt>
               </TouchableOpacity>
@@ -619,15 +775,15 @@ export default function StudentProfile() {
                   {resumeSize ? `${(resumeSize / 1024).toFixed(0)} KB` : "uploaded"} · {resumeMime?.includes("word") ? "Word" : "PDF"}
                 </Txt>
               </View>
-              <TouchableOpacity testID="resume-replace" onPress={pickResume} hitSlop={10} style={{ marginRight: 10 }}>
-                <Ionicons name="refresh" size={20} color={colors.textSecondary} />
+              <TouchableOpacity testID="resume-replace" onPress={pickResume} hitSlop={10} style={{ marginRight: 10 }} disabled={!isEditing}>
+                <Ionicons name="refresh" size={20} color={isEditing ? colors.textSecondary : colors.border} />
               </TouchableOpacity>
-              <TouchableOpacity testID="resume-remove" onPress={clearResumeFile} hitSlop={10}>
-                <Ionicons name="close-circle" size={22} color={colors.error} />
+              <TouchableOpacity testID="resume-remove" onPress={clearResumeFile} hitSlop={10} disabled={!isEditing}>
+                <Ionicons name="close-circle" size={22} color={isEditing ? colors.error : colors.border} />
               </TouchableOpacity>
             </View>
           ) : (
-            <TouchableOpacity testID="resume-pick" onPress={pickResume} activeOpacity={0.85} disabled={picking}>
+            <TouchableOpacity testID="resume-pick" onPress={pickResume} activeOpacity={0.85} disabled={picking || !isEditing}>
               <View style={[styles.fileBox, styles.fileBoxEmpty]}>
                 {picking ? (
                   <ActivityIndicator color={colors.primary} />
@@ -649,11 +805,22 @@ export default function StudentProfile() {
             onChangeText={setResumeLink}
             autoCapitalize="none"
             keyboardType="url"
+            editable={isEditing}
           />
         )}
 
         <View style={{ height: 14 }} />
-        <Button testID="save-profile" title="Save profile" onPress={save} loading={saving} />
+        {isEditing ? (
+          <Button testID="save-profile" title={user?.profile_complete ? "Save Changes" : "Save profile"} onPress={save} loading={saving} />
+        ) : (
+          <Button
+            testID="edit-profile-bottom-btn"
+            title="Edit Profile"
+            variant="outline"
+            icon={<Ionicons name="create-outline" size={18} color={colors.primary} />}
+            onPress={() => setMode("edit")}
+          />
+        )}
       </View>
 
       <Card style={{ marginTop: 16, backgroundColor: "#FFF4E0" }}>
@@ -691,6 +858,65 @@ export default function StudentProfile() {
         onCancel={() => setMissingDialog({ open: false, items: [] })}
         onConfirm={() => setMissingDialog({ open: false, items: [] })}
       />
+
+      {/* OTP Verification Modal (Mock SMS) */}
+      <Modal
+        visible={otpModal.open}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setOtpModal({ open: false, mockOtp: "" })}
+      >
+        <View style={styles.otpBackdrop}>
+          <Card style={styles.otpCard}>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <Ionicons name="phone-portrait" size={22} color={colors.primary} />
+              <Txt variant="h3" style={{ marginLeft: 8 }}>Verify your mobile</Txt>
+            </View>
+            <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 6 }}>
+              We sent a 6-digit code to {phone || "your number"}.
+            </Txt>
+            {otpModal.mockOtp ? (
+              <View style={styles.mockOtpPill} testID="mock-otp-hint">
+                <Ionicons name="information-circle" size={14} color={colors.primary} />
+                <Txt variant="small" style={{ marginLeft: 6, color: colors.primary, fontWeight: "700" }}>
+                  Mock OTP: {otpModal.mockOtp}
+                </Txt>
+              </View>
+            ) : null}
+            <View style={{ marginTop: 12 }}>
+              <Input
+                testID="otp-input"
+                placeholder="123456"
+                value={otpInput}
+                onChangeText={setOtpInput}
+                keyboardType="number-pad"
+                maxLength={6}
+              />
+            </View>
+            <View style={{ flexDirection: "row", gap: 10, marginTop: 4 }}>
+              <Button
+                testID="otp-cancel"
+                title="Cancel"
+                variant="outline"
+                onPress={() => { setOtpModal({ open: false, mockOtp: "" }); setOtpInput(""); }}
+                style={{ flex: 1 }}
+              />
+              <Button
+                testID="otp-verify"
+                title="Verify Code"
+                onPress={submitPhoneOtp}
+                loading={verifyingOtp}
+                style={{ flex: 1 }}
+              />
+            </View>
+            <TouchableOpacity testID="otp-resend" onPress={sendPhoneOtp} disabled={sendingOtp} style={{ alignSelf: "center", marginTop: 10 }}>
+              <Txt variant="small" style={{ color: colors.primary, fontWeight: "700" }}>
+                {sendingOtp ? "Sending…" : "Resend OTP"}
+              </Txt>
+            </TouchableOpacity>
+          </Card>
+        </View>
+      </Modal>
     </Screen>
   );
 }
@@ -720,6 +946,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  modeBanner: { flexDirection: "row", alignItems: "center", paddingVertical: 12, paddingHorizontal: 14, backgroundColor: "#FFF5F5", borderRadius: radius.lg, borderWidth: 1, borderColor: "#FFE0E2" },
+  modeBtn: { flexDirection: "row", alignItems: "center", backgroundColor: colors.primary, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999 },
+  modeBtnGhost: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: colors.border },
+  phoneRow: { flexDirection: "row", alignItems: "flex-end", gap: 8 },
+  phoneVerifyWrap: { marginBottom: 14 },
+  verifyBtn: { backgroundColor: colors.primary, borderRadius: 999, paddingHorizontal: 18, paddingVertical: 14, justifyContent: "center", alignItems: "center", minWidth: 92 },
+  verifyBtnDisabled: { opacity: 0.5 },
+  verifiedBadge: { flexDirection: "row", alignItems: "center", backgroundColor: "#E7F8EF", borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8, minHeight: 48 },
+  otpBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", alignItems: "center", justifyContent: "center", padding: 20 },
+  otpCard: { width: "100%", maxWidth: 380, padding: 20, borderRadius: radius.xxl, gap: 6 },
+  mockOtpPill: { flexDirection: "row", alignItems: "center", alignSelf: "flex-start", backgroundColor: "#FFF5F5", borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, marginTop: 8 },
   fileBox: {
     flexDirection: "row",
     alignItems: "center",
