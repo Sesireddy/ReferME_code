@@ -1,0 +1,43 @@
+{
+  "summary": "Iteration 14 — Profile Photo + Job Posting + Job Search enhancements: FULL backend + UI E2E validated. 13/13 new iter14 tests pass + 146 prior regression tests pass = 159 total / 1 skipped (pre-existing leaderboard flake). Backend covers: POST /api/jobs with all new fields (salary_range_label, industry_type, location_other, industry_other, experience_min/max, category=intern) — fields persist and return on GET /jobs/{id}; validation 400s for industry/location __OTHER__ without specify and exp_max<exp_min; OVERLAP-match experience filter verified with mixed legacy+new jobs (job 4-7 IN, job 8-10 OUT, legacy exp_required=3 IN for filter 3-5); sort=oldest|newest order; category=intern filter; applied_count + shortlisted_count present on every /jobs row; profile_photo_base64 persists via PUT /profile → GET /auth/me. Frontend Playwright E2E: welcome → signup → mock OTP → home → /student/jobs renders new card design (top-right Openings/Applied/Shortlisted stats with icons, body rows with 📍 location / 👤 category / ₹ salary / 💼 experience-range / 🏢 industry, legacy jobs display '—' placeholders), header Avatar (gradient initial 'U'/'?') tappable, filter card exposes Location/Sort/MinExp/MaxExp/Category dropdowns. Setting MinExp=5 + MaxExp=3 + Apply correctly shows inline red error 'Maximum Experience must be ≥ Minimum Experience.' Newly created TEST_Iter14_NewFields job surfaces with Goa / Experienced / ₹ 5 - 10 Lakhs / 3 – 7 Years / Quantum Computing — exactly matching the post body. Pre-existing console warnings (shadow* props, props.pointerEvents) remain — non-blocking, same as prior iterations.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "shadow* style props (project-wide)", "issue": "Console emits repeated 'shadow* style props are deprecated. Use boxShadow' warnings. Non-blocking. Reference: multiple files under /app/frontend/src and /app/frontend/app."},
+      {"component": "props.pointerEvents (project-wide)", "issue": "Console emits 'props.pointerEvents is deprecated. Use style.pointerEvents' warnings. Non-blocking. Reference: multiple components."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration14_jobs_photo.py",
+    "/app/test_reports/pytest/pytest_iter14.xml",
+    "/app/test_reports/pytest/pytest_iter14_regression.xml"
+  ],
+  "action_items": [
+    "[Optional cleanup] Migrate remaining deprecated 'shadow*' → 'boxShadow' and 'props.pointerEvents' → 'style.pointerEvents' across the codebase to silence console noise.",
+    "[Per spec — main agent already noted] Adding <Avatar /> to dashboard, leaderboard, mock-interviews, applications header rows was intentionally skipped for token economy; tests do NOT flag this as a bug."
+  ],
+  "critical_code_review_comments": [
+    "POST /api/jobs validation order: 'Company Name is required.' is checked AFTER title/description/location/skills_required but BEFORE the new industry/location-other/experience checks (server.py:1707-1746). This means if a caller forgets BOTH company and industry_other, the company error wins — which is correct (company is mandatory). Test cases pass an explicit `company` to isolate the new-field 400s.",
+    "OVERLAP-match correctly implemented (server.py:1831-1851): job.max >= filter.min AND job.min <= filter.max. Legacy fallback uses experience_required as both bounds. '15+' suffix on exp_max is treated as +∞ via f_max_eff=999. VERIFIED via test_overlap_experience_filter (job 4-7 IN, job 8-10 OUT, legacy=3 IN for filter 3-5).",
+    "GET /api/jobs has 500-row cap (.to_list(500)) which can hide newly inserted jobs in tests if total dataset is large; tests therefore filter by a unique `company` to ensure deterministic results. Production impact is also a soft cap — consider adding pagination in a future iteration.",
+    "applied_count + shortlisted_count aggregation (server.py:1853-1872) correctly excludes status='withdrawn' from applied_count; shortlisted set includes shortlisted/interview_scheduled/awaiting_interview/hired per spec. VERIFIED.",
+    "Avatar component (frontend/src/components/Avatar.tsx) uses LinearGradient fallback + optional onPress; correctly wraps in TouchableOpacity when interactive. testID propagates. Header & profile placements both VERIFIED in UI.",
+    "Inline validation in student/jobs/index.tsx:145 ('Maximum Experience must be ≥ Minimum Experience.') fires on Apply Filter — VERIFIED via Playwright with MinExp=5, MaxExp=3.",
+    "Job card body meta correctly shows '—' placeholders for legacy jobs missing salary/industry — VERIFIED in UI render of TEST_iter9_legacy and TEST_iter9_op_* seeds."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration14_jobs_photo.py (new — 13 tests covering profile_photo_base64 persistence, JobPostBody new fields, __OTHER__ validation, overlap-match experience filter, sort=oldest|newest, category=intern, applied+shortlisted counts on all rows, legacy-job back-compat, auth/leaderboard smoke regression)"
+  ],
+  "success_rate": {"backend": "100% (159/159 — 13 new iter14 + 146 prior regression; 1 pre-existing leaderboard test marked skip)", "frontend": "100% — jobs screen card design, filters, inline validation, avatar header all VERIFIED via Playwright"},
+  "seed_data_creation": "Each test signs up a fresh student via /auth/signup + mock_otp. Professionals are signed up + gmail_verified flipped in DB, then `_mark_profile_complete` patches profile_complete=True (+optional company_name) so they bypass the job-posting profile-completion gate. Tests use unique 'company' values to scope GET /jobs queries to their own inserts (sidesteps 500-row global cap).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter14 coverage in /app/backend/tests/test_iteration14_jobs_photo.py. Key gotchas: (1) GET /api/jobs caps at 500 rows — always filter by a unique `company` when verifying newly-inserted jobs. (2) There is NO GET /api/profile endpoint — use GET /api/auth/me to read back profile fields (returns {user, profile}). (3) POST /api/jobs requires `company` either in the request body OR in the poster's profile.company_name — the fixture pro has neither by default, so the _post_job helper always supplies `company`. (4) The 'professional' conftest fixture only flips gmail_verified — tests that hit /api/professionals (listing) must also DB-patch profile_complete=True (see _mark_profile_complete). (5) Frontend signup screen embeds the mock_otp directly in the UI ('Mock OTP: ######') which can be regex-extracted for E2E flows.",
+  "rca_of_issue": "N/A — no functional bugs found. Initial 9 test failures during dev were all environmental: (a) missing `company` in job payload (fixed by adding company=AcmeCo_TEST default to _post_job helper), (b) test code used non-existent GET /api/profile (fixed → GET /api/auth/me), (c) 500-row /api/jobs cap was hiding newly-inserted jobs when global dataset is large (fixed → scope queries via company filter). All resolved cleanly without touching server.py."
+}

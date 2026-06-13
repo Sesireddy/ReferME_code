@@ -4,7 +4,9 @@ import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
+import * as ImagePicker from "expo-image-picker";
 import { Screen } from "@/src/components/Screen";
+import { Avatar } from "@/src/components/Avatar";
 import { Txt } from "@/src/components/Txt";
 import { Card } from "@/src/components/Card";
 import { Button } from "@/src/components/Button";
@@ -86,6 +88,11 @@ export default function StudentProfile() {
 
   // Missing-fields dialog
   const [missingDialog, setMissingDialog] = useState<{ open: boolean; items: string[] }>({ open: false, items: [] });
+
+  // Profile photo (base64 data URL) -- synced to profile.profile_photo_base64.
+  const [profilePhoto, setProfilePhoto] = useState<string>("");
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoPreviewOpen, setPhotoPreviewOpen] = useState(false);
 
   // View / Edit mode (profile is read-only after first successful save).
   const [mode, setMode] = useState<"view" | "edit">("edit");
@@ -176,6 +183,7 @@ export default function StudentProfile() {
       setNoticePeriod(p.notice_period || null);
       setAnnualSalary(p.annual_salary || null);
       setResumeBase64(p.resume_base64 || "");
+      setProfilePhoto(p.profile_photo_base64 || "");
       setResumeName(p.resume_filename || "");
       setResumeSize(p.resume_size || 0);
       setResumeMime(p.resume_mime_type || "");
@@ -226,6 +234,54 @@ export default function StudentProfile() {
       Alert.alert("Could not pick file", e.message || String(e));
     } finally {
       setPicking(false);
+    }
+  }
+
+  async function pickProfilePhoto() {
+    setPhotoBusy(true);
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert("Permission needed", "Please allow photo library access to update your profile picture.");
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.6,
+        base64: true,
+      });
+      if (result.canceled || !result.assets?.length) return;
+      const asset = result.assets[0];
+      const mime = asset.mimeType || "image/jpeg";
+      const dataUri = `data:${mime};base64,${asset.base64}`;
+      // Sanity check ~3MB cap on base64
+      if (dataUri.length > 4 * 1024 * 1024) {
+        Alert.alert("Image too large", "Please pick a smaller image (under 3 MB).");
+        return;
+      }
+      // Persist immediately so the photo is available everywhere on next refresh
+      const res = await api<any>("/profile", { method: "PUT", body: { profile_photo_base64: dataUri } });
+      setProfilePhoto(dataUri);
+      setUser((prev: any) => ({ ...(prev || {}), ...res.user, profile: res.profile || {} }));
+    } catch (e: any) {
+      Alert.alert("Could not update photo", e.message || String(e));
+    } finally {
+      setPhotoBusy(false);
+    }
+  }
+
+  async function removeProfilePhoto() {
+    setPhotoBusy(true);
+    try {
+      const res = await api<any>("/profile", { method: "PUT", body: { profile_photo_base64: null } });
+      setProfilePhoto("");
+      setUser((prev: any) => ({ ...(prev || {}), ...res.user, profile: res.profile || {} }));
+    } catch (e: any) {
+      Alert.alert("Could not remove photo", e.message || String(e));
+    } finally {
+      setPhotoBusy(false);
     }
   }
 
@@ -399,10 +455,40 @@ export default function StudentProfile() {
     <Screen refreshing={refreshing} onRefresh={load}>
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
         <Txt variant="h1">Profile</Txt>
-        <TouchableOpacity testID="logout-btn" onPress={logout}>
-          <Ionicons name="log-out-outline" size={24} color={colors.textPrimary} />
-        </TouchableOpacity>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <View style={styles.photoCol}>
+            <Avatar
+              testID="profile-photo-avatar"
+              uri={profilePhoto || null}
+              name={user?.name || user?.email}
+              size={56}
+              ring
+              onPress={profilePhoto ? () => setPhotoPreviewOpen(true) : pickProfilePhoto}
+            />
+            <View style={styles.photoCtrls}>
+              <TouchableOpacity testID="photo-upload-btn" onPress={pickProfilePhoto} disabled={photoBusy} hitSlop={8}>
+                <Ionicons name={profilePhoto ? "create" : "cloud-upload"} size={18} color={colors.primary} />
+              </TouchableOpacity>
+              {profilePhoto ? (
+                <TouchableOpacity testID="photo-remove-btn" onPress={removeProfilePhoto} disabled={photoBusy} hitSlop={8} style={{ marginLeft: 10 }}>
+                  <Ionicons name="trash" size={18} color={colors.error} />
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          </View>
+          <TouchableOpacity testID="logout-btn" onPress={logout} style={{ marginLeft: 4 }}>
+            <Ionicons name="log-out-outline" size={24} color={colors.textPrimary} />
+          </TouchableOpacity>
+        </View>
       </View>
+
+      {/* Full-screen photo preview */}
+      <Modal visible={photoPreviewOpen} transparent animationType="fade" onRequestClose={() => setPhotoPreviewOpen(false)}>
+        <TouchableOpacity activeOpacity={1} onPress={() => setPhotoPreviewOpen(false)} style={styles.photoPreviewBg}>
+          {profilePhoto ? <Avatar uri={profilePhoto} name={user?.name} size={260} /> : null}
+          <Txt variant="small" style={{ color: "#fff", marginTop: 16 }}>Tap anywhere to close</Txt>
+        </TouchableOpacity>
+      </Modal>
 
       <Card style={{ marginTop: 16 }}>
         <View style={{ flexDirection: "row", alignItems: "center" }}>
@@ -957,6 +1043,9 @@ const styles = StyleSheet.create({
   otpBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", alignItems: "center", justifyContent: "center", padding: 20 },
   otpCard: { width: "100%", maxWidth: 380, padding: 20, borderRadius: radius.xxl, gap: 6 },
   mockOtpPill: { flexDirection: "row", alignItems: "center", alignSelf: "flex-start", backgroundColor: "#FFF5F5", borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, marginTop: 8 },
+  photoCol: { alignItems: "center" },
+  photoCtrls: { flexDirection: "row", alignItems: "center", marginTop: 4 },
+  photoPreviewBg: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.85)" },
   fileBox: {
     flexDirection: "row",
     alignItems: "center",

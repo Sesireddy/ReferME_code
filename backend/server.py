@@ -448,14 +448,20 @@ OPEN_POSITIONS_OPTIONS = ["1 to 5", "1 to 10", "1 to 50", "1 to 100", "100+"]
 
 
 class JobPostBody(BaseModel):
-    title: Optional[str] = ""
-    company: Optional[str] = None  # company name (auto-fallback to poster's company)
-    description: Optional[str] = ""
-    location: Optional[str] = ""
-    salary_range: Optional[str] = ""
+    title: str
+    company: Optional[str] = None
+    description: str
+    location: str  # canonical city string OR "__OTHER__"
+    location_other: Optional[str] = None  # used only when location == "__OTHER__"
+    salary_range: Optional[str] = ""  # legacy/free-text fallback
+    salary_range_label: Optional[Literal["0-3", "3-5", "5-10", "10-20", "20-50", "50+"]] = None
+    industry_type: Optional[str] = None  # one of INDUSTRY_OPTIONS values incl. "__OTHER__"
+    industry_other: Optional[str] = None  # required when industry_type == "__OTHER__"
     skills_required: Optional[list[str]] = None
-    category: Literal["fresher", "experienced"] = "fresher"
-    experience_required: Optional[int] = 0  # years required if experienced
+    category: Literal["fresher", "experienced", "intern"] = "fresher"
+    experience_required: Optional[int] = 0  # legacy; kept for back-compat
+    experience_min: Optional[int] = None
+    experience_max: Optional[int] = None
     open_positions: Optional[int] = None  # numeric (legacy)
     open_positions_label: Optional[Literal["1 to 5", "1 to 10", "1 to 50", "1 to 100", "100+"]] = "1 to 5"
     bulk_openings: Optional[int] = None  # backward compat alias
@@ -466,10 +472,16 @@ class JobPatchBody(BaseModel):
     company: Optional[str] = None
     description: Optional[str] = None
     location: Optional[str] = None
+    location_other: Optional[str] = None
     salary_range: Optional[str] = None
+    salary_range_label: Optional[Literal["0-3", "3-5", "5-10", "10-20", "20-50", "50+"]] = None
+    industry_type: Optional[str] = None
+    industry_other: Optional[str] = None
     skills_required: Optional[list[str]] = None
-    category: Optional[Literal["fresher", "experienced"]] = None
+    category: Optional[Literal["fresher", "experienced", "intern"]] = None
     experience_required: Optional[int] = None
+    experience_min: Optional[int] = None
+    experience_max: Optional[int] = None
     open_positions: Optional[int] = None
     open_positions_label: Optional[Literal["1 to 5", "1 to 10", "1 to 50", "1 to 100", "100+"]] = None
 
@@ -1712,8 +1724,26 @@ async def post_job(body: JobPostBody, u: dict = Depends(require_role(["employer"
     openings = body.open_positions or LABEL_NUMERIC.get(label, 5)
     category = body.category or ("experienced" if (body.experience_required or 0) > 0 else "fresher")
     exp_req = body.experience_required or 0
-    if category == "experienced" and exp_req <= 0:
+    if category == "experienced" and exp_req <= 0 and not body.experience_min and not body.experience_max:
         raise HTTPException(status_code=400, detail="experience_required must be > 0 for experienced category")
+    # New fields: validate format/consistency but DO NOT 400 on missing
+    # (frontend forms enforce them; older API consumers shouldn't break).
+    industry_resolved = (body.industry_type or "").strip()
+    if industry_resolved == "__OTHER__":
+        if not (body.industry_other or "").strip():
+            raise HTTPException(status_code=400, detail="Please specify the industry (Other).")
+        industry_resolved = body.industry_other.strip()
+    # Location: handle "__OTHER__" + specify text.
+    location_resolved = body.location.strip()
+    if location_resolved == "__OTHER__":
+        if not (body.location_other or "").strip():
+            raise HTTPException(status_code=400, detail="Please specify the location (Other).")
+        location_resolved = body.location_other.strip()
+    # Experience min/max: validate consistency. Default to legacy experience_required if not set.
+    exp_min = body.experience_min if body.experience_min is not None else exp_req
+    exp_max = body.experience_max if body.experience_max is not None else max(exp_req, exp_min or 0)
+    if exp_min is not None and exp_max is not None and exp_max < exp_min:
+        raise HTTPException(status_code=400, detail="Maximum experience must be ≥ Minimum experience")
     job = {
         "id": new_id(),
         "employer_id": u["id"],
@@ -1723,11 +1753,15 @@ async def post_job(body: JobPostBody, u: dict = Depends(require_role(["employer"
         "title": body.title.strip(),
         "company": company_resolved,
         "description": body.description.strip(),
-        "location": body.location.strip(),
+        "location": location_resolved,
         "salary_range": body.salary_range or "",
+        "salary_range_label": body.salary_range_label or "",
+        "industry_type": industry_resolved,
         "skills_required": [s.strip() for s in body.skills_required if s.strip()],
         "category": category,
         "experience_required": exp_req,
+        "experience_min": int(exp_min) if exp_min is not None else None,
+        "experience_max": int(exp_max) if exp_max is not None else None,
         "open_positions": openings,
         "open_positions_label": label,
         "bulk_openings": openings,  # back-compat
@@ -1745,9 +1779,11 @@ async def list_jobs(
     skill: Optional[str] = Query(None),
     location: Optional[str] = Query(None),
     category: Optional[str] = Query(None),
-    exp_min: Optional[int] = Query(None),
-    exp_max: Optional[int] = Query(None),
+    exp_min: Optional[str] = Query(None),  # "0".."15", or "15+"
+    exp_max: Optional[str] = Query(None),
     company: Optional[str] = Query(None),
+    industry: Optional[str] = Query(None),
+    sort: Optional[Literal["newest", "oldest"]] = Query("newest"),
     mine: bool = Query(False, description="When true (pro/employer), return only jobs posted by the current user"),
 ):
     q: dict = {}
@@ -1757,51 +1793,95 @@ async def list_jobs(
         if mine:
             q["employer_id"] = u["id"]
         else:
-            # Pros see: their own posts + open jobs posted by employers.
-            # Jobs posted by OTHER pros are intentionally hidden so referrals stay scoped to the posting pro.
             q["$or"] = [
                 {"employer_id": u["id"]},
                 {"status": "open", "posted_by_role": {"$ne": "professional"}},
             ]
     else:
-        # students & admin
         q["status"] = "open"
     if skill:
-        # Partial, case-insensitive match. e.g. "Java" matches "Core Java", "Java Full Stack".
         q["skills_required"] = {"$regex": re.escape(skill), "$options": "i"}
     if location:
-        # Friendly partial match + city synonyms (Bangalore ↔ Bengaluru, Mumbai ↔ Bombay, etc.)
         synonyms = expand_city(location)
         pattern = "|".join(re.escape(s) for s in synonyms)
         q["location"] = {"$regex": pattern, "$options": "i"}
-    if category in ("fresher", "experienced"):
+    if category in ("fresher", "experienced", "intern"):
         q["category"] = category
     if company:
         q["company"] = {"$regex": company, "$options": "i"}
-    if exp_min is not None:
-        q["experience_required"] = {**(q.get("experience_required") or {}), "$gte": int(exp_min)}
-    if exp_max is not None:
-        q["experience_required"] = {**(q.get("experience_required") or {}), "$lte": int(exp_max)}
-    jobs = await db.jobs.find(q, {"_id": 0}).sort("created_at", -1).to_list(200)
-    # Annotate `applied` flag for students
+    if industry:
+        q["industry_type"] = {"$regex": re.escape(industry), "$options": "i"}
+
+    sort_dir = 1 if sort == "oldest" else -1
+    jobs = await db.jobs.find(q, {"_id": 0}).sort("created_at", sort_dir).to_list(500)
+
+    # Overlap-match experience filter. Legacy jobs without min/max fall back to experience_required
+    # treated as both min and max.
+    def _parse_exp(val):
+        if val is None or val == "":
+            return None
+        if isinstance(val, str) and val.endswith("+"):
+            return int(val[:-1])
+        try:
+            return int(val)
+        except Exception:
+            return None
+    fmin = _parse_exp(exp_min)
+    fmax = _parse_exp(exp_max)
+    if fmin is not None or fmax is not None:
+        kept = []
+        # If "15+" supplied for fmax, treat as +infinity.
+        f_max_eff = 999 if (isinstance(exp_max, str) and exp_max.endswith("+")) else fmax
+        for j in jobs:
+            jmin = j.get("experience_min")
+            jmax = j.get("experience_max")
+            if jmin is None and jmax is None:
+                base = int(j.get("experience_required") or 0)
+                jmin, jmax = base, base
+            elif jmin is None:
+                jmin = 0
+            elif jmax is None:
+                jmax = 999
+            # Overlap: job.max >= filter.min  AND  job.min <= filter.max
+            if fmin is not None and jmax < fmin:
+                continue
+            if f_max_eff is not None and jmin > f_max_eff:
+                continue
+            kept.append(j)
+        jobs = kept
+
+    # ---- Stats: applied_count + shortlisted_count (visible to ALL viewers per spec) ----
+    job_ids = [j["id"] for j in jobs]
+    if job_ids:
+        agg = await db.applications.aggregate([
+            {"$match": {"job_id": {"$in": job_ids}}},
+            {"$group": {"_id": {"job": "$job_id", "status": "$status"}, "n": {"$sum": 1}}},
+        ]).to_list(2000)
+        applied_map: dict[str, int] = {}
+        shortlisted_map: dict[str, int] = {}
+        for r in agg:
+            jid = r["_id"]["job"]
+            st = r["_id"]["status"]
+            if st in ("withdrawn",):
+                continue
+            applied_map[jid] = applied_map.get(jid, 0) + r["n"]
+            if st in ("shortlisted", "interview_scheduled", "awaiting_interview", "hired"):
+                shortlisted_map[jid] = shortlisted_map.get(jid, 0) + r["n"]
+        for j in jobs:
+            j["applied_count"] = applied_map.get(j["id"], 0)
+            j["shortlisted_count"] = shortlisted_map.get(j["id"], 0)
+    # Per-student "applied" flag
     if u["role"] == "student" and jobs:
         my_apps = await db.applications.find({"student_id": u["id"]}, {"_id": 0, "job_id": 1, "status": 1}).to_list(1000)
         by_job = {a["job_id"]: a["status"] for a in my_apps}
         for j in jobs:
             j["applied"] = j["id"] in by_job
             j["application_status"] = by_job.get(j["id"])
-    # Annotate application count + reward status for employer/pro on their own jobs
+    # Legacy applications_count for employer/pro on their own jobs
     if u["role"] in ("employer", "professional"):
-        own_ids = [j["id"] for j in jobs if j.get("employer_id") == u["id"]]
-        if own_ids:
-            agg = await db.applications.aggregate([
-                {"$match": {"job_id": {"$in": own_ids}, "status": {"$nin": ["withdrawn"]}}},
-                {"$group": {"_id": "$job_id", "n": {"$sum": 1}}},
-            ]).to_list(1000)
-            counts = {r["_id"]: r["n"] for r in agg}
-            for j in jobs:
-                if j.get("employer_id") == u["id"]:
-                    j["applications_count"] = counts.get(j["id"], 0)
+        for j in jobs:
+            if j.get("employer_id") == u["id"]:
+                j["applications_count"] = j.get("applied_count", 0)
     return jobs
 
 

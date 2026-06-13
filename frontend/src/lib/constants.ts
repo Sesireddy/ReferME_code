@@ -58,3 +58,54 @@ export const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "
 
 export const YEARS_2000_2030 = Array.from({ length: 31 }, (_, i) => ({ value: String(2000 + i), label: String(2000 + i) }));
 export const YEARS_2010_2030 = Array.from({ length: 21 }, (_, i) => ({ value: String(2010 + i), label: String(2010 + i) }));
+
+// Salary range buckets used on Post-a-Job + Job Cards.
+export const SALARY_RANGE_OPTIONS = [
+  { value: "0-3", label: "0 - 3 Lakhs" },
+  { value: "3-5", label: "3 - 5 Lakhs" },
+  { value: "5-10", label: "5 - 10 Lakhs" },
+  { value: "10-20", label: "10 - 20 Lakhs" },
+  { value: "20-50", label: "20 - 50 Lakhs" },
+  { value: "50+", label: "50+ Lakhs" },
+];
+
+// Industry Type dropdown (Item 2.3).
+export const INDUSTRY_OPTIONS = [
+  "Software Services/IT",
+  "Banking, Financial Services & Insurance",
+  "Healthcare/Pharmaceuticals",
+  "Education",
+  "Telecommunications",
+  "Manufacturing",
+  "Automotive",
+  "Aerospace",
+  "Construction/Real Estate",
+  "Retail/E-Commerce",
+  "Logistics",
+  "Media & Entertainment",
+  "Hospitality/Travel & Tourism",
+  "Energy & Utilities",
+  "Consulting",
+  "Agriculture",
+  "Biotechnology",
+].map((v) => ({ value: v, label: v })).concat({ value: "__OTHER__", label: "Other (specify)" });
+
+// Min/Max experience filter dropdowns: 0..15, 15+
+export const EXP_FILTER_OPTIONS = [
+  ...Array.from({ length: 16 }, (_, i) => ({ value: String(i), label: String(i) })),
+  { value: "15+", label: "15+" },
+];
+
+// Sort by posted date.
+export const JOB_SORT_OPTIONS = [
+  { value: "newest", label: "Newest First" },
+  { value: "oldest", label: "Oldest First" },
+];
+
+// Category filter (adds Intern).
+export const JOB_CATEGORY_FILTER_OPTIONS = [
+  { value: "", label: "All" },
+  { value: "fresher", label: "Fresher" },
+  { value: "experienced", label: "Experienced" },
+  { value: "intern", label: "Intern" },
+];
