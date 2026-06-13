@@ -1,12 +1,13 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { View, StyleSheet, TouchableOpacity } from "react-native";
+import { View, StyleSheet, TouchableOpacity, Modal } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Screen } from "@/src/components/Screen";
 import { Txt } from "@/src/components/Txt";
 import { Card } from "@/src/components/Card";
+import { ConfirmDialog } from "@/src/components/ConfirmDialog";
 import { colors } from "@/src/theme/tokens";
-import { api } from "@/src/lib/api";
+import { api, clearSession } from "@/src/lib/api";
 
 type Overview = {
   users: { total: number; students: number; professionals: number; employers: number; active: number; new_today: number };
@@ -49,6 +50,8 @@ export default function AdminDashboard() {
   const router = useRouter();
   const [s, setS] = useState<Overview | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [logoutOpen, setLogoutOpen] = useState(false);
 
   const load = useCallback(async () => {
     setRefreshing(true);
@@ -61,10 +64,58 @@ export default function AdminDashboard() {
 
   useEffect(() => { load(); }, [load]);
 
+  async function confirmLogout() {
+    setLogoutOpen(false);
+    try { await clearSession(); } catch {}
+    router.replace("/");
+  }
+
   return (
     <Screen refreshing={refreshing} onRefresh={load}>
-      <Txt variant="h1">Admin</Txt>
-      <Txt variant="muted">Live platform overview</Txt>
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+        <View style={{ flex: 1 }}>
+          <Txt variant="h1">Admin</Txt>
+          <Txt variant="muted">Live platform overview</Txt>
+        </View>
+        <TouchableOpacity testID="admin-profile-btn" onPress={() => setMenuOpen(true)} style={styles.profileBtn}>
+          <Ionicons name="person-circle" size={36} color={colors.primary} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Profile dropdown */}
+      <Modal visible={menuOpen} transparent animationType="fade" onRequestClose={() => setMenuOpen(false)}>
+        <TouchableOpacity activeOpacity={1} style={styles.menuBg} onPress={() => setMenuOpen(false)}>
+          <TouchableOpacity activeOpacity={1} style={styles.menuCard} onPress={() => { /* swallow */ }}>
+            <TouchableOpacity testID="menu-profile" style={styles.menuRow} onPress={() => { setMenuOpen(false); /* TODO: profile screen */ }}>
+              <Ionicons name="person" size={18} color={colors.textPrimary} />
+              <Txt style={styles.menuLabel}>My Profile</Txt>
+            </TouchableOpacity>
+            <TouchableOpacity testID="menu-settings" style={styles.menuRow} onPress={() => { setMenuOpen(false); /* TODO: settings */ }}>
+              <Ionicons name="settings" size={18} color={colors.textPrimary} />
+              <Txt style={styles.menuLabel}>Settings</Txt>
+            </TouchableOpacity>
+            <TouchableOpacity testID="menu-change-password" style={styles.menuRow} onPress={() => { setMenuOpen(false); /* TODO: change password */ }}>
+              <Ionicons name="key" size={18} color={colors.textPrimary} />
+              <Txt style={styles.menuLabel}>Change Password</Txt>
+            </TouchableOpacity>
+            <View style={styles.menuDivider} />
+            <TouchableOpacity testID="menu-logout" style={styles.menuRow} onPress={() => { setMenuOpen(false); setLogoutOpen(true); }}>
+              <Ionicons name="log-out" size={18} color={colors.error} />
+              <Txt style={[styles.menuLabel, { color: colors.error }]}>Logout</Txt>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
+      <ConfirmDialog
+        visible={logoutOpen}
+        title="Are you sure you want to logout?"
+        confirmLabel="Yes, Logout"
+        cancelLabel="Cancel"
+        destructive
+        onCancel={() => setLogoutOpen(false)}
+        onConfirm={confirmLogout}
+      />
 
       <Section title="User Statistics" icon="people" color={colors.primary} onSeeAll={() => router.push("/admin/users")}>
         <StatTile label="Total Users" value={s?.users.total ?? 0} color={colors.primary} />
@@ -120,4 +171,10 @@ export default function AdminDashboard() {
 const styles = StyleSheet.create({
   tiles: { flexDirection: "row", flexWrap: "wrap", marginTop: 12, gap: 12 },
   tile: { width: "47%", backgroundColor: colors.surfaceAlt, borderRadius: 12, padding: 12 },
+  profileBtn: { padding: 4 },
+  menuBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.2)" },
+  menuCard: { position: "absolute", top: 60, right: 16, backgroundColor: colors.surface, borderRadius: 14, padding: 6, minWidth: 220, shadowColor: "#000", shadowOpacity: 0.15, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 6 },
+  menuRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 12, gap: 12 },
+  menuLabel: { fontSize: 15, fontWeight: "600", color: colors.textPrimary },
+  menuDivider: { height: 1, backgroundColor: colors.border, marginVertical: 4 },
 });

@@ -2553,6 +2553,72 @@ async def admin_users(_: dict = Depends(admin_only)):
     return [{**user_public(u), "account_status": u.get("account_status", "active")} for u in users]
 
 
+@api.get("/admin/users/search")
+async def admin_users_search(
+    _: dict = Depends(admin_only),
+    q: Optional[str] = Query(None, description="Search ID/name/mobile/email/company/skill"),
+    user_type: Optional[str] = Query(None),  # student | professional | employer
+    location: Optional[str] = Query(None),
+    profile_status: Optional[str] = Query(None),  # active | inactive | suspended
+    mobile_verified: Optional[str] = Query(None),  # 'verified' | 'not_verified'
+    email_verified: Optional[str] = Query(None),
+    registration_range: Optional[str] = Query(None),  # today | last_7 | last_30 | custom
+    registration_from: Optional[str] = Query(None),  # YYYY-MM-DD
+    registration_to: Optional[str] = Query(None),
+    limit: int = Query(500, le=2000),
+):
+    f: dict = {}
+    if user_type in ("student", "professional", "employer"):
+        f["role"] = user_type
+    if location:
+        f["profile.current_location"] = {"$regex": re.escape(location), "$options": "i"}
+    if profile_status == "suspended":
+        f["account_status"] = "suspended"
+    elif profile_status == "active":
+        f["account_status"] = {"$ne": "suspended"}
+        f["profile_complete"] = True
+    elif profile_status == "inactive":
+        f["account_status"] = {"$ne": "suspended"}
+        f["profile_complete"] = False
+    if email_verified == "verified":
+        f["is_email_verified"] = True
+    elif email_verified == "not_verified":
+        f["is_email_verified"] = {"$ne": True}
+    if mobile_verified == "verified":
+        f["profile.phone_verified"] = True
+    elif mobile_verified == "not_verified":
+        f["profile.phone_verified"] = {"$ne": True}
+    # Registration date filter
+    now_dt = datetime.now(timezone.utc)
+    if registration_range == "today":
+        start = now_dt.replace(hour=0, minute=0, second=0, microsecond=0).isoformat().replace("+00:00", "Z")
+        f["created_at"] = {"$gte": start}
+    elif registration_range == "last_7":
+        f["created_at"] = {"$gte": (now_dt - timedelta(days=7)).isoformat().replace("+00:00", "Z")}
+    elif registration_range == "last_30":
+        f["created_at"] = {"$gte": (now_dt - timedelta(days=30)).isoformat().replace("+00:00", "Z")}
+    elif registration_range == "custom":
+        rng: dict = {}
+        if registration_from:
+            rng["$gte"] = registration_from
+        if registration_to:
+            rng["$lte"] = registration_to + "T23:59:59Z"
+        if rng:
+            f["created_at"] = rng
+    # Free-text search across multiple fields
+    if q:
+        regex = {"$regex": re.escape(q), "$options": "i"}
+        f["$or"] = [
+            {"id": regex}, {"name": regex}, {"email": regex},
+            {"profile.phone": regex},
+            {"profile.company": regex}, {"profile.company_name": regex},
+            {"profile.skills": regex},
+            {"profile.current_location": regex},
+        ]
+    users = await db.users.find(f, {"_id": 0, "password_hash": 0}).sort("created_at", -1).to_list(limit)
+    return [{**user_public(u), "account_status": u.get("account_status", "active")} for u in users]
+
+
 @api.post("/admin/users/{user_id}/suspend")
 async def admin_suspend(user_id: str, _: dict = Depends(admin_only)):
     res = await db.users.update_one({"id": user_id}, {"$set": {"account_status": "suspended"}})
