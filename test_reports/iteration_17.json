@@ -1,0 +1,60 @@
+{
+  "summary": "Iteration 17 — Jobs filter rework (ReferME, student jobs screen). Backend GET /api/jobs?skill= and ?industry= filters verified across 11 pytest cases (all passing). Frontend UI: header avatar removed, 5 dropdowns rendered in correct order (Location, Category, Skill Set, Industry Type, Sort By), Exp Min/Max removed, Skill Set picker is searchable (typing 'java' correctly filters), Industry option 'Software Services/IT' selectable, empty-state copy is EXACT match. HOWEVER a CRITICAL frontend bug was found: applyFilters() and clearFilters() in app/student/jobs/index.tsx still reference removed state (expMin, expMax, setExpMin, setExpMax, setFilterError, filterError) — clicking 'Apply Filter' triggers a red-screen 'setFilterError is not defined' Uncaught Error, and 'Clear filters' will also crash with 'setExpMin is not defined'. TypeScript compile reports 7 TS2304 'Cannot find name' errors in the same file. Filtering still works reactively via useEffect-on-state-change, but the Apply Filter / Clear filters buttons are non-functional.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "app/student/jobs/index.tsx — applyFilters()",
+        "issue": "References removed state: setFilterError, expMin, expMax. Throws 'setFilterError is not defined' (red-screen Uncaught Error) on every Apply Filter tap. Reference: /app/frontend/app/student/jobs/index.tsx:130-147",
+        "testID": "f-apply",
+        "priority": "CRITICAL"
+      },
+      {
+        "component": "app/student/jobs/index.tsx — clearFilters()",
+        "issue": "References removed setters: setExpMin, setExpMax, setFilterError. Tapping 'Clear filters' (and the empty-state 'Clear filters' link) will throw 'setExpMin is not defined'. Reference: /app/frontend/app/student/jobs/index.tsx:148-150",
+        "testID": "f-clear / empty-clear",
+        "priority": "CRITICAL"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Apply Filter button → close panel + GET /api/jobs",
+        "issue": "applyFilters() crashes before reaching load() / setShowFilters(false). Filter panel never closes via Apply CTA. The underlying GET /api/jobs?skill=&industry= request itself still happens reactively (via load() in useEffect on state-change) — backend integration is fine — but the Apply CTA is broken.",
+        "affected_testIDs": ["f-apply", "f-clear", "empty-clear"]
+      }
+    ],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration17_filters.py",
+    "/app/test_reports/pytest/pytest_iter17.xml"
+  ],
+  "action_items": [
+    "FIX (CRITICAL) /app/frontend/app/student/jobs/index.tsx applyFilters(): remove all references to setFilterError / expMin / expMax (lines 131-144) — replace with just `load(); setShowFilters(false);` (also drop the filter-error inline UI if any).",
+    "FIX (CRITICAL) /app/frontend/app/student/jobs/index.tsx clearFilters(): drop setExpMin('') / setExpMax('') / setFilterError(null) — keep setSkill('') / setLocation('') / setCategory('') / setIndustry('') / setSortBy('newest').",
+    "After the fixes, re-verify `npx tsc --noEmit` passes for app/student/jobs/index.tsx (currently 7 TS2304 errors).",
+    "Optional polish: dropdown value sometimes is `null` (initial state is empty string in this file; OK), but onChange casts `v as string` — fine. Just ensure the cleared state still triggers the useEffect re-load (it will because state object identity changes)."
+  ],
+  "critical_code_review_comments": [
+    "applyFilters() / clearFilters() refactor incomplete — leftover references to removed state variables. This is a mechanical oversight from the iteration-17 refactor and should have been caught by `npx tsc --noEmit`.",
+    "Filtering still works as a side-effect of useEffect re-running on state changes — but the dedicated Apply/Clear CTAs are non-functional. Users will see a red-screen runtime error on tap (visible in /tmp/08_after_apply.png screenshot).",
+    "f-skill picker is searchable as designed and renders `f-skill-search` TextInput at the top of the bottom-sheet — verified.",
+    "Header avatar successfully removed (`header-avatar` testID no longer present)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration17_filters.py (new — 11 tests)"
+  ],
+  "success_rate": {
+    "backend": "100% (11/11 pytest cases pass)",
+    "frontend": "60% — structural checks PASS (avatar removed, 5 dropdowns in order, searchable picker, exact empty-state copy, Industry/Skill selection works), but the two filter CTAs (Apply Filter + Clear filters) crash with Uncaught Error."
+  },
+  "seed_data_creation": "Two TEST_-prefixed jobs created via demo-employer for filter assertions: 'TEST_Java_<tag>' (Bangalore, Java + Spring Boot, Software Services/IT) and 'TEST_Health_<tag>' (Mumbai, Manual QA, Healthcare/Pharmaceuticals). Cleanup DELETE /api/jobs/{id} returned 405 (endpoint not implemented for employers) — seeded test jobs persist; main agent may want to leave them or wipe via DB.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "After main agent fixes applyFilters/clearFilters, re-run /app/backend/tests/test_iteration17_filters.py (backend regression still passes — no need to re-test). Frontend re-verification: login as student → /student/jobs → open filter → select Python skill + Software Services/IT industry → tap Apply Filter → expect panel to close, jobs list to update (use the seeded TEST_Java to confirm Software Services/IT works), empty state when no match → tap 'Clear filters' → expect all dropdowns reset. Verify no red-screen error overlays. test_credentials.md is in good shape — TEST_RETURN_OTP=1 returns mock_otp inline.",
+  "rca_of_issue": "RCA: In iteration 17 the main agent removed the expMin/expMax pickers and their useState declarations, but left behind references in two helper functions (applyFilters lines 130-147 and clearFilters line 149). Because Expo's Metro bundler does not type-check during runtime, the symbols `setFilterError`, `setExpMin`, `setExpMax`, `expMin`, `expMax`, `filterError` end up as undefined identifiers at module scope, throwing ReferenceError when either function is invoked. Reproduction: open /student/jobs as a student → tap the filter icon (top-right) → tap 'Apply Filter' → red-screen Uncaught Error 'setFilterError is not defined' (screenshot /tmp/08_after_apply.png) — same root cause applies to 'Clear filters'. Mitigation: strip those references; the Apply/Clear handlers should be reduced to `load(); setShowFilters(false);` and `setSkill(''); setLocation(''); setCategory(''); setIndustry(''); setSortBy('newest');` respectively."
+}

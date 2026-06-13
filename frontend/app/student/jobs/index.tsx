@@ -7,16 +7,16 @@ import { Txt } from "@/src/components/Txt";
 import { Card } from "@/src/components/Card";
 import { Button } from "@/src/components/Button";
 import { Picker } from "@/src/components/Picker";
-import { Avatar } from "@/src/components/Avatar";
 import { ConfirmDialog } from "@/src/components/ConfirmDialog";
 import { colors } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
 import {
   LOCATION_OPTIONS,
-  EXP_FILTER_OPTIONS,
   JOB_SORT_OPTIONS,
   JOB_CATEGORY_FILTER_OPTIONS,
   SALARY_RANGE_OPTIONS,
+  SKILL_OPTIONS,
+  INDUSTRY_OPTIONS,
 } from "@/src/lib/constants";
 
 type Tab = "jobs" | "applications";
@@ -72,13 +72,11 @@ export default function StudentJobs() {
   const [showFilters, setShowFilters] = useState(false);
 
   // Filters
-  const [skill, setSkill] = useState("");
+  const [skill, setSkill] = useState<string | null>("");
   const [location, setLocation] = useState<string | null>("");
   const [category, setCategory] = useState<string | null>("");
-  const [expMin, setExpMin] = useState<string | null>("");
-  const [expMax, setExpMax] = useState<string | null>("");
+  const [industry, setIndustry] = useState<string | null>("");
   const [sortBy, setSortBy] = useState<string | null>("newest");
-  const [filterError, setFilterError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setRefreshing(true);
@@ -87,8 +85,7 @@ export default function StudentJobs() {
       if (skill) params.set("skill", skill);
       if (location) params.set("location", location);
       if (category) params.set("category", category);
-      if (expMin) params.set("exp_min", expMin);
-      if (expMax) params.set("exp_max", expMax);
+      if (industry) params.set("industry", industry);
       if (sortBy) params.set("sort", sortBy);
       const qs = params.toString();
       const [j, a, me] = await Promise.all([
@@ -101,7 +98,7 @@ export default function StudentJobs() {
       setUser(me?.user || null);
     } catch {}
     setRefreshing(false);
-  }, [skill, location, category, expMin, expMax, sortBy]);
+  }, [skill, location, category, industry, sortBy]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -152,8 +149,6 @@ export default function StudentJobs() {
     setSkill(""); setLocation(""); setCategory(""); setExpMin(""); setExpMax(""); setSortBy("newest"); setFilterError(null);
   }
 
-  const avatarUri = user?.profile?.profile_photo_base64 || null;
-
   return (
     <Screen refreshing={refreshing} onRefresh={load}>
       <View style={styles.header}>
@@ -163,7 +158,6 @@ export default function StudentJobs() {
         <TouchableOpacity testID="filter-btn" onPress={() => setShowFilters((p) => !p)} style={styles.filterBtn}>
           <Ionicons name="options" size={20} color={colors.textPrimary} />
         </TouchableOpacity>
-        <Avatar testID="header-avatar" uri={avatarUri} name={user?.name} size={40} ring onPress={() => router.push("/student/profile")} />
       </View>
 
       <View style={styles.tabs}>
@@ -185,36 +179,6 @@ export default function StudentJobs() {
             placeholder="All"
           />
           <Picker
-            testID="f-sort"
-            label="Sort By"
-            options={JOB_SORT_OPTIONS}
-            value={sortBy}
-            onChange={(v) => setSortBy(v as string)}
-            placeholder="Newest First"
-          />
-          <View style={{ flexDirection: "row", gap: 8 }}>
-            <View style={{ flex: 1 }}>
-              <Picker
-                testID="f-expmin"
-                label="Min Experience"
-                options={[{ value: "", label: "Any" }, ...EXP_FILTER_OPTIONS]}
-                value={expMin}
-                onChange={(v) => setExpMin(v as string)}
-                placeholder="Any"
-              />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Picker
-                testID="f-expmax"
-                label="Max Experience"
-                options={[{ value: "", label: "Any" }, ...EXP_FILTER_OPTIONS]}
-                value={expMax}
-                onChange={(v) => setExpMax(v as string)}
-                placeholder="Any"
-              />
-            </View>
-          </View>
-          <Picker
             testID="f-cat"
             label="Category"
             options={JOB_CATEGORY_FILTER_OPTIONS}
@@ -222,7 +186,31 @@ export default function StudentJobs() {
             onChange={(v) => setCategory(v as string)}
             placeholder="All"
           />
-          {filterError ? <Txt style={{ color: colors.error, marginTop: -4, marginBottom: 8 }}>{filterError}</Txt> : null}
+          <Picker
+            testID="f-skill"
+            label="Skill Set"
+            searchable
+            options={[{ value: "", label: "All skills" }, ...SKILL_OPTIONS]}
+            value={skill}
+            onChange={(v) => setSkill(v as string)}
+            placeholder="All"
+          />
+          <Picker
+            testID="f-industry"
+            label="Industry Type"
+            options={[{ value: "", label: "All industries" }, ...INDUSTRY_OPTIONS.filter(o => o.value !== "__OTHER__"), { value: "Other", label: "Other" }]}
+            value={industry}
+            onChange={(v) => setIndustry(v as string)}
+            placeholder="All"
+          />
+          <Picker
+            testID="f-sort"
+            label="Sort By"
+            options={JOB_SORT_OPTIONS}
+            value={sortBy}
+            onChange={(v) => setSortBy(v as string)}
+            placeholder="Newest First"
+          />
           <View style={{ flexDirection: "row", alignItems: "center", marginTop: 4 }}>
             <Button testID="f-apply" title="Apply Filter" onPress={applyFilters} style={{ paddingHorizontal: 20 }} />
             <TouchableOpacity testID="f-clear" onPress={clearFilters} style={{ marginLeft: 16 }}>
@@ -234,7 +222,17 @@ export default function StudentJobs() {
 
       {tab === "jobs" ? (
         <View style={{ gap: 12, marginTop: 16 }}>
-          {jobs.length === 0 ? <Txt variant="muted">No jobs match — try adjusting filters.</Txt> : null}
+          {jobs.length === 0 ? (
+            <Card>
+              <View style={{ alignItems: "center", paddingVertical: 16 }}>
+                <Ionicons name="search-circle-outline" size={48} color={colors.textSecondary} />
+                <Txt variant="h3" style={{ marginTop: 8, textAlign: "center" }}>No jobs found matching the selected filters.</Txt>
+                <TouchableOpacity testID="empty-clear" onPress={clearFilters} style={{ marginTop: 8 }}>
+                  <Txt style={{ color: colors.primary, fontWeight: "700" }}>Clear filters</Txt>
+                </TouchableOpacity>
+              </View>
+            </Card>
+          ) : null}
           {jobs.map((j) => (
             <TouchableOpacity
               key={j.id}

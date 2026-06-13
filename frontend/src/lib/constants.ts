@@ -109,3 +109,22 @@ export const JOB_CATEGORY_FILTER_OPTIONS = [
   { value: "experienced", label: "Experienced" },
   { value: "intern", label: "Intern" },
 ];
+
+// Canonical skill set used across Post-a-Job, Mock Interview, Profile and Job filters.
+export const SKILL_OPTIONS = [
+  "Java", "Python", "JavaScript", "TypeScript", "React", "React Native", "Angular",
+  "Vue.js", "Node.js", "Express.js", "Django", "Flask", "Spring Boot", ".NET / C#",
+  "PHP", "Ruby on Rails", "Go", "Rust", "Kotlin", "Swift",
+  "Oracle SQL", "PL/SQL", "MySQL", "PostgreSQL", "MongoDB", "Redis", "Elasticsearch",
+  "DevOps", "Docker", "Kubernetes", "AWS", "Azure", "GCP", "Terraform", "CI/CD",
+  "Testing", "Selenium", "Cypress", "Jest", "Manual QA", "Performance Testing",
+  "Data Science", "Data Engineering", "AI/ML", "Deep Learning", "NLP", "Computer Vision",
+  "Power BI", "Tableau", "Excel / VBA",
+  "Android (Java)", "Android (Kotlin)", "iOS (Swift)", "Flutter",
+  "HTML / CSS", "Tailwind CSS", "Next.js",
+  "REST APIs", "GraphQL", "Microservices", "System Design",
+  "Cybersecurity", "Networking", "Linux Administration",
+  "Salesforce", "SAP", "Workday",
+  "Product Management", "Project Management", "Business Analysis", "Agile / Scrum",
+  "UI / UX Design", "Figma",
+].map((v) => ({ value: v, label: v }));
