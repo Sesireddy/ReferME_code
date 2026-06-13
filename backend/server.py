@@ -2619,7 +2619,7 @@ async def admin_refund(user_id: str = Query(...), amount: int = Query(...), reas
 
 @api.get("/admin/stats")
 async def admin_stats(_: dict = Depends(admin_only)):
-    deposits = await db.deposit_orders.find({"status": "paid"}, {"_id": 0, "amount_inr": 1}).to_list(10000)
+    deposits = await db.deposit_orders.find({"status": "paid"}, {"_id": 0, "amount_inr": 1, "created_at": 1}).to_list(20000)
     revenue = sum(int(d.get("amount_inr", 0)) for d in deposits)
     hires = await db.applications.count_documents({"status": "hired"})
     referrals_done = await db.applications.count_documents({"referrer_pro_id": {"$ne": None}})
@@ -2641,6 +2641,241 @@ async def admin_stats(_: dict = Depends(admin_only)):
         "disputes_open": await db.disputes.count_documents({"status": "open"}),
         "status_changes_pending": await db.status_changes.count_documents({"status": "pending"}),
     }
+
+
+# ------------------- Admin: Rich Sectional Overview (Item #2 — Phase A) -------------------
+@api.get("/admin/stats/overview")
+async def admin_stats_overview(_: dict = Depends(admin_only)):
+    """Per-module KPI groups for the admin dashboard — calculated dynamically from live data."""
+    now_dt = datetime.now(timezone.utc)
+    today_start = now_dt.replace(hour=0, minute=0, second=0, microsecond=0).isoformat().replace("+00:00", "Z")
+    month_start_dt = now_dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    month_start = month_start_dt.isoformat().replace("+00:00", "Z")
+
+    # USERS
+    users = {
+        "total": await db.users.count_documents({}),
+        "students": await db.users.count_documents({"role": "student"}),
+        "professionals": await db.users.count_documents({"role": "professional"}),
+        "employers": await db.users.count_documents({"role": "employer"}),
+        "active": await db.users.count_documents({"account_status": {"$ne": "suspended"}}),
+        "new_today": await db.users.count_documents({"created_at": {"$gte": today_start}}),
+    }
+    # JOBS
+    jobs = {
+        "total": await db.jobs.count_documents({}),
+        "active": await db.jobs.count_documents({"status": "open"}),
+        "closed": await db.jobs.count_documents({"status": "closed"}),
+        "posted_today": await db.jobs.count_documents({"created_at": {"$gte": today_start}}),
+    }
+    # APPLICATIONS
+    app_status_counts: dict[str, int] = {}
+    for r in await db.applications.aggregate([{"$group": {"_id": "$status", "n": {"$sum": 1}}}]).to_list(50):
+        app_status_counts[r["_id"]] = r["n"]
+    apps = {
+        "total": await db.applications.count_documents({}),
+        "applied": app_status_counts.get("applied", 0),
+        "shortlisted": app_status_counts.get("shortlisted", 0),
+        "referred": app_status_counts.get("referred", 0),
+        "interview_scheduled": app_status_counts.get("interview_scheduled", 0) + app_status_counts.get("awaiting_interview", 0),
+        "hired": app_status_counts.get("hired", 0),
+        "rejected": app_status_counts.get("rejected", 0),
+    }
+    # INTERVIEWS
+    interview_status_counts: dict[str, int] = {}
+    for r in await db.interview_slots.aggregate([{"$group": {"_id": "$status", "n": {"$sum": 1}}}]).to_list(20):
+        interview_status_counts[r["_id"]] = r["n"]
+    interviews = {
+        "slots_total": await db.interview_slots.count_documents({}),
+        "available": interview_status_counts.get("available", 0),
+        "booked": interview_status_counts.get("booked", 0),
+        "completed": interview_status_counts.get("completed", 0),
+        "cancelled": interview_status_counts.get("cancelled", 0),
+    }
+    # CREDITS — sum txn amounts by reason bucket
+    credit_buckets = {"purchased": 0, "used": 0, "earned": 0, "rewarded": 0}
+    REWARD_REASONS = {"interview_pro_reward", "job_post_reward", "hiring_reward", "referral_hired_reward"}
+    USED_REASONS = {"job_application", "interview_booking"}
+    PURCHASE_REASONS = {"wallet_deposit", "wallet_deposit_confirm", "credit_purchase"}
+    async for t in db.transactions.find({}, {"_id": 0, "amount": 1, "reason": 1}):
+        amt = int(t.get("amount", 0))
+        reason = t.get("reason", "")
+        if amt > 0:
+            if reason in PURCHASE_REASONS:
+                credit_buckets["purchased"] += amt
+            else:
+                credit_buckets["earned"] += amt
+                if reason in REWARD_REASONS:
+                    credit_buckets["rewarded"] += amt
+        else:
+            if reason in USED_REASONS:
+                credit_buckets["used"] += -amt
+    credits = credit_buckets
+    # REVENUE
+    today_rev = 0
+    month_rev = 0
+    total_rev = 0
+    async for d in db.deposit_orders.find({"status": "paid"}, {"_id": 0, "amount_inr": 1, "created_at": 1}):
+        amt = int(d.get("amount_inr", 0))
+        total_rev += amt
+        c = d.get("created_at", "")
+        if c >= today_start:
+            today_rev += amt
+        if c >= month_start:
+            month_rev += amt
+    revenue = {"total_inr": total_rev, "today_inr": today_rev, "monthly_inr": month_rev}
+    return {"users": users, "jobs": jobs, "applications": apps,
+            "interviews": interviews, "credits": credits, "revenue": revenue}
+
+
+# ------------------- Admin: Filtered Jobs (Item #3) -------------------
+@api.get("/admin/jobs/search")
+async def admin_jobs_search(
+    _: dict = Depends(admin_only),
+    q: Optional[str] = Query(None, description="Global search across id/title/company"),
+    company: Optional[str] = Query(None),
+    location: Optional[str] = Query(None),
+    category: Optional[str] = Query(None),
+    industry: Optional[str] = Query(None),
+    salary_range: Optional[str] = Query(None),
+    posted_date: Optional[str] = Query(None, description="YYYY-MM-DD; jobs posted on this date"),
+    job_status: Optional[str] = Query(None, alias="status"),
+    limit: int = Query(200, le=1000),
+):
+    f: dict = {}
+    if q:
+        regex = {"$regex": re.escape(q), "$options": "i"}
+        f["$or"] = [{"id": regex}, {"title": regex}, {"company": regex}]
+    if company:
+        f["company"] = {"$regex": re.escape(company), "$options": "i"}
+    if location:
+        f["location"] = {"$regex": re.escape(location), "$options": "i"}
+    if category:
+        f["category"] = category
+    if industry:
+        f["industry_type"] = {"$regex": re.escape(industry), "$options": "i"}
+    if salary_range:
+        f["salary_range_label"] = salary_range
+    if job_status:
+        f["status"] = job_status
+    if posted_date:
+        f["created_at"] = {"$gte": posted_date, "$lt": posted_date + "T23:59:59Z"}
+    jobs = await db.jobs.find(f, {"_id": 0}).sort("created_at", -1).to_list(limit)
+    # annotate counts
+    if jobs:
+        ids = [j["id"] for j in jobs]
+        agg = await db.applications.aggregate([
+            {"$match": {"job_id": {"$in": ids}}},
+            {"$group": {"_id": {"job": "$job_id", "status": "$status"}, "n": {"$sum": 1}}},
+        ]).to_list(5000)
+        amap: dict[str, int] = {}
+        smap: dict[str, int] = {}
+        for r in agg:
+            jid = r["_id"]["job"]
+            st = r["_id"]["status"]
+            if st == "withdrawn":
+                continue
+            amap[jid] = amap.get(jid, 0) + r["n"]
+            if st in ("shortlisted", "interview_scheduled", "awaiting_interview", "hired"):
+                smap[jid] = smap.get(jid, 0) + r["n"]
+        for j in jobs:
+            j["applied_count"] = amap.get(j["id"], 0)
+            j["shortlisted_count"] = smap.get(j["id"], 0)
+    return jobs
+
+
+# ------------------- Admin: Filtered Interview Slots (Item #4) -------------------
+@api.get("/admin/interviews/search")
+async def admin_interviews_search(
+    _: dict = Depends(admin_only),
+    q: Optional[str] = Query(None),
+    candidate: Optional[str] = Query(None),
+    pro: Optional[str] = Query(None),
+    skill: Optional[str] = Query(None),
+    date: Optional[str] = Query(None),  # YYYY-MM-DD start_at on that day
+    slot_status: Optional[str] = Query(None, alias="status"),
+    limit: int = Query(300, le=2000),
+):
+    f: dict = {}
+    if q:
+        regex = {"$regex": re.escape(q), "$options": "i"}
+        f["$or"] = [{"id": regex}, {"student_name": regex}, {"pro_name": regex}, {"meeting_url": regex}]
+    if candidate:
+        f["student_name"] = {"$regex": re.escape(candidate), "$options": "i"}
+    if pro:
+        f["pro_name"] = {"$regex": re.escape(pro), "$options": "i"}
+    if skill:
+        f["skill_set"] = {"$regex": re.escape(skill), "$options": "i"}
+    if slot_status:
+        f["status"] = slot_status
+    if date:
+        f["start_at"] = {"$gte": date, "$lt": date + "T23:59:59Z"}
+    slots = await db.interview_slots.find(f, {"_id": 0}).sort("start_at", -1).to_list(limit)
+    return slots
+
+
+# ------------------- Admin: Credit Transactions (Item #5) -------------------
+@api.get("/admin/transactions/search")
+async def admin_transactions_search(
+    _: dict = Depends(admin_only),
+    q: Optional[str] = Query(None),
+    user_type: Optional[str] = Query(None),  # student | professional | employer
+    type: Optional[str] = Query(None, description="purchase | application | interview_reward | job_post_reward | hiring_reward | manual"),
+    date_from: Optional[str] = Query(None),  # YYYY-MM-DD inclusive
+    date_to: Optional[str] = Query(None),
+    limit: int = Query(500, le=5000),
+):
+    txn_filter: dict = {}
+    # Map UI transaction type → internal `reason` set
+    type_map = {
+        "purchase": {"wallet_deposit", "wallet_deposit_confirm", "credit_purchase"},
+        "application": {"job_application"},
+        "interview_reward": {"interview_pro_reward"},
+        "job_post_reward": {"job_post_reward"},
+        "hiring_reward": {"hiring_reward", "referral_hired_reward"},
+        "manual": {"admin_refund", "admin_adjustment"},
+    }
+    if type and type in type_map:
+        txn_filter["reason"] = {"$in": list(type_map[type])}
+    if date_from or date_to:
+        rng: dict = {}
+        if date_from:
+            rng["$gte"] = date_from
+        if date_to:
+            rng["$lte"] = date_to + "T23:59:59Z"
+        txn_filter["created_at"] = rng
+    transactions = await db.transactions.find(txn_filter, {"_id": 0}).sort("created_at", -1).to_list(limit)
+    # Hydrate user details (name / email / role)
+    user_ids = list({t.get("user_id") for t in transactions if t.get("user_id")})
+    users_lookup: dict[str, dict] = {}
+    if user_ids:
+        async for u in db.users.find({"id": {"$in": user_ids}}, {"_id": 0, "id": 1, "name": 1, "email": 1, "role": 1}):
+            users_lookup[u["id"]] = u
+    out = []
+    for t in transactions:
+        u = users_lookup.get(t.get("user_id"), {})
+        if user_type and u.get("role") != user_type:
+            continue
+        if q:
+            target = " ".join([t.get("id", ""), u.get("name", ""), u.get("email", ""), str(t.get("reason", ""))]).lower()
+            if q.lower() not in target:
+                continue
+        amt = int(t.get("amount", 0))
+        out.append({
+            "id": t.get("id"),
+            "user_id": t.get("user_id"),
+            "user_name": u.get("name") or (u.get("email", "").split("@")[0] if u.get("email") else "—"),
+            "user_email": u.get("email"),
+            "user_type": u.get("role"),
+            "credits_added": amt if amt > 0 else 0,
+            "credits_deducted": -amt if amt < 0 else 0,
+            "amount": amt,
+            "reason": t.get("reason"),
+            "reference": t.get("meta", {}),
+            "created_at": t.get("created_at"),
+            "status": t.get("status", "completed"),
+        })
+    return out
 
 
 @api.post("/disputes")
