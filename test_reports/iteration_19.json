@@ -1,0 +1,28 @@
+{
+  "summary": "Re-tested admin logout + auth-guard fix from iter_18 regression. All 5 steps PASS after restarting expo (the new /app/frontend/app/admin/_layout.tsx file was edited AFTER expo started, but CI-mode metro had no hot-reload so the old bundle without the guard was being served — restarting expo loaded the updated layout). Verified: (1) Login as admin@referme.app lands on /admin/dashboard. (2) Profile menu → menu-logout → 'Yes, Logout' clears localStorage (referme_token + referme_user gone) and routes to /welcome. (3) Direct URL nav to /admin/dashboard while logged out now redirects to /welcome within ~500ms (regression FIXED). (4) /admin/users and /admin/jobs also redirect to /welcome (full Tabs-layout guard covers all child routes).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Whenever editing layout/route files (especially _layout.tsx), restart expo via `sudo supervisorctl restart expo` because Metro is started with CI=true and watch-mode reloads are disabled — otherwise stale bundles are served to the preview URL and tests will appear to fail."
+  ],
+  "critical_code_review_comments": [
+    "admin/_layout.tsx guard is correct but only runs once on mount (useEffect deps [router]). If a logged-in admin's role changes server-side mid-session, the guard won't re-evaluate — acceptable for current scope but worth noting.",
+    "Guard does not validate the JWT against the backend (no /auth/me call). Stale/expired tokens still pass the client-side check; API 401s will be the only signal. Fine for the layout gate, but consider a /auth/me ping for robustness."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "100%"},
+  "seed_data_creation": "None (used existing admin@referme.app credentials).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Verified on viewport 390x844. Step 3 (direct URL nav to /admin/dashboard after logout → /welcome) now redirects within 500ms. The cause of the iter_18-style failure on first attempt of this iteration was a stale Metro bundle (file modified after expo start in CI mode); a supervisorctl restart of expo fixed it. Functional fix in /app/frontend/app/admin/_layout.tsx is correct as-is.",
+  "rca_of_issue": "Original iter_18 regression: /admin/dashboard rendered after logout because no auth guard existed in the admin tab layout. Fix (iter_19): added useEffect-based guard in admin/_layout.tsx that calls getToken()+getUser() and router.replace('/welcome') if missing or role!=='admin', showing ActivityIndicator until the check resolves. Re-test initially appeared to FAIL (still rendering dashboard with zeros and 401 API errors) because expo was running with CI=true (watch disabled) and the file edit at 16:28 was not picked up by the bundle started at 16:17. After `sudo supervisorctl restart expo` and ~30s warm-up, the fresh bundle served the guard correctly and all 4 protected routes (/admin/dashboard, /admin/users, /admin/jobs, and by extension all Tabs children) redirected to /welcome on direct URL nav."
+}

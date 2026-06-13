@@ -1,9 +1,35 @@
-import React from "react";
-import { Tabs } from "expo-router";
+import React, { useEffect, useState } from "react";
+import { View, ActivityIndicator } from "react-native";
+import { Tabs, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { colors } from "@/src/theme/tokens";
+import { getToken, getUser } from "@/src/lib/api";
 
 export default function AdminLayout() {
+  const router = useRouter();
+  const [authed, setAuthed] = useState<"checking" | "yes" | "no">("checking");
+
+  useEffect(() => {
+    (async () => {
+      const token = await getToken();
+      const user = await getUser();
+      if (!token || !user || user.role !== "admin") {
+        setAuthed("no");
+        router.replace("/welcome");
+        return;
+      }
+      setAuthed("yes");
+    })();
+  }, [router]);
+
+  if (authed !== "yes") {
+    return (
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.bg }}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
+
   return (
     <Tabs
       screenOptions={{
