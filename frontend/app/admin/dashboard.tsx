@@ -72,13 +72,19 @@ export default function AdminDashboard() {
 
   return (
     <Screen refreshing={refreshing} onRefresh={load}>
-      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-        <View style={{ flex: 1 }}>
+      <View style={styles.headerRow}>
+        <View style={{ flex: 1, paddingRight: 12 }}>
           <Txt variant="h1">Admin</Txt>
           <Txt variant="muted">Live platform overview</Txt>
         </View>
-        <TouchableOpacity testID="admin-profile-btn" onPress={() => setMenuOpen(true)} style={styles.profileBtn}>
-          <Ionicons name="person-circle" size={36} color={colors.primary} />
+        <TouchableOpacity
+          testID="admin-profile-btn"
+          onPress={() => setMenuOpen(true)}
+          style={styles.profileBtn}
+          activeOpacity={0.7}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Ionicons name="person-circle" size={32} color="#fff" />
         </TouchableOpacity>
       </View>
 
@@ -86,22 +92,18 @@ export default function AdminDashboard() {
       <Modal visible={menuOpen} transparent animationType="fade" onRequestClose={() => setMenuOpen(false)}>
         <TouchableOpacity activeOpacity={1} style={styles.menuBg} onPress={() => setMenuOpen(false)}>
           <TouchableOpacity activeOpacity={1} style={styles.menuCard} onPress={() => { /* swallow */ }}>
-            <TouchableOpacity testID="menu-profile" style={styles.menuRow} onPress={() => { setMenuOpen(false); /* TODO: profile screen */ }}>
-              <Ionicons name="person" size={18} color={colors.textPrimary} />
-              <Txt style={styles.menuLabel}>My Profile</Txt>
+            <TouchableOpacity testID="menu-profile" style={styles.menuRow} onPress={() => { setMenuOpen(false); }}>
+              <Txt style={styles.menuLabel}>👤  My Profile</Txt>
             </TouchableOpacity>
-            <TouchableOpacity testID="menu-settings" style={styles.menuRow} onPress={() => { setMenuOpen(false); /* TODO: settings */ }}>
-              <Ionicons name="settings" size={18} color={colors.textPrimary} />
-              <Txt style={styles.menuLabel}>Settings</Txt>
+            <TouchableOpacity testID="menu-settings" style={styles.menuRow} onPress={() => { setMenuOpen(false); }}>
+              <Txt style={styles.menuLabel}>⚙️  Settings</Txt>
             </TouchableOpacity>
-            <TouchableOpacity testID="menu-change-password" style={styles.menuRow} onPress={() => { setMenuOpen(false); /* TODO: change password */ }}>
-              <Ionicons name="key" size={18} color={colors.textPrimary} />
-              <Txt style={styles.menuLabel}>Change Password</Txt>
+            <TouchableOpacity testID="menu-change-password" style={styles.menuRow} onPress={() => { setMenuOpen(false); }}>
+              <Txt style={styles.menuLabel}>🔑  Change Password</Txt>
             </TouchableOpacity>
             <View style={styles.menuDivider} />
             <TouchableOpacity testID="menu-logout" style={styles.menuRow} onPress={() => { setMenuOpen(false); setLogoutOpen(true); }}>
-              <Ionicons name="log-out" size={18} color={colors.error} />
-              <Txt style={[styles.menuLabel, { color: colors.error }]}>Logout</Txt>
+              <Txt style={[styles.menuLabel, { color: colors.error }]}>🚪  Logout</Txt>
             </TouchableOpacity>
           </TouchableOpacity>
         </TouchableOpacity>
@@ -171,9 +173,33 @@ export default function AdminDashboard() {
 const styles = StyleSheet.create({
   tiles: { flexDirection: "row", flexWrap: "wrap", marginTop: 12, gap: 12 },
   tile: { width: "47%", backgroundColor: colors.surfaceAlt, borderRadius: 12, padding: 12 },
-  profileBtn: { padding: 4 },
+  profileBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 4,
+  },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingTop: 4,
+    paddingBottom: 8,
+  },
   menuBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.2)" },
   menuCard: { position: "absolute", top: 60, right: 16, backgroundColor: colors.surface, borderRadius: 14, padding: 6, minWidth: 220, shadowColor: "#000", shadowOpacity: 0.15, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 6 },
+  menuRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 12, gap: 12 },
+  menuLabel: { fontSize: 15, fontWeight: "600", color: colors.textPrimary },
+  menuDivider: { height: 1, backgroundColor: colors.border, marginVertical: 4 },
+});
+", shadowOpacity: 0.15, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 6 },
   menuRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 12, gap: 12 },
   menuLabel: { fontSize: 15, fontWeight: "600", color: colors.textPrimary },
   menuDivider: { height: 1, backgroundColor: colors.border, marginVertical: 4 },
