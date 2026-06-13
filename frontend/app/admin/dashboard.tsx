@@ -199,8 +199,3 @@ const styles = StyleSheet.create({
   menuLabel: { fontSize: 15, fontWeight: "600", color: colors.textPrimary },
   menuDivider: { height: 1, backgroundColor: colors.border, marginVertical: 4 },
 });
-", shadowOpacity: 0.15, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 6 },
-  menuRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 12, gap: 12 },
-  menuLabel: { fontSize: 15, fontWeight: "600", color: colors.textPrimary },
-  menuDivider: { height: 1, backgroundColor: colors.border, marginVertical: 4 },
-});
