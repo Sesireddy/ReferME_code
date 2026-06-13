@@ -6,11 +6,13 @@ import { Txt } from "@/src/components/Txt";
 import { Card } from "@/src/components/Card";
 import { Button } from "@/src/components/Button";
 import { Input } from "@/src/components/Input";
+import { Picker } from "@/src/components/Picker";
 import { DatePickerField, TimePickerField } from "@/src/components/DateTimePicker";
 import { ConfirmDialog } from "@/src/components/ConfirmDialog";
 import { colors, radius } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
 import { useRouter } from "expo-router";
+import { EXPERIENCE_OPTIONS } from "@/src/lib/constants";
 
 function tomorrowDateStr() {
   const d = new Date();
@@ -175,7 +177,7 @@ export default function ProSlots() {
         <Picker
           testID="slot-exp"
           label="Your Total Experience"
-          options={require("@/src/lib/constants").EXPERIENCE_OPTIONS}
+          options={EXPERIENCE_OPTIONS}
           value={expYears}
           onChange={(v) => setExpYears(v as string)}
           placeholder="Select experience"
