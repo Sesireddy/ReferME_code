@@ -1,0 +1,37 @@
+{
+  "summary": "Frontend-only verification of Admin profile dropdown + logout flow. 5/6 sub-tests passed. Login → /admin/dashboard works, profile icon (admin-profile-btn) renders, dropdown shows all 4 entries (menu-profile, menu-settings, menu-change-password, menu-logout in red), tapping menu-logout opens ConfirmDialog ('Are you sure you want to logout?' with 'Yes, Logout' / 'Cancel'), confirm clears referme_token from localStorage and redirects to /welcome. FAILS: after logout, directly visiting /admin/dashboard does NOT redirect to login — the screen still renders (with zeros) because /app/frontend/app/admin/_layout.tsx and dashboard.tsx have no auth guard; the overview API 401s but the catch swallows it silently.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Protected route after logout",
+        "issue": "/admin/dashboard remains accessible (renders shell with 0 values) after clearSession because no auth guard exists in app/admin/_layout.tsx or dashboard.tsx. The overview API returns 401 but the error is swallowed by `catch {}` on line 61 of dashboard.tsx, so user is not redirected to /welcome or /login. Spec required redirect to login on unauthenticated access.",
+        "affected_testIDs": ["admin-profile-btn"]
+      }
+    ],
+    "design_issues": [],
+    "react_native_issues": [
+      { "component": "shadow* style props", "issue": "Console warning: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Likely from styles.menuCard shadowColor/shadowOpacity/shadowRadius/shadowOffset in dashboard.tsx:176 (and other Card components). On web RN, prefer boxShadow." },
+      { "component": "props.pointerEvents", "issue": "Console warning: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Tracks RN web compatibility but does not break functionality." }
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Add an auth guard for /admin/* routes (either redirect inside admin/_layout.tsx when getToken() is null, or in each admin screen on mount). Same likely needed for /student/*, /professional/*, /employer/*.",
+    "Instead of `catch {}` in dashboard.tsx load(), detect 401 and route.replace('/login') or '/welcome' so 401s trigger a logout-style redirect.",
+    "(Optional) Migrate `shadow*` style props to `boxShadow` for react-native-web 0.20+ to silence deprecation warnings.",
+    "(Optional) Implement My Profile / Settings / Change Password screens — currently TODO no-op handlers."
+  ],
+  "critical_code_review_comments": [
+    "app/admin/dashboard.tsx line 61: `catch {}` silently hides any API failure including 401 — should at minimum surface a toast or redirect on 401.",
+    "app/admin/_layout.tsx has no auth gate; an unauthenticated visitor can render admin tabs."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "n/a", "frontend": "83% (5/6 spec items)" },
+  "seed_data_creation": "None. Used existing seeded admin admin@referme.app.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Re-verify after main agent adds auth guard. Test: logout → visit /admin/dashboard directly → must end on /login or /welcome. Use viewport 390x844, EXPO_PUBLIC_BACKEND_URL from /app/frontend/.env. Credentials in /app/memory/test_credentials.md. testIDs confirmed working: login-email, login-password, login-submit, admin-profile-btn, menu-profile, menu-settings, menu-change-password, menu-logout, confirm-ok, confirm-cancel.",
+  "rca_of_issue": "Reproduction: 1) Login as admin, 2) tap admin-profile-btn → menu-logout → confirm-ok (token cleared from localStorage, router.replace('/')), 3) manually navigate to /admin/dashboard. Expected: redirect to login. Actual: page renders with 0s; admin overview API returns 401 but error is caught with empty handler in dashboard.tsx. Mitigation: in app/admin/_layout.tsx useEffect → if (!await getToken()) router.replace('/welcome'); OR centralize 401 handling in src/lib/api.ts to clearSession + redirect."
+}
