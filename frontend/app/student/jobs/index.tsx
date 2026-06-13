@@ -128,25 +128,11 @@ export default function StudentJobs() {
   }
 
   function applyFilters() {
-    setFilterError(null);
-    // Validation: min <= max for experience filters
-    const parse = (v: string | null) => {
-      if (!v) return null;
-      if (v === "15+") return 15;
-      const n = parseInt(v, 10);
-      return Number.isFinite(n) ? n : null;
-    };
-    const mn = parse(expMin);
-    const mx = parse(expMax);
-    if (mn !== null && mx !== null && mx < mn) {
-      setFilterError("Maximum Experience must be ≥ Minimum Experience.");
-      return;
-    }
     load();
     setShowFilters(false);
   }
   function clearFilters() {
-    setSkill(""); setLocation(""); setCategory(""); setExpMin(""); setExpMax(""); setSortBy("newest"); setFilterError(null);
+    setSkill(""); setLocation(""); setCategory(""); setIndustry(""); setSortBy("newest");
   }
 
   return (
