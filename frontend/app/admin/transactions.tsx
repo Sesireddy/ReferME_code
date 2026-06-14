@@ -7,6 +7,7 @@ import { Card } from "@/src/components/Card";
 import { Input } from "@/src/components/Input";
 import { Button } from "@/src/components/Button";
 import { Picker } from "@/src/components/Picker";
+import { ScreenTitle } from "@/src/components/ScreenTitle";
 import { colors } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
 
@@ -58,7 +59,9 @@ export default function AdminTransactions() {
   return (
     <Screen refreshing={refreshing} onRefresh={load}>
       <View style={styles.header}>
-        <Txt variant="h1">Credit Transactions</Txt>
+        <View style={{ flex: 1 }}>
+          <ScreenTitle title="Credits" icon="cash" color={colors.primary} />
+        </View>
         <TouchableOpacity onPress={() => setShowFilters(p => !p)} style={styles.btn}>
           <Ionicons name="options" size={20} color={colors.textPrimary} />
         </TouchableOpacity>

@@ -9,6 +9,7 @@ import { Button } from "@/src/components/Button";
 import { Input } from "@/src/components/Input";
 import { colors } from "@/src/theme/tokens";
 import { api, clearSession } from "@/src/lib/api";
+import { ScreenTitle } from "@/src/components/ScreenTitle";
 
 export default function EmpProfile() {
   const router = useRouter();
@@ -55,8 +56,12 @@ export default function EmpProfile() {
   return (
     <Screen refreshing={refreshing} onRefresh={load}>
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-        <Txt variant="h1">Profile</Txt>
-        <TouchableOpacity onPress={logout}><Ionicons name="log-out-outline" size={24} color={colors.textPrimary} /></TouchableOpacity>
+        <View style={{ flex: 1 }}>
+          <ScreenTitle title="Profile" icon="person-circle" color="#2563EB" />
+        </View>
+        <TouchableOpacity testID="emp-logout" onPress={logout} hitSlop={10}>
+          <Ionicons name="log-out-outline" size={24} color={colors.textPrimary} />
+        </TouchableOpacity>
       </View>
       <Card style={{ marginTop: 16 }}>
         <Txt variant="label">Email</Txt>

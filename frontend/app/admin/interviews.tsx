@@ -7,6 +7,7 @@ import { Card } from "@/src/components/Card";
 import { Input } from "@/src/components/Input";
 import { Button } from "@/src/components/Button";
 import { Picker } from "@/src/components/Picker";
+import { ScreenTitle } from "@/src/components/ScreenTitle";
 import { colors } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
 
@@ -54,7 +55,9 @@ export default function AdminInterviews() {
   return (
     <Screen refreshing={refreshing} onRefresh={load}>
       <View style={styles.header}>
-        <Txt variant="h1">Interviews</Txt>
+        <View style={{ flex: 1 }}>
+          <ScreenTitle title="Interviews" icon="mic" color={colors.primary} />
+        </View>
         <TouchableOpacity onPress={() => setShowFilters(p => !p)} style={styles.btn}>
           <Ionicons name="options" size={20} color={colors.textPrimary} />
         </TouchableOpacity>

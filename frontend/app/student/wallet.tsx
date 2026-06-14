@@ -5,6 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Screen } from "@/src/components/Screen";
 import { Txt } from "@/src/components/Txt";
 import { Card } from "@/src/components/Card";
+import { ScreenTitle } from "@/src/components/ScreenTitle";
 import { Button } from "@/src/components/Button";
 import { Input } from "@/src/components/Input";
 import { colors, radius } from "@/src/theme/tokens";
@@ -56,7 +57,7 @@ export default function StudentWallet() {
 
   return (
     <Screen refreshing={refreshing} onRefresh={load}>
-      <Txt variant="h1">Wallet</Txt>
+      <ScreenTitle title="Wallet" icon="wallet" color={colors.primary} />
       <LinearGradient
         colors={["#FF5A5F", "#FFB347"]}
         start={{ x: 0, y: 0 }}

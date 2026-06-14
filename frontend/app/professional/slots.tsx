@@ -7,6 +7,7 @@ import { Card } from "@/src/components/Card";
 import { Button } from "@/src/components/Button";
 import { Input } from "@/src/components/Input";
 import { Picker } from "@/src/components/Picker";
+import { ScreenTitle } from "@/src/components/ScreenTitle";
 import { DatePickerField, TimePickerField } from "@/src/components/DateTimePicker";
 import { ConfirmDialog } from "@/src/components/ConfirmDialog";
 import { colors, radius } from "@/src/theme/tokens";
@@ -157,7 +158,7 @@ export default function ProSlots() {
 
   return (
     <Screen refreshing={refreshing} onRefresh={load}>
-      <Txt variant="h1">My Interviews</Txt>
+      <ScreenTitle title="My Interviews" icon="mic" color="#7C3AED" />
       <Card style={{ marginTop: 16 }}>
         <Txt variant="h3">Create a slot</Txt>
         <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 2, marginBottom: 12 }}>

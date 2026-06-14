@@ -7,6 +7,7 @@ import { Card } from "@/src/components/Card";
 import { Input } from "@/src/components/Input";
 import { Button } from "@/src/components/Button";
 import { Picker } from "@/src/components/Picker";
+import { ScreenTitle } from "@/src/components/ScreenTitle";
 import { colors } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
 import { LOCATION_OPTIONS, INDUSTRY_OPTIONS, SALARY_RANGE_OPTIONS, JOB_CATEGORY_FILTER_OPTIONS } from "@/src/lib/constants";
@@ -51,7 +52,9 @@ export default function AdminJobs() {
   return (
     <Screen refreshing={refreshing} onRefresh={load}>
       <View style={styles.header}>
-        <Txt variant="h1">Jobs</Txt>
+        <View style={{ flex: 1 }}>
+          <ScreenTitle title="Jobs" icon="briefcase" color={colors.primary} />
+        </View>
         <TouchableOpacity testID="filter-toggle" onPress={() => setShowFilters(p => !p)} style={styles.btn}>
           <Ionicons name="options" size={20} color={colors.textPrimary} />
         </TouchableOpacity>

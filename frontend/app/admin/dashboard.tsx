@@ -6,6 +6,7 @@ import { Screen } from "@/src/components/Screen";
 import { Txt } from "@/src/components/Txt";
 import { Card } from "@/src/components/Card";
 import { ConfirmDialog } from "@/src/components/ConfirmDialog";
+import { ScreenTitle } from "@/src/components/ScreenTitle";
 import { colors } from "@/src/theme/tokens";
 import { api, clearSession } from "@/src/lib/api";
 
@@ -74,9 +75,22 @@ export default function AdminDashboard() {
     <Screen refreshing={refreshing} onRefresh={load}>
       <View style={styles.headerRow}>
         <View style={{ flex: 1, paddingRight: 12 }}>
-          <Txt variant="h1">Admin</Txt>
-          <Txt variant="muted">Live platform overview</Txt>
+          <ScreenTitle
+            title="Admin"
+            icon="stats-chart"
+            color={colors.admin}
+            subtitle="Live platform overview"
+          />
         </View>
+        <TouchableOpacity
+          testID="admin-notif-btn"
+          onPress={() => router.push("/notifications")}
+          style={[styles.iconBtn, { marginRight: 10 }]}
+          activeOpacity={0.7}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Ionicons name="notifications" size={22} color={colors.textPrimary} />
+        </TouchableOpacity>
         <TouchableOpacity
           testID="admin-profile-btn"
           onPress={() => setMenuOpen(true)}
@@ -93,17 +107,21 @@ export default function AdminDashboard() {
         <TouchableOpacity activeOpacity={1} style={styles.menuBg} onPress={() => setMenuOpen(false)}>
           <TouchableOpacity activeOpacity={1} style={styles.menuCard} onPress={() => { /* swallow */ }}>
             <TouchableOpacity testID="menu-profile" style={styles.menuRow} onPress={() => { setMenuOpen(false); }}>
-              <Txt style={styles.menuLabel}>👤  My Profile</Txt>
+              <Ionicons name="person-circle-outline" size={20} color={colors.primary} />
+              <Txt style={styles.menuLabel}>My Profile</Txt>
             </TouchableOpacity>
             <TouchableOpacity testID="menu-settings" style={styles.menuRow} onPress={() => { setMenuOpen(false); }}>
-              <Txt style={styles.menuLabel}>⚙️  Settings</Txt>
+              <Ionicons name="settings-outline" size={20} color="#7C3AED" />
+              <Txt style={styles.menuLabel}>Settings</Txt>
             </TouchableOpacity>
             <TouchableOpacity testID="menu-change-password" style={styles.menuRow} onPress={() => { setMenuOpen(false); }}>
-              <Txt style={styles.menuLabel}>🔑  Change Password</Txt>
+              <Ionicons name="key-outline" size={20} color={colors.warning} />
+              <Txt style={styles.menuLabel}>Change Password</Txt>
             </TouchableOpacity>
             <View style={styles.menuDivider} />
             <TouchableOpacity testID="menu-logout" style={styles.menuRow} onPress={() => { setMenuOpen(false); setLogoutOpen(true); }}>
-              <Txt style={[styles.menuLabel, { color: colors.error }]}>🚪  Logout</Txt>
+              <Ionicons name="log-out-outline" size={20} color={colors.error} />
+              <Txt style={[styles.menuLabel, { color: colors.error }]}>Logout</Txt>
             </TouchableOpacity>
           </TouchableOpacity>
         </TouchableOpacity>
@@ -173,6 +191,16 @@ export default function AdminDashboard() {
 const styles = StyleSheet.create({
   tiles: { flexDirection: "row", flexWrap: "wrap", marginTop: 12, gap: 12 },
   tile: { width: "47%", backgroundColor: colors.surfaceAlt, borderRadius: 12, padding: 12 },
+  iconBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
   profileBtn: {
     width: 48,
     height: 48,

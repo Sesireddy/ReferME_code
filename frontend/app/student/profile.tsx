@@ -9,6 +9,7 @@ import { Screen } from "@/src/components/Screen";
 import { Avatar } from "@/src/components/Avatar";
 import { Txt } from "@/src/components/Txt";
 import { Card } from "@/src/components/Card";
+import { ScreenTitle } from "@/src/components/ScreenTitle";
 import { Button } from "@/src/components/Button";
 import { Input } from "@/src/components/Input";
 import { Picker } from "@/src/components/Picker";
@@ -454,7 +455,9 @@ export default function StudentProfile() {
   return (
     <Screen refreshing={refreshing} onRefresh={load}>
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-        <Txt variant="h1">Profile</Txt>
+        <View style={{ flex: 1 }}>
+          <ScreenTitle title="Profile" icon="person-circle" color={colors.primary} />
+        </View>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
           <View style={styles.photoCol}>
             <Avatar

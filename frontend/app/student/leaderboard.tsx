@@ -4,6 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Screen } from "@/src/components/Screen";
 import { Txt } from "@/src/components/Txt";
 import { Card } from "@/src/components/Card";
+import { ScreenTitle } from "@/src/components/ScreenTitle";
 import { Input } from "@/src/components/Input";
 import { Picker } from "@/src/components/Picker";
 import { colors } from "@/src/theme/tokens";
@@ -68,12 +69,13 @@ export default function StudentLeaderboard() {
   return (
     <Screen refreshing={refreshing} onRefresh={load}>
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-        <View>
-          <Txt variant="h1">Student Leaderboard 🏆</Txt>
-          <Txt variant="muted">Top performing job seekers on ReferME</Txt>
-          <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 4 }}>
-            Total participants: {board.length}
-          </Txt>
+        <View style={{ flex: 1 }}>
+          <ScreenTitle
+            title="Leaderboard"
+            icon="trophy"
+            color={colors.accent}
+            subtitle={`Top performers · ${board.length} participants`}
+          />
         </View>
         <TouchableOpacity testID="filter-btn" onPress={() => setShowFilters((s) => !s)} style={styles.filterBtn}>
           <Ionicons name="options" size={20} color={colors.textPrimary} />

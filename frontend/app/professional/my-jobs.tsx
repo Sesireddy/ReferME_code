@@ -7,6 +7,7 @@ import { Txt } from "@/src/components/Txt";
 import { Card } from "@/src/components/Card";
 import { Button } from "@/src/components/Button";
 import { Input } from "@/src/components/Input";
+import { ScreenTitle } from "@/src/components/ScreenTitle";
 import { colors, radius } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
 
@@ -78,7 +79,9 @@ export default function ProMyJobs() {
   return (
     <Screen refreshing={refreshing} onRefresh={load}>
       <View style={styles.header}>
-        <Txt variant="h1">My Posted Jobs</Txt>
+        <View style={{ flex: 1 }}>
+          <ScreenTitle title="My Posted Jobs" icon="folder-open" color="#7C3AED" />
+        </View>
         <TouchableOpacity testID="post-new" onPress={() => router.push("/professional/post-job")}>
           <View style={styles.addBtn}>
             <Ionicons name="add" size={22} color="#fff" />

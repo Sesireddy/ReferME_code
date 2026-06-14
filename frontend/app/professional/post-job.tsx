@@ -7,6 +7,7 @@ import { Input } from "@/src/components/Input";
 import { Button } from "@/src/components/Button";
 import { Picker } from "@/src/components/Picker";
 import { ConfirmDialog } from "@/src/components/ConfirmDialog";
+import { ScreenTitle } from "@/src/components/ScreenTitle";
 import {
   LOCATION_OPTIONS,
   SALARY_RANGE_OPTIONS,
@@ -130,8 +131,12 @@ export default function ProPostJob() {
 
   return (
     <Screen>
-      <Txt variant="h1">Post a job opening</Txt>
-      <Txt variant="muted">Open jobs at your company — refer candidates and earn ₹1500/hire.</Txt>
+      <ScreenTitle
+        title="Post a Job"
+        icon="add-circle"
+        color="#7C3AED"
+        subtitle="Open jobs at your company — refer candidates and earn ₹1500/hire."
+      />
       <ConfirmDialog
         visible={success}
         title="Job posted successfully."

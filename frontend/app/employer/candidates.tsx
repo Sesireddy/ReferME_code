@@ -6,6 +6,7 @@ import { Card } from "@/src/components/Card";
 import { Button } from "@/src/components/Button";
 import { colors } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
+import { ScreenTitle } from "@/src/components/ScreenTitle";
 
 export default function Candidates() {
   const [apps, setApps] = useState<any[]>([]);
@@ -34,8 +35,12 @@ export default function Candidates() {
 
   return (
     <Screen refreshing={refreshing} onRefresh={load}>
-      <Txt variant="h1">Candidates</Txt>
-      <Txt variant="muted">{apps.length} applications</Txt>
+      <ScreenTitle
+        title="Candidates"
+        icon="people"
+        color="#2563EB"
+        subtitle={`${apps.length} application${apps.length === 1 ? "" : "s"}`}
+      />
       <View style={{ marginTop: 16, gap: 12 }}>
         {apps.length === 0 ? <Txt variant="muted">No candidates yet.</Txt> : null}
         {apps.map((a) => (

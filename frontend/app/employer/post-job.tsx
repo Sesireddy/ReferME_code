@@ -6,6 +6,7 @@ import { Card } from "@/src/components/Card";
 import { Input } from "@/src/components/Input";
 import { Button } from "@/src/components/Button";
 import { api } from "@/src/lib/api";
+import { ScreenTitle } from "@/src/components/ScreenTitle";
 
 export default function PostJob() {
   const [title, setTitle] = useState("");
@@ -40,8 +41,12 @@ export default function PostJob() {
 
   return (
     <Screen>
-      <Txt variant="h1">Post a job</Txt>
-      <Txt variant="muted">Reach motivated students and professionals.</Txt>
+      <ScreenTitle
+        title="Post a Job"
+        icon="add-circle"
+        color="#2563EB"
+        subtitle="Reach motivated students and professionals."
+      />
       <Card style={{ marginTop: 16 }}>
         <Input testID="job-title" label="Title" value={title} onChangeText={setTitle} placeholder="Frontend Engineer" />
         <Input testID="job-desc" label="Description" value={desc} onChangeText={setDesc} multiline placeholder="Role, responsibilities, etc." />

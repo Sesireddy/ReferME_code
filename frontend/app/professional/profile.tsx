@@ -12,6 +12,7 @@ import { colors, radius } from "@/src/theme/tokens";
 import { api, clearSession } from "@/src/lib/api";
 import { ConfirmDialog } from "@/src/components/ConfirmDialog";
 import { Picker } from "@/src/components/Picker";
+import { ScreenTitle } from "@/src/components/ScreenTitle";
 import { EXPERIENCE_OPTIONS, LOCATION_OPTIONS } from "@/src/lib/constants";
 
 function maskPhone(p?: string): string {
@@ -195,6 +196,18 @@ export default function ProProfile() {
 
   return (
     <Screen refreshing={refreshing} onRefresh={load}>
+      <View style={{ marginBottom: 12 }}>
+        <ScreenTitle
+          title="Profile"
+          icon="person-circle"
+          color="#7C3AED"
+          right={
+            <TouchableOpacity testID="profile-logout-btn" onPress={logout} hitSlop={10}>
+              <Ionicons name="log-out-outline" size={24} color={colors.textPrimary} />
+            </TouchableOpacity>
+          }
+        />
+      </View>
       {/* Top profile card: photo + name + credits chip → wallet */}
       <Card>
         <View style={{ flexDirection: "row", alignItems: "center" }}>

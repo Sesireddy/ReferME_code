@@ -5,6 +5,7 @@ import { useRouter } from "expo-router";
 import { Screen } from "@/src/components/Screen";
 import { Txt } from "@/src/components/Txt";
 import { Card } from "@/src/components/Card";
+import { ScreenTitle } from "@/src/components/ScreenTitle";
 import { Button } from "@/src/components/Button";
 import { Picker } from "@/src/components/Picker";
 import { ConfirmDialog } from "@/src/components/ConfirmDialog";
@@ -139,7 +140,7 @@ export default function StudentJobs() {
     <Screen refreshing={refreshing} onRefresh={load}>
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
-          <Txt variant="h1">Jobs</Txt>
+          <ScreenTitle title="Jobs" icon="briefcase" color={colors.primary} />
         </View>
         <TouchableOpacity testID="filter-btn" onPress={() => setShowFilters((p) => !p)} style={styles.filterBtn}>
           <Ionicons name="options" size={20} color={colors.textPrimary} />

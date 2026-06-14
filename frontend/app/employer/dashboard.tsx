@@ -7,6 +7,7 @@ import { Txt } from "@/src/components/Txt";
 import { Card } from "@/src/components/Card";
 import { colors } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
+import { ScreenTitle } from "@/src/components/ScreenTitle";
 
 export default function EmpDashboard() {
   const router = useRouter();
@@ -28,9 +29,13 @@ export default function EmpDashboard() {
   return (
     <Screen refreshing={refreshing} onRefresh={load}>
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-        <View>
-          <Txt variant="h1">Jobs</Txt>
-          <Txt variant="muted">{jobs.length} posted · {apps.length} applicants</Txt>
+        <View style={{ flex: 1 }}>
+          <ScreenTitle
+            title="Jobs"
+            icon="briefcase"
+            color="#2563EB"
+            subtitle={`${jobs.length} posted · ${apps.length} applicants`}
+          />
         </View>
         <TouchableOpacity testID="notif-btn" onPress={() => router.push("/notifications")}>
           <View style={styles.iconBtn}><Ionicons name="notifications" size={22} color={colors.textPrimary} /></View>

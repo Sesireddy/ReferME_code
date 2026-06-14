@@ -4,6 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Screen } from "@/src/components/Screen";
 import { Txt } from "@/src/components/Txt";
 import { Card } from "@/src/components/Card";
+import { ScreenTitle } from "@/src/components/ScreenTitle";
 import { Button } from "@/src/components/Button";
 import { Input } from "@/src/components/Input";
 import { Picker } from "@/src/components/Picker";
@@ -125,8 +126,7 @@ export default function MockInterviews() {
 
   return (
     <Screen refreshing={refreshing} onRefresh={load}>
-      <Txt variant="h1">Mock Interviews</Txt>
-      <Txt variant="muted">Practice with vetted professionals. 49 credits per interview.</Txt>
+      <ScreenTitle title="Mock Interviews" icon="mic" color={colors.primary} subtitle="Practice with vetted professionals. 49 credits per interview." />
 
       <Input
         testID="mi-search"
