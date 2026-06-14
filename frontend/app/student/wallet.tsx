@@ -64,14 +64,33 @@ export default function StudentWallet() {
         end={{ x: 1, y: 1 }}
         style={styles.hero}
       >
-        <View style={{ flex: 1 }}>
-          <Txt variant="label" style={{ color: "#fff", opacity: 0.85 }}>Balance</Txt>
-          <Txt style={{ color: "#fff", fontSize: 48, fontWeight: "800", marginTop: 4 }} testID="wallet-credits">
+        <View style={styles.heroContent}>
+          <Txt
+            variant="label"
+            style={{ color: "#fff", opacity: 0.85 }}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+          >
+            Balance
+          </Txt>
+          <Txt
+            style={{ color: "#fff", fontSize: 40, fontWeight: "800", marginTop: 4 }}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            testID="wallet-credits"
+          >
             {data?.credits ?? 0}
           </Txt>
-          <Txt style={{ color: "#fff", opacity: 0.9 }}>credits · {data?.free_uses_left ?? 0} free</Txt>
+          <Txt
+            style={{ color: "#fff", opacity: 0.9 }}
+            variant="small"
+            numberOfLines={1}
+            adjustsFontSizeToFit
+          >
+            credits · {data?.free_uses_left ?? 0} free
+          </Txt>
         </View>
-        <Image source={{ uri: COIN }} style={{ width: 100, height: 100 }} />
+        <Image source={{ uri: COIN }} style={styles.heroCoin} resizeMode="contain" />
       </LinearGradient>
 
       <Card highlight style={{ marginTop: 16 }}>
@@ -112,5 +131,7 @@ export default function StudentWallet() {
 }
 
 const styles = StyleSheet.create({
-  hero: { marginTop: 16, padding: 20, borderRadius: radius.xxl, flexDirection: "row", alignItems: "center" },
+  hero: { marginTop: 16, padding: 18, borderRadius: radius.xxl, flexDirection: "row", alignItems: "center" },
+  heroContent: { flex: 1, minWidth: 0, paddingRight: 8 },
+  heroCoin: { width: 80, height: 80, marginLeft: 8 },
 });

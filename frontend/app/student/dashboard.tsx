@@ -82,28 +82,44 @@ export default function StudentDashboard() {
         end={{ x: 1, y: 1 }}
         style={styles.heroCard}
       >
-        <View style={{ flex: 1 }}>
-          <Txt style={{ color: "#fff", opacity: 0.85 }} variant="label">Resume Score</Txt>
+        <View style={styles.heroContent}>
+          <Txt
+            style={{ color: "#fff", opacity: 0.85 }}
+            variant="label"
+            numberOfLines={1}
+            adjustsFontSizeToFit
+          >
+            Resume Score
+          </Txt>
           <View style={{ flexDirection: "row", alignItems: "baseline", marginTop: 4 }}>
             <Txt
-              style={{ color: "#fff", fontSize: 44, fontWeight: "800" }}
+              style={{ color: "#fff", fontSize: 40, fontWeight: "800" }}
               numberOfLines={1}
               adjustsFontSizeToFit
               testID="student-score"
             >
               {score}
             </Txt>
-            <Txt style={{ color: "#fff", fontSize: 22, opacity: 0.85, marginLeft: 4 }} numberOfLines={1}> /100</Txt>
+            <Txt
+              style={{ color: "#fff", fontSize: 20, opacity: 0.85, marginLeft: 4 }}
+              numberOfLines={1}
+            >
+              /100
+            </Txt>
           </View>
           <View style={styles.progressTrack}>
             <View style={[styles.progressFill, { width: `${Math.min(100, score)}%` }]} />
           </View>
-          <Txt style={{ color: "#fff", opacity: 0.95, marginTop: 8 }} variant="small">
-            Improve your Resume Score by attending Mock Interviews
+          <Txt
+            style={{ color: "#fff", opacity: 0.95, marginTop: 8 }}
+            variant="small"
+            numberOfLines={2}
+          >
+            Improve by attending Mock Interviews
           </Txt>
         </View>
         <View style={styles.heroIcon}>
-          <Ionicons name="rocket" size={48} color="#fff" />
+          <Ionicons name="rocket" size={40} color="#fff" />
         </View>
       </LinearGradient>
 
@@ -237,8 +253,9 @@ export default function StudentDashboard() {
 const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 16 },
   iconBtn: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
-  heroCard: { borderRadius: radius.xxl, padding: 20, flexDirection: "row", alignItems: "center", marginBottom: 16, minHeight: 160 },
-  heroIcon: { width: 80, height: 80, alignItems: "center", justifyContent: "center", opacity: 0.85 },
+  heroCard: { borderRadius: radius.xxl, padding: 18, flexDirection: "row", alignItems: "center", marginBottom: 16, minHeight: 150 },
+  heroContent: { flex: 1, minWidth: 0, paddingRight: 8 },
+  heroIcon: { width: 56, height: 56, alignItems: "center", justifyContent: "center", opacity: 0.9, marginLeft: 8 },
   progressTrack: { height: 8, backgroundColor: "rgba(255,255,255,0.25)", borderRadius: 8, marginTop: 12, overflow: "hidden" },
   progressFill: { height: "100%", backgroundColor: "#fff", borderRadius: 8 },
   actionRow: { flexDirection: "row", gap: 12 },
