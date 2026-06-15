@@ -1112,6 +1112,7 @@ async def get_wallet(u: dict = Depends(current_user)):
     txs = await db.transactions.find({"user_id": u["id"]}, {"_id": 0}).sort("created_at", -1).to_list(100)
     return {
         "credits": u.get("credits", 0),
+        "locked_credits": u.get("locked_credits", 0),
         "free_uses_left": u.get("free_uses_left", 0),
         "total_deposits": u.get("total_deposits", 0),
         "transactions": txs,
@@ -3075,6 +3076,251 @@ async def admin_list_interview_bookings(u: dict = Depends(require_role(["admin"]
     for b in bookings:
         b["current_slot_status"] = slot_map.get(b.get("slot_id"), "deleted")
     return bookings
+
+
+# ============================================================
+# CREDIT REDEMPTION (Working Professional → INR Payout)
+# ============================================================
+REDEMPTION_MIN_CREDITS = 500
+REDEMPTION_INR_PER_CREDIT = 0.5  # 2 credits = ₹1
+
+
+def _upi_valid(upi: str) -> bool:
+    return bool(re.match(r"^[\w.\-_]{2,256}@[a-zA-Z]{2,64}$", (upi or "").strip()))
+
+
+class RedemptionSubmitBody(BaseModel):
+    credits: int = Field(ge=REDEMPTION_MIN_CREDITS)
+    account_holder_name: str = Field(min_length=2, max_length=100)
+    upi_id: str
+    bank_account: Optional[str] = ""
+    ifsc: Optional[str] = ""
+
+
+class RedemptionPaidBody(BaseModel):
+    payment_ref: str = Field(min_length=2, max_length=120)
+    payment_date: Optional[str] = None  # ISO; defaults to now
+    remarks: Optional[str] = ""
+
+
+class RedemptionRejectBody(BaseModel):
+    reason: str = Field(min_length=2, max_length=400)
+
+
+def _redemption_inr(credits: int) -> float:
+    return round(credits * REDEMPTION_INR_PER_CREDIT, 2)
+
+
+@api.post("/redemption/submit")
+async def submit_redemption(
+    body: RedemptionSubmitBody,
+    u: dict = Depends(require_role(["professional"])),
+):
+    if not _upi_valid(body.upi_id):
+        raise HTTPException(status_code=400, detail="Please enter a valid UPI ID (e.g. name@bank)")
+    if body.credits < REDEMPTION_MIN_CREDITS:
+        raise HTTPException(status_code=400, detail=f"Minimum {REDEMPTION_MIN_CREDITS} credits are required to submit a redemption request.")
+    avail = u.get("credits", 0)
+    if body.credits > avail:
+        raise HTTPException(status_code=400, detail="Redemption amount exceeds available credits.")
+
+    req_id = new_id()
+    now = now_iso()
+    # Atomically deduct from credits and increment locked_credits
+    upd = await db.users.find_one_and_update(
+        {"id": u["id"], "credits": {"$gte": body.credits}},
+        {"$inc": {"credits": -body.credits, "locked_credits": body.credits}},
+        return_document=True,
+        projection={"_id": 0, "credits": 1, "locked_credits": 1},
+    )
+    if not upd:
+        raise HTTPException(status_code=400, detail="Available credits changed. Please refresh and try again.")
+
+    doc = {
+        "id": req_id,
+        "pro_id": u["id"],
+        "pro_name": u.get("name") or u.get("full_name") or u.get("email", ""),
+        "pro_email": u.get("email", ""),
+        "credits_requested": body.credits,
+        "amount_inr": _redemption_inr(body.credits),
+        "available_credits_at_request": avail,
+        "account_holder_name": body.account_holder_name.strip(),
+        "upi_id": body.upi_id.strip(),
+        "bank_account": (body.bank_account or "").strip(),
+        "ifsc": (body.ifsc or "").strip().upper(),
+        "status": "pending",  # pending | approved | paid | rejected
+        "payment_ref": "",
+        "payment_date": "",
+        "remarks": "",
+        "rejection_reason": "",
+        "created_at": now,
+        "updated_at": now,
+        "approved_at": "",
+        "paid_at": "",
+        "rejected_at": "",
+    }
+    await db.redemption_requests.insert_one(doc)
+
+    # Ledger entry for traceability
+    await db.transactions.insert_one({
+        "id": new_id(),
+        "user_id": u["id"],
+        "delta": -body.credits,
+        "reason": "redemption_locked",
+        "meta": {"request_id": req_id, "upi_id": body.upi_id, "amount_inr": doc["amount_inr"]},
+        "created_at": now,
+    })
+
+    await push_notification(
+        u["id"],
+        "Redemption requested 🕒",
+        f"Your request to redeem {body.credits} credits (₹{doc['amount_inr']:.2f}) is pending approval.",
+        "info",
+    )
+    doc.pop("_id", None)
+    return doc
+
+
+@api.get("/redemption/my")
+async def my_redemptions(u: dict = Depends(require_role(["professional"]))):
+    items = await db.redemption_requests.find(
+        {"pro_id": u["id"]}, {"_id": 0}
+    ).sort("created_at", -1).to_list(200)
+    return {"items": items, "min_credits": REDEMPTION_MIN_CREDITS, "inr_per_credit": REDEMPTION_INR_PER_CREDIT}
+
+
+# ---- Admin redemption endpoints ----
+@api.get("/admin/redemption-requests")
+async def admin_list_redemptions(
+    status_f: Optional[str] = Query(None, alias="status"),
+    q: Optional[str] = None,
+    limit: int = 100,
+    _: dict = Depends(admin_only),
+):
+    flt: dict[str, Any] = {}
+    if status_f and status_f.lower() != "all":
+        flt["status"] = status_f.lower()
+    if q:
+        rgx = re.compile(re.escape(q.strip()), re.IGNORECASE)
+        flt["$or"] = [
+            {"pro_name": rgx},
+            {"pro_email": rgx},
+            {"id": rgx},
+            {"upi_id": rgx},
+        ]
+    items = await db.redemption_requests.find(flt, {"_id": 0}).sort("created_at", -1).to_list(min(limit, 500))
+    counts = {}
+    for s in ("pending", "approved", "paid", "rejected"):
+        counts[s] = await db.redemption_requests.count_documents({"status": s})
+    return {"items": items, "counts": counts}
+
+
+@api.post("/admin/redemption-requests/{req_id}/approve")
+async def admin_approve_redemption(req_id: str, _: dict = Depends(admin_only)):
+    r = await db.redemption_requests.find_one({"id": req_id})
+    if not r:
+        raise HTTPException(status_code=404, detail="Request not found")
+    if r["status"] != "pending":
+        raise HTTPException(status_code=400, detail=f"Cannot approve a {r['status']} request")
+    now = now_iso()
+    await db.redemption_requests.update_one(
+        {"id": req_id},
+        {"$set": {"status": "approved", "approved_at": now, "updated_at": now}},
+    )
+    await push_notification(
+        r["pro_id"],
+        "Redemption approved ✅",
+        f"Your redemption of {r['credits_requested']} credits is approved. Payment in progress.",
+        "success",
+    )
+    return {"ok": True, "status": "approved"}
+
+
+@api.post("/admin/redemption-requests/{req_id}/mark-paid")
+async def admin_mark_redemption_paid(req_id: str, body: RedemptionPaidBody, _: dict = Depends(admin_only)):
+    r = await db.redemption_requests.find_one({"id": req_id})
+    if not r:
+        raise HTTPException(status_code=404, detail="Request not found")
+    if r["status"] not in ("approved", "pending"):
+        raise HTTPException(status_code=400, detail=f"Cannot mark a {r['status']} request as paid")
+    now = now_iso()
+    pay_date = body.payment_date or now
+    # Burn the locked credits (payment was made out of platform)
+    await db.users.update_one(
+        {"id": r["pro_id"]},
+        {"$inc": {"locked_credits": -r["credits_requested"]}},
+    )
+    await db.redemption_requests.update_one(
+        {"id": req_id},
+        {"$set": {
+            "status": "paid",
+            "payment_ref": body.payment_ref.strip(),
+            "payment_date": pay_date,
+            "remarks": (body.remarks or "").strip(),
+            "paid_at": now,
+            "updated_at": now,
+        }},
+    )
+    await db.transactions.insert_one({
+        "id": new_id(),
+        "user_id": r["pro_id"],
+        "delta": 0,
+        "reason": "redemption_paid",
+        "meta": {
+            "request_id": req_id,
+            "credits_redeemed": r["credits_requested"],
+            "amount_inr": r["amount_inr"],
+            "payment_ref": body.payment_ref.strip(),
+            "payment_date": pay_date,
+        },
+        "created_at": now,
+    })
+    await push_notification(
+        r["pro_id"],
+        "Redemption paid 💸",
+        f"Your redemption request has been processed and ₹{r['amount_inr']:.2f} has been transferred to your provided account/UPI. Ref: {body.payment_ref.strip()}.",
+        "success",
+    )
+    return {"ok": True, "status": "paid"}
+
+
+@api.post("/admin/redemption-requests/{req_id}/reject")
+async def admin_reject_redemption(req_id: str, body: RedemptionRejectBody, _: dict = Depends(admin_only)):
+    r = await db.redemption_requests.find_one({"id": req_id})
+    if not r:
+        raise HTTPException(status_code=404, detail="Request not found")
+    if r["status"] in ("paid", "rejected"):
+        raise HTTPException(status_code=400, detail=f"Cannot reject a {r['status']} request")
+    now = now_iso()
+    # Restore locked credits back to available
+    await db.users.update_one(
+        {"id": r["pro_id"]},
+        {"$inc": {"locked_credits": -r["credits_requested"], "credits": r["credits_requested"]}},
+    )
+    await db.redemption_requests.update_one(
+        {"id": req_id},
+        {"$set": {
+            "status": "rejected",
+            "rejection_reason": body.reason.strip(),
+            "rejected_at": now,
+            "updated_at": now,
+        }},
+    )
+    await db.transactions.insert_one({
+        "id": new_id(),
+        "user_id": r["pro_id"],
+        "delta": r["credits_requested"],
+        "reason": "redemption_refunded",
+        "meta": {"request_id": req_id, "rejection_reason": body.reason.strip()},
+        "created_at": now,
+    })
+    await push_notification(
+        r["pro_id"],
+        "Redemption rejected ⚠️",
+        f"Your redemption request was rejected: {body.reason.strip()}. {r['credits_requested']} credits returned to your balance.",
+        "warning",
+    )
+    return {"ok": True, "status": "rejected"}
 
 
 # Register router

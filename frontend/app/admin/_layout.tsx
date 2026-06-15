@@ -45,6 +45,7 @@ export default function AdminLayout() {
       <Tabs.Screen name="jobs" options={{ title: "Jobs", tabBarIcon: ({ color, size }) => <Ionicons name="briefcase" size={size} color={color} /> }} />
       <Tabs.Screen name="interviews" options={{ title: "Interviews", tabBarIcon: ({ color, size }) => <Ionicons name="videocam" size={size} color={color} /> }} />
       <Tabs.Screen name="transactions" options={{ title: "Credits", tabBarIcon: ({ color, size }) => <Ionicons name="card" size={size} color={color} /> }} />
+      <Tabs.Screen name="redemptions" options={{ title: "Approvals", tabBarIcon: ({ color, size }) => <Ionicons name="checkmark-done-circle" size={size} color={color} /> }} />
       <Tabs.Screen name="payouts" options={{ href: null }} />
       <Tabs.Screen name="disputes" options={{ href: null }} />
     </Tabs>

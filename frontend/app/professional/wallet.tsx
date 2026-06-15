@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { View, StyleSheet, Image, Alert, TouchableOpacity } from "react-native";
+import { View, StyleSheet, Image, TouchableOpacity } from "react-native";
 import { useRouter, Stack } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
@@ -7,57 +7,76 @@ import { Screen } from "@/src/components/Screen";
 import { Txt } from "@/src/components/Txt";
 import { Card } from "@/src/components/Card";
 import { Button } from "@/src/components/Button";
-import { Input } from "@/src/components/Input";
 import { colors, radius } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
 
 const COIN = "https://static.prod-images.emergentagent.com/jobs/d2f455eb-160b-40ff-9a4e-1d583c1869b0/images/9e5ea04b28cbe7d19560f639172fa32c7ea2e010c38001356192231f7835193d.png";
 
+const MIN_REDEEM = 500;
+const INR_PER_CREDIT = 0.5;
+
+type RedemptionItem = {
+  id: string;
+  credits_requested: number;
+  amount_inr: number;
+  status: "pending" | "approved" | "paid" | "rejected";
+  upi_id: string;
+  payment_ref?: string;
+  payment_date?: string;
+  rejection_reason?: string;
+  remarks?: string;
+  created_at: string;
+};
+
+function statusColor(s: string): string {
+  if (s === "approved") return "#2563EB";
+  if (s === "paid") return colors.success;
+  if (s === "rejected") return colors.error;
+  return colors.warning; // pending
+}
+
+function StatusPill({ status }: { status: string }) {
+  const c = statusColor(status);
+  const label =
+    status === "pending" ? "Pending Approval"
+    : status === "approved" ? "Approved"
+    : status === "paid" ? "Paid"
+    : "Rejected";
+  return (
+    <View style={[styles.pill, { borderColor: c, backgroundColor: c + "1A" }]}>
+      <Txt style={{ color: c, fontWeight: "700", fontSize: 11 }} numberOfLines={1}>{label}</Txt>
+    </View>
+  );
+}
+
 export default function ProWallet() {
   const router = useRouter();
   const [data, setData] = useState<any>(null);
-  const [plans, setPlans] = useState<any>(null);
-  const [amount, setAmount] = useState("199");
+  const [reqs, setReqs] = useState<RedemptionItem[]>([]);
   const [refreshing, setRefreshing] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [historyOpen, setHistoryOpen] = useState(false);  // collapsed by default
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [redemptionsOpen, setRedemptionsOpen] = useState(true);
 
   const load = useCallback(async () => {
     setRefreshing(true);
     try {
-      const [w, p] = await Promise.all([api("/wallet"), api("/subscription/plans")]);
-      setData(w); setPlans(p);
+      const [w, r] = await Promise.all([
+        api<any>("/wallet"),
+        api<any>("/redemption/my").catch(() => ({ items: [] })),
+      ]);
+      setData(w);
+      setReqs(r?.items || []);
     } catch {}
     setRefreshing(false);
   }, []);
 
   useEffect(() => { load(); }, [load]);
 
-  async function buyCredits() {
-    const amt = parseInt(amount, 10);
-    if (!amt || amt < 1) return Alert.alert("Invalid amount");
-    setSubmitting(true);
-    try {
-      const order = await api<any>("/wallet/deposit/create-order", { method: "POST", body: { amount_inr: amt } });
-      const r = await api<any>("/wallet/deposit/confirm", {
-        method: "POST",
-        body: {
-          razorpay_order_id: order.razorpay_order_id,
-          razorpay_payment_id: `pay_mock_${Date.now()}`,
-          razorpay_signature: "mock_sig",
-        },
-      });
-      Alert.alert("Payment success", `+${r.added} credits added. Balance: ${r.credits}`);
-      load();
-    } catch (e: any) {
-      Alert.alert("Payment failed", e.message);
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
+  const credits = data?.credits ?? 0;
+  const locked = data?.locked_credits ?? 0;
   const txs = data?.transactions || [];
   const earnedToday = txs.filter((t: any) => t.delta > 0).reduce((s: number, t: any) => s + t.delta, 0);
+  const isEligible = credits >= MIN_REDEEM;
 
   return (
     <Screen refreshing={refreshing} onRefresh={load}>
@@ -75,38 +94,136 @@ export default function ProWallet() {
         end={{ x: 1, y: 1 }}
         style={styles.hero}
       >
-        <View style={{ flex: 1 }}>
-          <Txt variant="label" style={{ color: "#fff", opacity: 0.85 }}>Available Credits</Txt>
-          <Txt style={{ color: "#fff", fontSize: 48, fontWeight: "800", marginTop: 4 }} testID="wallet-credits">
-            {data?.credits ?? 0}
+        <View style={styles.heroContent}>
+          <Txt variant="label" style={{ color: "#fff", opacity: 0.85 }} numberOfLines={1} adjustsFontSizeToFit>
+            Available Credits
           </Txt>
-          <Txt style={{ color: "#fff", opacity: 0.9 }}>
-            ₹{Math.floor((data?.credits ?? 0) / 2)} payout value · {earnedToday > 0 ? `+${earnedToday} earned` : "Keep referring!"}
+          <Txt
+            style={{ color: "#fff", fontSize: 40, fontWeight: "800", marginTop: 4 }}
+            testID="wallet-credits"
+            numberOfLines={1}
+            adjustsFontSizeToFit
+          >
+            {credits}
           </Txt>
+          <Txt
+            style={{ color: "#fff", opacity: 0.95 }}
+            variant="small"
+            numberOfLines={1}
+            adjustsFontSizeToFit
+          >
+            ₹{Math.floor(credits * INR_PER_CREDIT)} payout · {earnedToday > 0 ? `+${earnedToday} today` : "Keep referring!"}
+          </Txt>
+          {locked > 0 ? (
+            <View style={styles.lockedPill}>
+              <Ionicons name="lock-closed" size={12} color="#fff" />
+              <Txt style={{ color: "#fff", fontSize: 11, fontWeight: "700", marginLeft: 4 }}>
+                {locked} locked
+              </Txt>
+            </View>
+          ) : null}
         </View>
-        <Image source={{ uri: COIN }} style={{ width: 100, height: 100 }} />
+        <Image source={{ uri: COIN }} style={styles.heroCoin} resizeMode="contain" />
       </LinearGradient>
 
       <Card highlight style={{ marginTop: 16 }}>
-        <Txt variant="label" style={{ color: colors.primary }}>How you earn</Txt>
+        <View style={{ flexDirection: "row", alignItems: "center" }}>
+          <Ionicons name="trending-up" size={18} color={colors.primary} />
+          <Txt variant="label" style={{ color: colors.primary, marginLeft: 6 }}>How you earn credits</Txt>
+        </View>
         <View style={{ marginTop: 6 }}>
           <Txt variant="small">• +35 credits per successful mock interview</Txt>
           <Txt variant="small">• +100 credits on 4 valid applications to a job you posted</Txt>
-          <Txt variant="small">• +1500 credits when a candidate you hire is verified</Txt>
+          <Txt variant="small">• +1500 credits when your hire is verified</Txt>
         </View>
       </Card>
 
+      {/* Redeem CTA (replaces Buy Credits) */}
       <Card style={{ marginTop: 12 }}>
-        <Txt variant="h3">Top up</Txt>
-        <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 4 }}>
-          Each action (apply / book) costs {plans?.paid_tier?.action_cost ?? 49} credits.
-        </Txt>
-        <Input testID="deposit-amount" label="Amount (INR)" keyboardType="number-pad" value={amount} onChangeText={setAmount} />
-        <Button testID="buy-credits" title={`Buy credits — ₹${amount || 0}`} loading={submitting} onPress={buyCredits} />
+        <View style={{ flexDirection: "row", alignItems: "center" }}>
+          <View style={styles.redeemIcon}>
+            <Ionicons name="cash" size={20} color="#7C3AED" />
+          </View>
+          <View style={{ flex: 1, marginLeft: 10 }}>
+            <Txt variant="h3">Redeem Credits</Txt>
+            <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 2 }} numberOfLines={2}>
+              Convert your credits to INR. Minimum {MIN_REDEEM} credits required. Rate: 2 credits = ₹1.
+            </Txt>
+          </View>
+        </View>
+        <Button
+          testID="redeem-credits-btn"
+          title={isEligible ? `Redeem Credits — up to ₹${Math.floor(credits * INR_PER_CREDIT)}` : `Need ${MIN_REDEEM - credits} more credits`}
+          disabled={!isEligible}
+          onPress={() => router.push("/professional/redeem")}
+          icon={<Ionicons name="arrow-forward-circle" size={18} color="#fff" />}
+          style={{ marginTop: 12 }}
+        />
+        {!isEligible ? (
+          <Txt variant="small" style={{ color: colors.warning, marginTop: 6 }}>
+            Minimum {MIN_REDEEM} credits are required to submit a redemption request.
+          </Txt>
+        ) : null}
       </Card>
 
+      {/* Redemption history */}
+      <TouchableOpacity
+        testID="toggle-redemptions"
+        onPress={() => setRedemptionsOpen(v => !v)}
+        style={styles.historyHeader}
+        activeOpacity={0.7}
+      >
+        <View style={{ flexDirection: "row", alignItems: "center" }}>
+          <Ionicons name="document-text" size={18} color={colors.textSecondary} />
+          <Txt variant="h3" style={{ marginLeft: 6 }}>Redemption Requests ({reqs.length})</Txt>
+        </View>
+        <Ionicons name={redemptionsOpen ? "chevron-up" : "chevron-down"} size={22} color={colors.textSecondary} />
+      </TouchableOpacity>
+
+      {redemptionsOpen ? (
+        <View style={{ marginTop: 8, gap: 8 }}>
+          {reqs.length === 0 ? (
+            <Txt variant="muted">No redemption requests yet.</Txt>
+          ) : null}
+          {reqs.map((r) => (
+            <Card key={r.id} padding={12}>
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap" }}>
+                    <Txt style={{ fontWeight: "700" }}>{r.credits_requested} credits</Txt>
+                    <Txt variant="small" style={{ color: colors.textSecondary, marginLeft: 6 }}>
+                      → ₹{r.amount_inr?.toFixed(2)}
+                    </Txt>
+                  </View>
+                  <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 2 }}>
+                    {new Date(r.created_at).toLocaleString()}
+                  </Txt>
+                  <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 2 }} numberOfLines={1}>
+                    UPI: {r.upi_id}
+                  </Txt>
+                  {r.status === "paid" && r.payment_ref ? (
+                    <Txt variant="small" style={{ color: colors.success, marginTop: 4 }} numberOfLines={2}>
+                      ✅ Ref: {r.payment_ref}{r.payment_date ? ` · ${new Date(r.payment_date).toLocaleDateString()}` : ""}
+                    </Txt>
+                  ) : null}
+                  {r.status === "rejected" && r.rejection_reason ? (
+                    <Txt variant="small" style={{ color: colors.error, marginTop: 4 }} numberOfLines={2}>
+                      ⚠️ {r.rejection_reason}
+                    </Txt>
+                  ) : null}
+                </View>
+                <StatusPill status={r.status} />
+              </View>
+            </Card>
+          ))}
+        </View>
+      ) : null}
+
       <TouchableOpacity testID="toggle-history" onPress={() => setHistoryOpen((v) => !v)} style={styles.historyHeader}>
-        <Txt variant="h3">View Credit History</Txt>
+        <View style={{ flexDirection: "row", alignItems: "center" }}>
+          <Ionicons name="time" size={18} color={colors.textSecondary} />
+          <Txt variant="h3" style={{ marginLeft: 6 }}>Credit History</Txt>
+        </View>
         <Ionicons name={historyOpen ? "chevron-up" : "chevron-down"} size={22} color={colors.textSecondary} />
       </TouchableOpacity>
 
@@ -128,9 +245,14 @@ export default function ProWallet() {
                       {t.meta.candidate_name}{t.meta?.job_title ? ` · ${t.meta.job_title}` : ""}
                     </Txt>
                   ) : null}
+                  {t.meta?.payment_ref ? (
+                    <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 2 }} numberOfLines={1}>
+                      Ref: {t.meta.payment_ref}
+                    </Txt>
+                  ) : null}
                 </View>
-                <Txt style={{ fontWeight: "800", color: t.delta >= 0 ? colors.success : colors.error }}>
-                  {t.delta >= 0 ? "+" : ""}{t.delta}
+                <Txt style={{ fontWeight: "800", color: t.delta > 0 ? colors.success : (t.delta < 0 ? colors.error : colors.textSecondary) }}>
+                  {t.delta > 0 ? "+" : ""}{t.delta}
                 </Txt>
               </View>
             </Card>
@@ -143,6 +265,16 @@ export default function ProWallet() {
 
 const styles = StyleSheet.create({
   backBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
-  hero: { marginTop: 6, padding: 20, borderRadius: radius.xxl, flexDirection: "row", alignItems: "center" },
-  historyHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 24, paddingVertical: 10 },
+  hero: { marginTop: 6, padding: 18, borderRadius: radius.xxl, flexDirection: "row", alignItems: "center" },
+  heroContent: { flex: 1, minWidth: 0, paddingRight: 8 },
+  heroCoin: { width: 80, height: 80, marginLeft: 8 },
+  lockedPill: {
+    marginTop: 8, alignSelf: "flex-start",
+    flexDirection: "row", alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.25)",
+    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12,
+  },
+  redeemIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: "#7C3AED1F", alignItems: "center", justifyContent: "center" },
+  historyHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 18, paddingVertical: 10 },
+  pill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, borderWidth: 1, alignSelf: "center" },
 });
