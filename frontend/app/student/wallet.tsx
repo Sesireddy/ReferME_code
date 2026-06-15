@@ -80,6 +80,12 @@ export default function StudentWallet() {
   }
 
   const credits = data?.credits ?? 0;
+  // Format with Indian thousand separators and pick a font size that fits up to 8 digits
+  const creditsLabel = (credits || 0).toLocaleString("en-IN");
+  const balanceFont =
+    creditsLabel.length <= 4 ? 52 :
+    creditsLabel.length <= 6 ? 42 :
+    creditsLabel.length <= 8 ? 34 : 28;
 
   return (
     <Screen refreshing={refreshing} onRefresh={load}>
@@ -111,13 +117,14 @@ export default function StudentWallet() {
             AVAILABLE CREDITS
           </Txt>
           <Txt
-            style={styles.balanceNumber}
+            style={[styles.balanceNumber, { fontSize: balanceFont, lineHeight: balanceFont + 4 }]}
             testID="wallet-credits"
             numberOfLines={1}
             adjustsFontSizeToFit
-            minimumFontScale={0.5}
+            minimumFontScale={0.4}
+            allowFontScaling={false}
           >
-            {credits}
+            {creditsLabel}
           </Txt>
         </View>
         <Image source={{ uri: COIN }} style={styles.heroCoin} resizeMode="contain" />
@@ -199,10 +206,7 @@ const styles = StyleSheet.create({
   heroCoin: { width: 80, height: 80, marginLeft: 8 },
   balanceNumber: {
     color: "#fff",
-    fontSize: 52,
     fontWeight: "900",
     marginTop: 6,
-    letterSpacing: 0.5,
-    lineHeight: 58,
   },
 });
