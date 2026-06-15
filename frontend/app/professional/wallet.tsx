@@ -75,13 +75,12 @@ export default function ProWallet() {
   const credits = data?.credits ?? 0;
   const locked = data?.locked_credits ?? 0;
   const txs = data?.transactions || [];
-  const earnedToday = txs.filter((t: any) => t.delta > 0).reduce((s: number, t: any) => s + t.delta, 0);
   const isEligible = credits >= MIN_REDEEM;
 
   return (
     <Screen refreshing={refreshing} onRefresh={load}>
-      <Stack.Screen options={{ headerShown: true, title: "Wallet" }} />
-      <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 6 }}>
+      <Stack.Screen options={{ headerShown: false }} />
+      <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 10 }}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={22} color={colors.textPrimary} />
         </TouchableOpacity>
@@ -95,24 +94,23 @@ export default function ProWallet() {
         style={styles.hero}
       >
         <View style={styles.heroContent}>
-          <Txt variant="label" style={{ color: "#fff", opacity: 0.85 }} numberOfLines={1} adjustsFontSizeToFit>
-            Available Credits
+          <Txt
+            variant="label"
+            style={{ color: "#fff", opacity: 0.9, letterSpacing: 1 }}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.7}
+          >
+            AVAILABLE CREDITS
           </Txt>
           <Txt
-            style={{ color: "#fff", fontSize: 40, fontWeight: "800", marginTop: 4 }}
+            style={styles.balanceNumber}
             testID="wallet-credits"
             numberOfLines={1}
             adjustsFontSizeToFit
+            minimumFontScale={0.5}
           >
             {credits}
-          </Txt>
-          <Txt
-            style={{ color: "#fff", opacity: 0.95 }}
-            variant="small"
-            numberOfLines={1}
-            adjustsFontSizeToFit
-          >
-            ₹{Math.floor(credits * INR_PER_CREDIT)} payout · {earnedToday > 0 ? `+${earnedToday} today` : "Keep referring!"}
           </Txt>
           {locked > 0 ? (
             <View style={styles.lockedPill}>
@@ -265,9 +263,17 @@ export default function ProWallet() {
 
 const styles = StyleSheet.create({
   backBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
-  hero: { marginTop: 6, padding: 18, borderRadius: radius.xxl, flexDirection: "row", alignItems: "center" },
+  hero: { padding: 20, borderRadius: radius.xxl, flexDirection: "row", alignItems: "center", minHeight: 130 },
   heroContent: { flex: 1, minWidth: 0, paddingRight: 8 },
   heroCoin: { width: 80, height: 80, marginLeft: 8 },
+  balanceNumber: {
+    color: "#fff",
+    fontSize: 52,
+    fontWeight: "900",
+    marginTop: 6,
+    letterSpacing: 0.5,
+    lineHeight: 58,
+  },
   lockedPill: {
     marginTop: 8, alignSelf: "flex-start",
     flexDirection: "row", alignItems: "center",
