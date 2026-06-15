@@ -607,14 +607,24 @@ async def signup(body: SignupBody):
         "name": body.name or "",
         "is_email_verified": False,
         "account_status": "active",  # active | suspended
-        "credits": 0,
-        "free_uses_left": FREE_TIER_ACTIONS * 2,
+        "credits": 100 if body.role == "student" else 0,
+        "free_uses_left": 0 if body.role == "student" else (FREE_TIER_ACTIONS * 2),
         "total_deposits": 0,
         "profile_complete": False,
         "profile": {},
         "created_at": now_iso(),
     }
     await db.users.insert_one(user_doc)
+    # Signup bonus ledger entry for Job Seekers (Students)
+    if body.role == "student":
+        await db.transactions.insert_one({
+            "id": new_id(),
+            "user_id": user_doc["id"],
+            "delta": 100,
+            "reason": "signup_bonus",
+            "meta": {"label": "Signup Bonus - 100 Credits"},
+            "created_at": now_iso(),
+        })
     otp_code = f"{secrets.randbelow(10**6):06d}"
     await db.otps.insert_one({
         "id": new_id(),
@@ -797,15 +807,17 @@ async def google_login(body: GoogleSessionBody):
         raise HTTPException(status_code=400, detail="Email missing from provider")
     u = await db.users.find_one({"email": email}, {"_id": 0})
     if not u:
+        # Auto-create user
+        role = body.role or "student"
         u = {
             "id": new_id(),
             "email": email,
             "password_hash": hash_password(secrets.token_urlsafe(16)),
-            "role": body.role or "student",
+            "role": role,
             "name": data.get("name") or "",
             "is_email_verified": True,
-            "credits": 0,
-            "free_uses_left": FREE_TIER_ACTIONS * 2,
+            "credits": 100 if role == "student" else 0,
+            "free_uses_left": 0 if role == "student" else (FREE_TIER_ACTIONS * 2),
             "total_deposits": 0,
             "profile_complete": False,
             "profile": {"picture": data.get("picture")},
@@ -813,6 +825,15 @@ async def google_login(body: GoogleSessionBody):
             "created_at": now_iso(),
         }
         await db.users.insert_one(u)
+        if role == "student":
+            await db.transactions.insert_one({
+                "id": new_id(),
+                "user_id": u["id"],
+                "delta": 100,
+                "reason": "signup_bonus",
+                "meta": {"label": "Signup Bonus - 100 Credits"},
+                "created_at": now_iso(),
+            })
         u.pop("_id", None)
     token = create_jwt(u["id"], u["role"])
     return {"token": token, "user": user_public(u)}

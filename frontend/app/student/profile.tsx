@@ -527,7 +527,7 @@ export default function StudentProfile() {
               {wallet.credits}
             </Txt>
             <Txt style={{ color: "#fff", opacity: 0.9 }} variant="small">
-              credits available · {wallet.free_uses_left} free uses
+              credits available
             </Txt>
           </View>
         </View>
