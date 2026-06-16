@@ -139,7 +139,8 @@ export default function ProPostJob() {
       />
       <ConfirmDialog
         visible={success}
-        title="Job posted successfully."
+        title="Job Posted"
+        message="Your job posting is now live."
         confirmLabel="OK"
         cancelLabel=""
         onCancel={() => setSuccess(false)}

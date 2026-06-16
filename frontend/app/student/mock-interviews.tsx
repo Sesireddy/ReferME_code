@@ -278,8 +278,8 @@ export default function MockInterviews() {
       />
       <ConfirmDialog
         visible={bookSuccessOpen}
-        title="Mock Interview booked successfully."
-        message="Meeting invitation has been sent to both participants."
+        title="Mock Interview Booked"
+        message="Your mock interview has been booked successfully. Meeting invitation has been sent to both participants."
         confirmLabel="OK"
         cancelLabel=""
         onCancel={() => setBookSuccessOpen(false)}

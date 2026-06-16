@@ -12,6 +12,7 @@ import { DatePickerField, TimePickerField } from "@/src/components/DateTimePicke
 import { ConfirmDialog } from "@/src/components/ConfirmDialog";
 import { colors, radius } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
+import { successAlert } from "@/src/lib/successAlert";
 import { useRouter } from "expo-router";
 import { EXPERIENCE_OPTIONS } from "@/src/lib/constants";
 
@@ -106,7 +107,7 @@ export default function ProSlots() {
         },
       });
       setTopic("");
-      Alert.alert("Slot created", `${fromTime} – ${toTime} on ${date}`);
+      successAlert.show({ title: "Slot Created", message: `${fromTime} – ${toTime} on ${date}` });
       load();
     } catch (e: any) {
       Alert.alert("Cannot create slot", e.message);

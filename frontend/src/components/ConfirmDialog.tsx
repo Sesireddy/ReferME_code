@@ -35,19 +35,21 @@ export function ConfirmDialog({
           {message ? (
             <Txt variant="muted" style={{ textAlign: "center", marginTop: 8 }}>{message}</Txt>
           ) : null}
-          <View style={{ flexDirection: "row", gap: 10, marginTop: 22 }}>
-            <Button
-              testID="confirm-cancel"
-              title={cancelLabel}
-              variant="secondary"
-              onPress={onCancel}
-              style={{ flex: 1 }}
-            />
+          <View style={{ flexDirection: "row", gap: 10, marginTop: 22, justifyContent: cancelLabel ? "flex-start" : "center" }}>
+            {cancelLabel ? (
+              <Button
+                testID="confirm-cancel"
+                title={cancelLabel}
+                variant="secondary"
+                onPress={onCancel}
+                style={{ flex: 1 }}
+              />
+            ) : null}
             <Button
               testID="confirm-ok"
               title={confirmLabel}
               onPress={onConfirm}
-              style={{ flex: 1, ...(destructive ? { backgroundColor: colors.error } : {}) }}
+              style={cancelLabel ? { flex: 1, ...(destructive ? { backgroundColor: colors.error } : {}) } : { minWidth: 160, paddingHorizontal: 32, ...(destructive ? { backgroundColor: colors.error } : {}) }}
             />
           </View>
         </View>

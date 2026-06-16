@@ -10,6 +10,7 @@ import { Button } from "@/src/components/Button";
 import { Input } from "@/src/components/Input";
 import { colors, radius } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
+import { successAlert } from "@/src/lib/successAlert";
 
 const COIN =
   "https://static.prod-images.emergentagent.com/jobs/d2f455eb-160b-40ff-9a4e-1d583c1869b0/images/9e5ea04b28cbe7d19560f639172fa32c7ea2e010c38001356192231f7835193d.png";
@@ -70,7 +71,10 @@ export default function StudentWallet() {
           razorpay_signature: "mock_sig",
         },
       });
-      Alert.alert("Payment success", `+${r.added} credits added. Balance: ${r.credits}`);
+      successAlert.show({
+        title: "Payment Successful",
+        message: `${r.added} credits have been added to your wallet. New balance: ${r.credits}.`,
+      });
       load();
     } catch (e: any) {
       Alert.alert("Payment failed", e.message);

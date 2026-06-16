@@ -9,6 +9,7 @@ import { Button } from "@/src/components/Button";
 import { Input } from "@/src/components/Input";
 import { colors, radius } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
+import { successAlert } from "@/src/lib/successAlert";
 
 export default function JobApplicants() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -50,7 +51,7 @@ export default function JobApplicants() {
       });
       setReferApp(null);
       setReferNote("");
-      Alert.alert("Referred ✅", "Status updated: Applied → Shortlisted → Referred");
+      successAlert.show({ title: "Candidate Referred", message: "Status updated: Applied → Shortlisted → Referred." });
       load();
     } catch (e: any) {
       Alert.alert("Error", e.message);
@@ -76,7 +77,7 @@ export default function JobApplicants() {
       setHireApp(null);
       setHireNote("");
       setProofB64("");
-      Alert.alert("Submitted ✅", "Hire is pending admin verification. +1500 credits will be added once approved.");
+      successAlert.show({ title: "Hire Submitted", message: "Hire is pending admin verification. +1500 credits will be added once approved." });
       load();
     } catch (e: any) {
       Alert.alert("Error", e.message);

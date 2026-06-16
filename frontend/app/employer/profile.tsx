@@ -9,6 +9,7 @@ import { Button } from "@/src/components/Button";
 import { Input } from "@/src/components/Input";
 import { colors } from "@/src/theme/tokens";
 import { api, clearSession } from "@/src/lib/api";
+import { successAlert } from "@/src/lib/successAlert";
 import { ScreenTitle } from "@/src/components/ScreenTitle";
 
 export default function EmpProfile() {
@@ -45,7 +46,7 @@ export default function EmpProfile() {
         method: "PUT",
         body: { name, company_name: company, company_website: website, company_size: size, bio },
       });
-      Alert.alert("Saved");
+      successAlert.show({ title: "Profile Saved", message: "Your changes have been saved successfully." });
     } catch (e: any) {
       Alert.alert("Failed", e.message);
     } finally { setBusy(false); }

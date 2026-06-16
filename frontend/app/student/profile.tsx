@@ -15,6 +15,7 @@ import { Input } from "@/src/components/Input";
 import { Picker } from "@/src/components/Picker";
 import { colors, radius } from "@/src/theme/tokens";
 import { api, clearSession } from "@/src/lib/api";
+import { successAlert } from "@/src/lib/successAlert";
 import { ConfirmDialog } from "@/src/components/ConfirmDialog";
 import {
   EDUCATION_OPTIONS,
@@ -435,7 +436,10 @@ export default function StudentProfile() {
       if (res.user?.profile_complete) {
         setMode("view");
       }
-      Alert.alert("Saved", res.user.profile_complete ? "Profile complete!" : "Almost there. Fill any missing fields.");
+      successAlert.show({
+        title: "Profile Saved",
+        message: res.user.profile_complete ? "Profile is complete!" : "Almost there. Fill any missing fields.",
+      });
     } catch (e: any) {
       Alert.alert("Save failed", e.message);
     } finally {

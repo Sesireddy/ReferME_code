@@ -329,7 +329,8 @@ export default function StudentJobs() {
 
       <ConfirmDialog
         visible={appliedOk}
-        title="Application submitted successfully."
+        title="Application Submitted"
+        message="Your job application has been submitted successfully."
         confirmLabel="OK"
         cancelLabel=""
         onCancel={() => setAppliedOk(false)}

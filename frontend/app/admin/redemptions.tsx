@@ -9,6 +9,7 @@ import { Button } from "@/src/components/Button";
 import { ScreenTitle } from "@/src/components/ScreenTitle";
 import { colors } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
+import { successAlert } from "@/src/lib/successAlert";
 
 type Req = {
   id: string;
@@ -105,7 +106,7 @@ export default function AdminRedemptions() {
           onPress: async () => {
             try {
               await api(`/admin/redemption-requests/${r.id}/approve`, { method: "POST" });
-              Alert.alert("Approved", "Status updated to Approved.");
+              successAlert.show({ title: "Request Approved", message: "The redemption request status has been updated to Approved." });
               load();
             } catch (e: any) {
               Alert.alert("Failed", e.message || "Could not approve.");
@@ -138,7 +139,7 @@ export default function AdminRedemptions() {
         },
       });
       setPaidOpen(false);
-      Alert.alert("Marked as Paid", "Working Professional has been notified.");
+      successAlert.show({ title: "Marked as Paid", message: "The Working Professional has been notified about the successful payment." });
       load();
     } catch (e: any) {
       Alert.alert("Failed", e.message || "Could not mark as paid.");
@@ -163,7 +164,7 @@ export default function AdminRedemptions() {
         body: { reason: rejReason.trim() },
       });
       setRejectOpen(false);
-      Alert.alert("Rejected", "Locked credits returned to the Professional.");
+      successAlert.show({ title: "Request Rejected", message: "The locked credits have been returned to the Professional's available balance." });
       load();
     } catch (e: any) {
       Alert.alert("Failed", e.message || "Could not reject.");

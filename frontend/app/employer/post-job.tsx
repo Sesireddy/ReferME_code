@@ -6,6 +6,7 @@ import { Card } from "@/src/components/Card";
 import { Input } from "@/src/components/Input";
 import { Button } from "@/src/components/Button";
 import { api } from "@/src/lib/api";
+import { successAlert } from "@/src/lib/successAlert";
 import { ScreenTitle } from "@/src/components/ScreenTitle";
 
 export default function PostJob() {
@@ -32,7 +33,7 @@ export default function PostJob() {
           bulk_openings: parseInt(openings || "1", 10),
         },
       });
-      Alert.alert("Posted", "Job is live now.");
+      successAlert.show({ title: "Job Posted", message: "Your job posting is now live." });
       setTitle(""); setDesc(""); setLocation(""); setSalary(""); setSkills(""); setOpenings("1");
     } catch (e: any) {
       Alert.alert("Failed", e.message);

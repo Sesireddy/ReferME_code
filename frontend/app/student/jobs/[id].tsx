@@ -9,6 +9,7 @@ import { Card } from "@/src/components/Card";
 import { Button } from "@/src/components/Button";
 import { colors } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
+import { successAlert } from "@/src/lib/successAlert";
 
 export default function JobDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -40,7 +41,11 @@ export default function JobDetail() {
     setBusy(true);
     try {
       const r = await api<{ used_free?: boolean }>("/jobs/apply", { method: "POST", body: { job_id: id } });
-      Alert.alert("Applied ✅", r.used_free ? "Used a free token!" : "49 credits spent.");
+      successAlert.show({
+        title: "Application Submitted",
+        message: "Your job application has been submitted successfully.",
+        onOk: () => router.back(),
+      });
       load();
     } catch (e: any) {
       const msg = e.message || "";
