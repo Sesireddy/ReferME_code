@@ -24,12 +24,24 @@ export function SuccessAlertHost() {
 
   if (!cfg) return null;
 
+  const intent = cfg.intent || "success";
+  const iconName: any =
+    intent === "warning" ? "warning"
+    : intent === "error" ? "close-circle"
+    : intent === "info" ? "information-circle"
+    : "checkmark-circle";
+  const iconColor =
+    intent === "warning" ? colors.warning
+    : intent === "error" ? colors.error
+    : intent === "info" ? colors.primary
+    : colors.success;
+
   return (
     <Modal visible transparent animationType="fade" onRequestClose={successAlert.close} statusBarTranslucent>
       <Pressable style={styles.backdrop} onPress={() => { /* tap outside does nothing */ }}>
         <View style={styles.card}>
-          <View style={styles.iconWrap}>
-            <Ionicons name="checkmark-circle" size={56} color={colors.success} />
+          <View style={[styles.iconWrap, { backgroundColor: iconColor + "1F" }]}>
+            <Ionicons name={iconName} size={56} color={iconColor} />
           </View>
           <Txt variant="h2" style={styles.title}>
             {cfg.title}
@@ -81,7 +93,6 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: (colors.success || "#10B981") + "1F",
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 8,

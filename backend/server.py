@@ -1491,6 +1491,31 @@ def _can_use_free(u: dict, kind: str) -> bool:
 
 @api.post("/interviews/book")
 async def book_interview(body: BookInterviewBody, u: dict = Depends(require_role(["student"]))):
+    # ---- Overlap check: prevent multiple bookings for the same/overlapping time period ----
+    target = await db.interview_slots.find_one(
+        {"id": body.slot_id},
+        {"_id": 0, "start_at": 1, "end_at": 1, "status": 1},
+    )
+    if not target:
+        raise HTTPException(status_code=404, detail="Slot not found")
+    if target.get("status") != "available":
+        raise HTTPException(status_code=400, detail="Slot not available")
+    new_start = target.get("start_at", "")
+    new_end = target.get("end_at", "")
+    if new_start and new_end:
+        # Overlap: existing.start < new.end AND existing.end > new.start
+        conflict = await db.interview_bookings.find_one({
+            "student_id": u["id"],
+            "status": {"$in": ["booked", "completed"]},
+            "start_at": {"$lt": new_end},
+            "end_at": {"$gt": new_start},
+        })
+        if conflict:
+            raise HTTPException(
+                status_code=409,
+                detail="You already have a mock interview scheduled during this time. Please select a different time slot.",
+            )
+
     # Atomic claim: only one student can flip available -> booked.
     booked_at_iso = now_iso()
     res = await db.interview_slots.find_one_and_update(

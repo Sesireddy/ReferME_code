@@ -12,6 +12,7 @@ import { DatePickerField } from "@/src/components/DateTimePicker";
 import { ConfirmDialog } from "@/src/components/ConfirmDialog";
 import { colors, radius } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
+import { successAlert } from "@/src/lib/successAlert";
 import { useRouter } from "expo-router";
 
 // Format a slot's time range like "10:00 AM – 10:30 AM"
@@ -33,6 +34,7 @@ export default function MockInterviews() {
   const router = useRouter();
   const [pros, setPros] = useState<any[]>([]);
   const [slots, setSlots] = useState<any[]>([]);
+  const [myBookings, setMyBookings] = useState<{ start_at: string; end_at: string }[]>([]);
   const [selectedPro, setSelectedPro] = useState<any | null>(null);
   const [pendingBookSlotId, setPendingBookSlotId] = useState<string | null>(null);
   const [bookSuccessOpen, setBookSuccessOpen] = useState(false);
@@ -41,6 +43,31 @@ export default function MockInterviews() {
   const [categoryFilter, setCategoryFilter] = useState<string | null>("");
   const [refreshing, setRefreshing] = useState(false);
 
+  // Two ISO time ranges [a1,a2) and [b1,b2) overlap iff a1<b2 AND a2>b1
+  const hasOverlap = useCallback(
+    (start: string, end: string): boolean => {
+      if (!start || !end) return false;
+      const s = new Date(start).getTime();
+      const e = new Date(end).getTime();
+      return myBookings.some((b) => {
+        const bs = new Date(b.start_at).getTime();
+        const be = new Date(b.end_at).getTime();
+        return s < be && e > bs;
+      });
+    },
+    [myBookings],
+  );
+
+  const loadMyBookings = useCallback(async () => {
+    try {
+      const r = await api<any[]>("/interviews/my-bookings");
+      const active = (r || []).filter((b) => b.status === "booked" || b.status === "completed");
+      setMyBookings(active.map((b) => ({ start_at: b.start_at, end_at: b.end_at })));
+    } catch {
+      // ignore
+    }
+  }, []);
+
   const load = useCallback(async () => {
     setRefreshing(true);
     try {
@@ -48,13 +75,16 @@ export default function MockInterviews() {
       if (skillFilter.trim()) params.set("skill", skillFilter.trim());
       if (dateFilter) params.set("date", dateFilter);
       if (categoryFilter) params.set("category", categoryFilter);
-      const p = await api<any[]>(`/professionals?${params.toString()}`);
+      const [p] = await Promise.all([
+        api<any[]>(`/professionals?${params.toString()}`),
+        loadMyBookings(),
+      ]);
       setPros(p);
     } catch {
       setPros([]);
     }
     setRefreshing(false);
-  }, [skillFilter, dateFilter, categoryFilter]);
+  }, [skillFilter, dateFilter, categoryFilter, loadMyBookings]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -91,16 +121,36 @@ export default function MockInterviews() {
   async function confirmBookSlot() {
     if (!pendingBookSlotId) return;
     const slotId = pendingBookSlotId;
+    // Client-side guard: if the slot's range overlaps with an existing booking, block immediately.
+    const slotObj = slots.find((s) => s.id === slotId);
+    if (slotObj && hasOverlap(slotObj.start_at, slotObj.end_at)) {
+      setPendingBookSlotId(null);
+      successAlert.show({
+        title: "Booking Not Allowed",
+        message: "You already have a mock interview scheduled during this time. Please select a different time slot.",
+        intent: "warning",
+      });
+      return;
+    }
     setPendingBookSlotId(null);
     try {
       await api<{ used_free?: boolean; meeting_url?: string }>("/interviews/book", { method: "POST", body: { slot_id: slotId } });
       setBookSuccessOpen(true);
+      // Refresh bookings to update Time Conflict markers
+      loadMyBookings();
       // Refresh the open pro's slot grid AND the outer listing so "fully_booked" updates immediately.
       if (selectedPro) await refreshOpenProSlots(selectedPro.id);
       load();
     } catch (e: any) {
       const msg = e.message || "";
-      if (/insufficient credit/i.test(msg)) {
+      if (/already have a mock interview/i.test(msg) || /schedul.*during this time/i.test(msg)) {
+        successAlert.show({
+          title: "Booking Not Allowed",
+          message: "You already have a mock interview scheduled during this time. Please select a different time slot.",
+          intent: "warning",
+        });
+        loadMyBookings();
+      } else if (/insufficient credit/i.test(msg)) {
         Alert.alert("Insufficient credits", "Please add credits to continue booking this interview.", [
           { text: "Add Credits", onPress: () => router.push("/student/wallet") },
           { text: "Cancel", style: "cancel" },
@@ -235,6 +285,7 @@ export default function MockInterviews() {
                   </Txt>
                   {g.items.map((s) => {
                     const isBooked = s.status === "booked";
+                    const conflict = !isBooked && hasOverlap(s.start_at, s.end_at);
                     return (
                       <Card key={s.id} style={styles.slotRow}>
                         <View style={{ flex: 1 }}>
@@ -249,6 +300,11 @@ export default function MockInterviews() {
                           <View testID={`slot-${s.id}-booked`} style={styles.bookedTag}>
                             <Ionicons name="lock-closed" size={14} color="#9CA3AF" />
                             <Txt style={{ marginLeft: 4, color: "#9CA3AF", fontWeight: "700" }}>Booked</Txt>
+                          </View>
+                        ) : conflict ? (
+                          <View testID={`slot-${s.id}-conflict`} style={styles.conflictTag}>
+                            <Ionicons name="warning" size={14} color={colors.warning} />
+                            <Txt style={{ marginLeft: 4, color: colors.warning, fontWeight: "700", fontSize: 12 }}>Time Conflict</Txt>
                           </View>
                         ) : (
                           <Button
@@ -296,5 +352,6 @@ const styles = StyleSheet.create({
   modal: { backgroundColor: colors.bg, borderTopLeftRadius: radius.xxl, borderTopRightRadius: radius.xxl, padding: 24, maxHeight: "82%" },
   bookedPill: { flexDirection: "row", alignItems: "center", backgroundColor: "#F3F4F6", borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8, borderWidth: 1, borderColor: "#E5E7EB" },
   bookedTag: { flexDirection: "row", alignItems: "center", backgroundColor: "#F3F4F6", borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: "#E5E7EB" },
+  conflictTag: { flexDirection: "row", alignItems: "center", backgroundColor: "#FEF3C7", borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: "#FDE68A" },
   slotRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
 });
