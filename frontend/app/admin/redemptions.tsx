@@ -7,6 +7,7 @@ import { Card } from "@/src/components/Card";
 import { Input } from "@/src/components/Input";
 import { Button } from "@/src/components/Button";
 import { ScreenTitle } from "@/src/components/ScreenTitle";
+import { ExportMenu } from "@/src/components/ExportMenu";
 import { colors } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
 import { successAlert } from "@/src/lib/successAlert";
@@ -186,6 +187,7 @@ export default function AdminRedemptions() {
             subtitle="Credit Redemption Requests"
           />
         </View>
+        <ExportMenu entity="redemptions" label="Export Redemptions" />
       </View>
 
       <Input

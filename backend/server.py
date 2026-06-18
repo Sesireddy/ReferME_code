@@ -3691,6 +3691,166 @@ async def admin_cancel_slot_booking(slot_id: str, body: AdminCancelBookingBody, 
     return await admin_cancel_booking(bk["id"], body, admin)
 
 
+# ============================================================
+# ADMIN EXPORTS — CSV & PDF for Users / Jobs / Interviews / Credits / Redemptions
+# ============================================================
+import csv as _csv
+import io as _io
+from fastapi.responses import StreamingResponse
+from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib import colors as rl_colors
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+
+
+def _stream_csv(rows: list[list[Any]], header: list[str], filename: str) -> StreamingResponse:
+    buf = _io.StringIO()
+    w = _csv.writer(buf)
+    w.writerow(header)
+    for r in rows:
+        w.writerow(["" if v is None else str(v) for v in r])
+    buf.seek(0)
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}.csv"'},
+    )
+
+
+def _stream_pdf(rows: list[list[Any]], header: list[str], title: str, filename: str) -> StreamingResponse:
+    buf = _io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=landscape(A4), leftMargin=18, rightMargin=18, topMargin=24, bottomMargin=18)
+    styles = getSampleStyleSheet()
+    story: list[Any] = [
+        Paragraph(f"<b>ReferME · {title}</b>", styles["Title"]),
+        Paragraph(f"Exported on {now_iso()} · {len(rows)} record(s)", styles["Normal"]),
+        Spacer(1, 8),
+    ]
+    data = [header] + [["" if v is None else str(v)[:80] for v in r] for r in rows]
+    t = Table(data, repeatRows=1)
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), rl_colors.HexColor("#FF5A5F")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), rl_colors.whitesmoke),
+        ("FONTSIZE", (0, 0), (-1, -1), 7),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("GRID", (0, 0), (-1, -1), 0.25, rl_colors.HexColor("#E5E7EB")),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [rl_colors.whitesmoke, rl_colors.white]),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    story.append(t)
+    doc.build(story)
+    buf.seek(0)
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}.pdf"'},
+    )
+
+
+def _serve(rows: list[list[Any]], header: list[str], filename: str, title: str, fmt: str):
+    fmt = (fmt or "csv").lower()
+    if fmt == "pdf":
+        return _stream_pdf(rows, header, title, filename)
+    return _stream_csv(rows, header, filename)
+
+
+@api.get("/admin/export/users")
+async def admin_export_users(fmt: str = Query("csv"), _: dict = Depends(admin_only)):
+    users = await db.users.find({}, {"_id": 0, "password_hash": 0}).to_list(10000)
+    header = ["ID", "Name", "Email", "Role", "Status", "Credits", "Locked Credits", "Email Verified", "Mobile", "Mobile Verified", "Created At"]
+    rows = [
+        [
+            u.get("id"), u.get("name"), u.get("email"), u.get("role"),
+            u.get("account_status", "active"),
+            u.get("credits", 0), u.get("locked_credits", 0),
+            "Yes" if u.get("is_email_verified") else "No",
+            (u.get("profile") or {}).get("phone", ""),
+            "Yes" if (u.get("profile") or {}).get("phone_verified") else "No",
+            u.get("created_at", ""),
+        ]
+        for u in users
+    ]
+    return _serve(rows, header, f"referme_users_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}", "Users Export", fmt)
+
+
+@api.get("/admin/export/jobs")
+async def admin_export_jobs(fmt: str = Query("csv"), _: dict = Depends(admin_only)):
+    jobs = await db.jobs.find({}, {"_id": 0}).to_list(10000)
+    header = ["ID", "Title", "Company", "Location", "Industry", "Salary Range", "Status", "Posted By Email", "Created At"]
+    rows = [
+        [
+            j.get("id"), j.get("title"), j.get("company_name", ""),
+            j.get("location"), j.get("industry_type", ""), j.get("salary_range", ""),
+            j.get("status", "active"), j.get("poster_email", ""),
+            j.get("created_at", ""),
+        ]
+        for j in jobs
+    ]
+    return _serve(rows, header, f"referme_jobs_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}", "Jobs Export", fmt)
+
+
+@api.get("/admin/export/interviews")
+async def admin_export_interviews(fmt: str = Query("csv"), _: dict = Depends(admin_only)):
+    slots = await db.interview_slots.find({}, {"_id": 0}).to_list(10000)
+    header = ["Slot ID", "Pro Name", "Pro Email", "Student Name", "Student Email", "Skills", "Category", "Start At", "End At", "Status", "Meeting URL"]
+    rows = [
+        [
+            s.get("id"), s.get("pro_name"), s.get("pro_email", ""),
+            s.get("student_name", ""), s.get("student_email", ""),
+            ", ".join(s.get("skill_set", []) or []),
+            s.get("category", ""), s.get("start_at", ""), s.get("end_at", ""),
+            s.get("status", ""), s.get("meeting_url", ""),
+        ]
+        for s in slots
+    ]
+    return _serve(rows, header, f"referme_interviews_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}", "Interview Slots Export", fmt)
+
+
+@api.get("/admin/export/transactions")
+async def admin_export_transactions(fmt: str = Query("csv"), _: dict = Depends(admin_only)):
+    txs = await db.transactions.find({}, {"_id": 0}).sort("created_at", -1).to_list(20000)
+    # Resolve user emails for richer output
+    user_ids = list({t.get("user_id") for t in txs if t.get("user_id")})
+    user_map: dict[str, dict] = {}
+    if user_ids:
+        async for u in db.users.find({"id": {"$in": user_ids}}, {"_id": 0, "id": 1, "email": 1, "name": 1, "role": 1}):
+            user_map[u["id"]] = u
+    header = ["Tx ID", "User Email", "User Role", "Delta", "Reason", "Label", "Created At"]
+    rows = [
+        [
+            t.get("id"),
+            (user_map.get(t.get("user_id", "")) or {}).get("email", ""),
+            (user_map.get(t.get("user_id", "")) or {}).get("role", ""),
+            t.get("delta", 0),
+            t.get("reason", ""),
+            (t.get("meta") or {}).get("label", ""),
+            t.get("created_at", ""),
+        ]
+        for t in txs
+    ]
+    return _serve(rows, header, f"referme_credits_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}", "Credit Transactions Export", fmt)
+
+
+@api.get("/admin/export/redemptions")
+async def admin_export_redemptions(fmt: str = Query("csv"), _: dict = Depends(admin_only)):
+    items = await db.redemption_requests.find({}, {"_id": 0}).sort("created_at", -1).to_list(10000)
+    header = ["Request ID", "Pro Name", "Pro Email", "Credits Requested", "Amount INR", "UPI ID", "Bank Account", "IFSC", "Status", "Payment Ref", "Payment Date", "Rejection Reason", "Created At"]
+    rows = [
+        [
+            r.get("id"), r.get("pro_name"), r.get("pro_email"),
+            r.get("credits_requested", 0), f"{r.get('amount_inr', 0):.2f}",
+            r.get("upi_id", ""), r.get("bank_account", ""), r.get("ifsc", ""),
+            r.get("status", ""), r.get("payment_ref", ""), r.get("payment_date", ""),
+            r.get("rejection_reason", ""), r.get("created_at", ""),
+        ]
+        for r in items
+    ]
+    return _serve(rows, header, f"referme_redemptions_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}", "Redemption Requests Export", fmt)
+
+
 app.include_router(api)
 
 app.add_middleware(

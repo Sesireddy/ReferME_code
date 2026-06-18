@@ -8,6 +8,7 @@ import { Input } from "@/src/components/Input";
 import { Button } from "@/src/components/Button";
 import { Picker } from "@/src/components/Picker";
 import { ScreenTitle } from "@/src/components/ScreenTitle";
+import { ExportMenu } from "@/src/components/ExportMenu";
 import { colors } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
 
@@ -62,6 +63,8 @@ export default function AdminTransactions() {
         <View style={{ flex: 1 }}>
           <ScreenTitle title="Credits" icon="cash" color={colors.primary} />
         </View>
+        <ExportMenu entity="transactions" label="Export Credits" />
+        <View style={{ width: 8 }} />
         <TouchableOpacity onPress={() => setShowFilters(p => !p)} style={styles.btn}>
           <Ionicons name="options" size={20} color={colors.textPrimary} />
         </TouchableOpacity>

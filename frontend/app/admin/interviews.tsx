@@ -8,6 +8,7 @@ import { Input } from "@/src/components/Input";
 import { Button } from "@/src/components/Button";
 import { Picker } from "@/src/components/Picker";
 import { ScreenTitle } from "@/src/components/ScreenTitle";
+import { ExportMenu } from "@/src/components/ExportMenu";
 import { colors } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
 import { successAlert } from "@/src/lib/successAlert";
@@ -86,6 +87,8 @@ export default function AdminInterviews() {
         <View style={{ flex: 1 }}>
           <ScreenTitle title="Interviews" icon="mic" color={colors.primary} />
         </View>
+        <ExportMenu entity="interviews" label="Export Interviews" />
+        <View style={{ width: 8 }} />
         <TouchableOpacity onPress={() => setShowFilters(p => !p)} style={styles.btn}>
           <Ionicons name="options" size={20} color={colors.textPrimary} />
         </TouchableOpacity>

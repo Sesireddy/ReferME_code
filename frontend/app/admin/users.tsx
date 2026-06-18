@@ -8,6 +8,7 @@ import { Input } from "@/src/components/Input";
 import { Button } from "@/src/components/Button";
 import { Picker } from "@/src/components/Picker";
 import { ScreenTitle } from "@/src/components/ScreenTitle";
+import { ExportMenu } from "@/src/components/ExportMenu";
 import { colors } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
 import { LOCATION_OPTIONS } from "@/src/lib/constants";
@@ -172,6 +173,8 @@ export default function AdminUsers() {
         <View style={{ flex: 1 }}>
           <ScreenTitle title="Users" icon="people" color={colors.primary} />
         </View>
+        <ExportMenu entity="users" label="Export Users" />
+        <View style={{ width: 8 }} />
         <TouchableOpacity testID="toggle-filters" onPress={() => setShowFilters(p => !p)} style={styles.btn}>
           <Ionicons name="options" size={20} color={colors.textPrimary} />
         </TouchableOpacity>
