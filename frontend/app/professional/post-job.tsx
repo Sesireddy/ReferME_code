@@ -1,5 +1,8 @@
 import React, { useState } from "react";
-import { View, Alert, StyleSheet } from "react-native";
+import { View, Alert, StyleSheet, TouchableOpacity, Image } from "react-native";
+import * as ImagePicker from "expo-image-picker";
+import * as DocumentPicker from "expo-document-picker";
+import { Ionicons } from "@expo/vector-icons";
 import { Screen } from "@/src/components/Screen";
 import { Txt } from "@/src/components/Txt";
 import { Card } from "@/src/components/Card";
@@ -33,9 +36,13 @@ const OPEN_POSITIONS_OPTIONS = [
 
 type Errors = Partial<Record<
   "title" | "company" | "desc" | "location" | "locationOther" | "salary" | "industry" |
-  "industryOther" | "category" | "skills" | "openings" | "expMin" | "expMax",
+  "industryOther" | "category" | "skills" | "openings" | "expMin" | "expMax" | "proof",
   string
 >>;
+
+function isValidUrl(u: string): boolean {
+  return /^https?:\/\/[^\s]+\.[^\s]+/i.test((u || "").trim());
+}
 
 export default function ProPostJob() {
   const [title, setTitle] = useState("");
@@ -51,9 +58,58 @@ export default function ProPostJob() {
   const [expMax, setExpMax] = useState<string | null>(null);
   const [skills, setSkills] = useState("");
   const [openings, setOpenings] = useState<string | null>("1 to 5");
+  // Proof of opening fields
+  const [proofLink, setProofLink] = useState("");
+  const [proofDataUri, setProofDataUri] = useState<string>("");
+  const [proofMime, setProofMime] = useState<string>("");
+  const [proofFileName, setProofFileName] = useState<string>("");
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<Errors>({});
   const [success, setSuccess] = useState(false);
+
+  async function pickImage() {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (perm.status !== "granted") return Alert.alert("Permission needed", "Please allow gallery access.");
+    const res = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: false,
+      quality: 0.7,
+      base64: true,
+    });
+    if (res.canceled || !res.assets?.[0]) return;
+    const a = res.assets[0];
+    const mime = a.mimeType || "image/jpeg";
+    if (!["image/jpeg", "image/jpg", "image/png"].includes(mime)) {
+      return Alert.alert("Unsupported format", "Please upload a JPG, JPEG or PNG image.");
+    }
+    setProofDataUri(`data:${mime};base64,${a.base64}`);
+    setProofMime(mime);
+    setProofFileName(a.fileName || `screenshot.${mime.split("/")[1] || "jpg"}`);
+    setErrors((e) => ({ ...e, proof: undefined }));
+  }
+
+  async function pickPdf() {
+    const res = await DocumentPicker.getDocumentAsync({ type: ["application/pdf"], copyToCacheDirectory: true });
+    if (res.canceled || !res.assets?.[0]) return;
+    const a = res.assets[0];
+    try {
+      // Read as base64
+      const FileSystem = await import("expo-file-system/legacy");
+      const base64 = await (FileSystem as any).readAsStringAsync(a.uri, { encoding: "base64" });
+      setProofDataUri(`data:application/pdf;base64,${base64}`);
+      setProofMime("application/pdf");
+      setProofFileName(a.name || "proof.pdf");
+      setErrors((e) => ({ ...e, proof: undefined }));
+    } catch (e: any) {
+      Alert.alert("Read failed", "Could not read PDF file.");
+    }
+  }
+
+  function clearProof() {
+    setProofDataUri("");
+    setProofMime("");
+    setProofFileName("");
+  }
 
   const isExperienced = category === "experienced";
   const isOtherLoc = location === "__OTHER__";
@@ -79,6 +135,12 @@ export default function ProPostJob() {
     if (!category) e.category = "Category is required.";
     if (skills.split(",").map((s) => s.trim()).filter(Boolean).length === 0) e.skills = "Skill Set is required.";
     if (!openings) e.openings = "Number of Open Positions is required.";
+    // Proof of opening — at least one required
+    if (!proofDataUri && !proofLink.trim()) {
+      e.proof = "Please provide either a Job Opening Screenshot or a Job Opening Link to verify the position.";
+    } else if (proofLink.trim() && !isValidUrl(proofLink)) {
+      e.proof = "Please enter a valid Job Opening Link (must start with http:// or https://).";
+    }
     if (isExperienced) {
       const mn = parseExp(expMin);
       const mx = parseExp(expMax);
@@ -115,6 +177,9 @@ export default function ProPostJob() {
           experience_max: isExperienced ? mx : 0,
           skills_required: skills.split(",").map((s) => s.trim()).filter(Boolean),
           open_positions_label: openings,
+          proof_link: proofLink.trim() || null,
+          proof_screenshot_b64: proofDataUri || null,
+          proof_screenshot_mime: proofMime || null,
         },
       });
       setSuccess(true);
@@ -123,6 +188,7 @@ export default function ProPostJob() {
       setSalaryRange(null); setIndustry(null); setIndustryOther("");
       setCategory("fresher"); setExpMin(null); setExpMax(null);
       setSkills(""); setOpenings("1 to 5");
+      setProofLink(""); clearProof();
       setErrors({});
     } catch (e: any) {
       Alert.alert("Failed", e.message);
@@ -248,6 +314,62 @@ export default function ProPostJob() {
         />
         {errors.openings ? <Txt style={styles.err}>{errors.openings}</Txt> : null}
 
+        {/* Proof of opening — required */}
+        <View style={styles.proofBox}>
+          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 6 }}>
+            <Ionicons name="shield-checkmark" size={18} color="#7C3AED" />
+            <Txt style={styles.proofTitle}>Proof of Job Opening *</Txt>
+          </View>
+          <Txt variant="small" style={{ color: colors.textSecondary, marginBottom: 10 }}>
+            To verify this position is genuine, please share either a screenshot (JPG/PNG/PDF) OR a link to the job posting.
+          </Txt>
+
+          {/* Screenshot upload area */}
+          {proofDataUri ? (
+            <View style={styles.proofPreview}>
+              {proofMime === "application/pdf" ? (
+                <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+                  <Ionicons name="document-text" size={32} color={colors.error} />
+                  <Txt style={{ marginLeft: 10, flex: 1 }} numberOfLines={1}>{proofFileName}</Txt>
+                </View>
+              ) : (
+                <Image source={{ uri: proofDataUri }} style={{ width: 70, height: 70, borderRadius: 8 }} />
+              )}
+              <TouchableOpacity testID="proof-remove" onPress={clearProof} hitSlop={8} style={{ marginLeft: 8 }}>
+                <Ionicons name="close-circle" size={22} color={colors.error} />
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              <TouchableOpacity testID="proof-pick-image" onPress={pickImage} style={[styles.proofBtn, { borderColor: colors.primary }]}>
+                <Ionicons name="image" size={18} color={colors.primary} />
+                <Txt style={{ marginLeft: 6, color: colors.primary, fontWeight: "600" }}>Upload Image</Txt>
+              </TouchableOpacity>
+              <TouchableOpacity testID="proof-pick-pdf" onPress={pickPdf} style={[styles.proofBtn, { borderColor: colors.error }]}>
+                <Ionicons name="document" size={18} color={colors.error} />
+                <Txt style={{ marginLeft: 6, color: colors.error, fontWeight: "600" }}>Upload PDF</Txt>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          <View style={{ flexDirection: "row", alignItems: "center", marginVertical: 10 }}>
+            <View style={{ flex: 1, height: 1, backgroundColor: colors.border }} />
+            <Txt variant="small" style={{ color: colors.textSecondary, marginHorizontal: 8 }}>OR</Txt>
+            <View style={{ flex: 1, height: 1, backgroundColor: colors.border }} />
+          </View>
+
+          <Input
+            testID="proof-link"
+            label="Job Opening Link"
+            placeholder="https://careers.company.com/job/123"
+            value={proofLink}
+            onChangeText={(v) => { setProofLink(v); setErrors((e) => ({ ...e, proof: undefined })); }}
+            autoCapitalize="none"
+            keyboardType="url"
+          />
+          {errors.proof ? <Txt style={[styles.err, { marginTop: 0 }]}>{errors.proof}</Txt> : null}
+        </View>
+
         <Button testID="pj-submit" title="Post job" loading={busy} onPress={post} style={{ marginTop: 8 }} />
       </Card>
     </Screen>
@@ -256,4 +378,33 @@ export default function ProPostJob() {
 
 const styles = StyleSheet.create({
   err: { color: colors.error, fontSize: 12, marginTop: -8, marginBottom: 8 },
+  proofBox: {
+    marginTop: 10,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#7C3AED40",
+    backgroundColor: "#7C3AED0A",
+  },
+  proofTitle: { marginLeft: 6, fontWeight: "700", color: "#7C3AED", fontSize: 14 },
+  proofBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderStyle: "dashed",
+    backgroundColor: "#fff",
+  },
+  proofPreview: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 10,
+    backgroundColor: "#fff",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
 });

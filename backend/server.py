@@ -465,6 +465,10 @@ class JobPostBody(BaseModel):
     open_positions: Optional[int] = None  # numeric (legacy)
     open_positions_label: Optional[Literal["1 to 5", "1 to 10", "1 to 50", "1 to 100", "100+"]] = "1 to 5"
     bulk_openings: Optional[int] = None  # backward compat alias
+    # Proof of opening (mandatory for professionals: at least one of screenshot OR link)
+    proof_screenshot_b64: Optional[str] = None  # data URI or raw base64 (JPG/PNG/PDF)
+    proof_screenshot_mime: Optional[str] = None  # image/jpeg | image/png | application/pdf
+    proof_link: Optional[str] = None
 
 
 class JobPatchBody(BaseModel):
@@ -1791,6 +1795,22 @@ async def post_job(body: JobPostBody, u: dict = Depends(require_role(["employer"
     exp_max = body.experience_max if body.experience_max is not None else max(exp_req, exp_min or 0)
     if exp_min is not None and exp_max is not None and exp_max < exp_min:
         raise HTTPException(status_code=400, detail="Maximum experience must be ≥ Minimum experience")
+
+    # ---- Proof of opening (required for Working Professionals) ----
+    proof_link = (body.proof_link or "").strip()
+    proof_b64 = (body.proof_screenshot_b64 or "").strip()
+    proof_mime = (body.proof_screenshot_mime or "").strip().lower()
+
+    if proof_link and not re.match(r"^https?://[^\s]+\.[^\s]+", proof_link):
+        raise HTTPException(status_code=400, detail="Please enter a valid Job Opening Link (must start with http:// or https://).")
+    if proof_b64 and proof_mime and proof_mime not in {"image/jpeg", "image/jpg", "image/png", "application/pdf"}:
+        raise HTTPException(status_code=400, detail="Proof screenshot must be JPG, JPEG, PNG, or PDF.")
+    if u["role"] == "professional" and not proof_link and not proof_b64:
+        raise HTTPException(
+            status_code=400,
+            detail="Please provide either a Job Opening Screenshot or a Job Opening Link to verify the position.",
+        )
+
     job = {
         "id": new_id(),
         "employer_id": u["id"],
@@ -1813,6 +1833,14 @@ async def post_job(body: JobPostBody, u: dict = Depends(require_role(["employer"
         "open_positions_label": label,
         "bulk_openings": openings,  # back-compat
         "status": "open",
+        # Proof of opening (admin uses these to verify a Pro's submission)
+        "proof_screenshot_b64": proof_b64 if proof_b64 else "",
+        "proof_screenshot_mime": proof_mime if proof_b64 else "",
+        "proof_link": proof_link,
+        "verification_status": "pending" if u["role"] == "professional" else "verified",
+        "verified_by": "" if u["role"] == "professional" else "system",
+        "verified_at": "" if u["role"] == "professional" else now_iso(),
+        "verification_note": "",
         "created_at": now_iso(),
         "updated_at": now_iso(),
     }
@@ -3849,6 +3877,52 @@ async def admin_export_redemptions(fmt: str = Query("csv"), _: dict = Depends(ad
         for r in items
     ]
     return _serve(rows, header, f"referme_redemptions_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}", "Redemption Requests Export", fmt)
+
+
+# ---- Admin Job Verification (proof of opening) ----
+class AdminVerifyJobBody(BaseModel):
+    decision: Literal["verified", "rejected"]
+    note: Optional[str] = ""
+
+
+@api.post("/admin/jobs/{job_id}/verify")
+async def admin_verify_job(job_id: str, body: AdminVerifyJobBody, admin: dict = Depends(admin_only)):
+    job = await db.jobs.find_one({"id": job_id}, {"_id": 0})
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    now = now_iso()
+    before = {"verification_status": job.get("verification_status", "pending")}
+    after = {
+        "verification_status": body.decision,
+        "verified_by": admin.get("email", ""),
+        "verified_at": now,
+        "verification_note": (body.note or "").strip(),
+        "updated_at": now,
+    }
+    await db.jobs.update_one({"id": job_id}, {"$set": after})
+    await write_audit(
+        admin, "job.verify", "job", job_id,
+        before=before, after={"verification_status": body.decision},
+        reason=body.note or "",
+        extra={"job_title": job.get("title", "")},
+    )
+    # Notify the poster
+    if job.get("employer_id"):
+        if body.decision == "verified":
+            await push_notification(
+                job["employer_id"],
+                "Job verified ✅",
+                f"Your job posting '{job.get('title','')}' has been verified and is now public.",
+                "success",
+            )
+        else:
+            await push_notification(
+                job["employer_id"],
+                "Job verification rejected",
+                f"Your job posting '{job.get('title','')}' was rejected. Reason: {body.note or 'not specified'}",
+                "warning",
+            )
+    return {"ok": True, "verification_status": body.decision}
 
 
 app.include_router(api)
