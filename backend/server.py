@@ -1869,11 +1869,28 @@ async def list_jobs(
             q["employer_id"] = u["id"]
         else:
             q["$or"] = [
-                {"employer_id": u["id"]},
-                {"status": "open", "posted_by_role": {"$ne": "professional"}},
+                {"employer_id": u["id"]},  # see own jobs regardless of verification
+                {
+                    "status": "open",
+                    "posted_by_role": {"$ne": "professional"},
+                    # employers' jobs don't need verification - shown when posted_by_role != professional
+                },
+                {
+                    "status": "open",
+                    "posted_by_role": "professional",
+                    "verification_status": "verified",  # only approved Pro jobs visible to others
+                },
             ]
+    elif u["role"] == "admin":
+        # Admin sees everything
+        pass
     else:
+        # Job seekers: only Approved Pro jobs OR Employer-posted jobs
         q["status"] = "open"
+        q["$or"] = [
+            {"posted_by_role": {"$ne": "professional"}},
+            {"posted_by_role": "professional", "verification_status": "verified"},
+        ]
     if skill:
         q["skills_required"] = {"$regex": re.escape(skill), "$options": "i"}
     if location:
@@ -3890,6 +3907,8 @@ async def admin_verify_job(job_id: str, body: AdminVerifyJobBody, admin: dict = 
     job = await db.jobs.find_one({"id": job_id}, {"_id": 0})
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    if body.decision == "rejected" and not (body.note or "").strip():
+        raise HTTPException(status_code=400, detail="Rejection reason is required.")
     now = now_iso()
     before = {"verification_status": job.get("verification_status", "pending")}
     after = {
@@ -3923,6 +3942,37 @@ async def admin_verify_job(job_id: str, body: AdminVerifyJobBody, admin: dict = 
                 "warning",
             )
     return {"ok": True, "verification_status": body.decision}
+
+
+@api.post("/jobs/{job_id}/resubmit")
+async def resubmit_job(job_id: str, u: dict = Depends(require_role(["professional"]))):
+    """Pro resubmits a rejected job for fresh admin review. Status flips back to pending."""
+    job = await db.jobs.find_one({"id": job_id}, {"_id": 0})
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.get("employer_id") != u["id"]:
+        raise HTTPException(status_code=403, detail="You can only resubmit your own jobs.")
+    if job.get("verification_status") != "rejected":
+        raise HTTPException(status_code=400, detail="Only rejected jobs can be resubmitted.")
+    now = now_iso()
+    await db.jobs.update_one(
+        {"id": job_id},
+        {"$set": {
+            "verification_status": "pending",
+            "verification_note": "",
+            "verified_by": "",
+            "verified_at": "",
+            "updated_at": now,
+        }},
+    )
+    await write_audit(
+        u, "job.resubmit", "job", job_id,
+        before={"verification_status": "rejected"},
+        after={"verification_status": "pending"},
+        reason="Pro resubmitted for review",
+        extra={"job_title": job.get("title", "")},
+    )
+    return {"ok": True, "verification_status": "pending"}
 
 
 app.include_router(api)

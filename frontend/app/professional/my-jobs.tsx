@@ -10,6 +10,7 @@ import { Input } from "@/src/components/Input";
 import { ScreenTitle } from "@/src/components/ScreenTitle";
 import { colors, radius } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
+import { successAlert } from "@/src/lib/successAlert";
 
 export default function ProMyJobs() {
   const router = useRouter();
@@ -40,6 +41,16 @@ export default function ProMyJobs() {
       await api(`/jobs/${jobId}/reopen`, { method: "POST" });
       load();
     } catch (e: any) { Alert.alert("Error", e.message); }
+  }
+  async function resubmit(jobId: string) {
+    try {
+      await api(`/jobs/${jobId}/resubmit`, { method: "POST" });
+      successAlert.show({
+        title: "Resubmitted",
+        message: "Your job has been resubmitted for review. The Admin will be notified.",
+      });
+      load();
+    } catch (e: any) { Alert.alert("Failed", e.message || "Could not resubmit."); }
   }
 
   function openEdit(job: any) {
@@ -102,6 +113,17 @@ export default function ProMyJobs() {
         jobs.map((j) => {
           const posted = j.created_at ? new Date(j.created_at) : null;
           const isOpen = j.status === "open";
+          const vStatus = j.verification_status || "verified";
+          const vLabel =
+            vStatus === "verified" ? "Approved"
+            : vStatus === "pending" ? "Pending Approval"
+            : vStatus === "rejected" ? "Rejected"
+            : (j.status || "").toUpperCase();
+          const vColor =
+            vStatus === "verified" ? { bg: "#E8F5E9", fg: "#2E7D32" }
+            : vStatus === "pending" ? { bg: "#FFF4E0", fg: "#FF8F00" }
+            : vStatus === "rejected" ? { bg: "#FFEBEE", fg: "#C62828" }
+            : { bg: "#E8F5E9", fg: "#2E7D32" };
           return (
             <Card key={j.id} style={{ marginTop: 12 }}>
               <View style={{ flexDirection: "row", alignItems: "center" }}>
@@ -111,12 +133,24 @@ export default function ProMyJobs() {
                     {j.company} · {j.location || "Remote"}
                   </Txt>
                 </View>
-                <View style={[styles.pill, { backgroundColor: isOpen ? "#E8F5E9" : "#FFEBEE" }]}>
-                  <Txt variant="small" style={{ color: isOpen ? "#2E7D32" : "#C62828", fontWeight: "700" }}>
-                    {(j.status || "").toUpperCase()}
+                <View style={[styles.pill, { backgroundColor: vColor.bg }]}>
+                  <Txt variant="small" style={{ color: vColor.fg, fontWeight: "700" }}>
+                    {vLabel}
                   </Txt>
                 </View>
               </View>
+
+              {vStatus === "rejected" && j.verification_note ? (
+                <View style={styles.rejectBox}>
+                  <Ionicons name="alert-circle" size={16} color="#C62828" />
+                  <View style={{ flex: 1, marginLeft: 8 }}>
+                    <Txt variant="small" style={{ color: "#C62828", fontWeight: "700" }}>Rejection Reason</Txt>
+                    <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 2 }} numberOfLines={3}>
+                      {j.verification_note}
+                    </Txt>
+                  </View>
+                </View>
+              ) : null}
 
               <View style={styles.metaRow}>
                 <View style={styles.meta}>
@@ -146,12 +180,22 @@ export default function ProMyJobs() {
               </View>
 
               <View style={styles.actionRow}>
-                <Button
-                  testID={`applicants-${j.id}`}
-                  title="View Applicants"
-                  onPress={() => router.push(`/professional/my-jobs/${j.id}`)}
-                  style={{ flex: 1, height: 38 }}
-                />
+                {vStatus === "rejected" ? (
+                  <Button
+                    testID={`resubmit-${j.id}`}
+                    title="Resubmit for Approval"
+                    onPress={() => resubmit(j.id)}
+                    style={{ flex: 1, height: 38 }}
+                    icon={<Ionicons name="refresh" size={16} color="#fff" />}
+                  />
+                ) : (
+                  <Button
+                    testID={`applicants-${j.id}`}
+                    title="View Applicants"
+                    onPress={() => router.push(`/professional/my-jobs/${j.id}`)}
+                    style={{ flex: 1, height: 38 }}
+                  />
+                )}
                 <Button
                   testID={`edit-${j.id}`}
                   title="Edit"
@@ -159,23 +203,25 @@ export default function ProMyJobs() {
                   onPress={() => openEdit(j)}
                   style={{ height: 38, paddingHorizontal: 14 }}
                 />
-                {isOpen ? (
-                  <Button
-                    testID={`close-${j.id}`}
-                    title="Close"
-                    variant="secondary"
-                    onPress={() => close(j.id)}
-                    style={{ height: 38, paddingHorizontal: 14 }}
-                  />
-                ) : (
-                  <Button
-                    testID={`reopen-${j.id}`}
-                    title="Reopen"
-                    variant="secondary"
-                    onPress={() => reopen(j.id)}
-                    style={{ height: 38, paddingHorizontal: 14 }}
-                  />
-                )}
+                {vStatus !== "rejected" ? (
+                  isOpen ? (
+                    <Button
+                      testID={`close-${j.id}`}
+                      title="Close"
+                      variant="secondary"
+                      onPress={() => close(j.id)}
+                      style={{ height: 38, paddingHorizontal: 14 }}
+                    />
+                  ) : (
+                    <Button
+                      testID={`reopen-${j.id}`}
+                      title="Reopen"
+                      variant="secondary"
+                      onPress={() => reopen(j.id)}
+                      style={{ height: 38, paddingHorizontal: 14 }}
+                    />
+                  )
+                ) : null}
               </View>
             </Card>
           );
@@ -207,6 +253,16 @@ export default function ProMyJobs() {
 }
 
 const styles = StyleSheet.create({
+  rejectBox: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    backgroundColor: "#FFEBEE",
+    borderWidth: 1,
+    borderColor: "#FFCDD2",
+    borderRadius: 10,
+    padding: 10,
+    marginTop: 10,
+  },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   addBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: "#7C3AED", alignItems: "center", justifyContent: "center" },
   pill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },

@@ -205,8 +205,8 @@ export default function ProPostJob() {
       />
       <ConfirmDialog
         visible={success}
-        title="Job Posted"
-        message="Your job posting is now live."
+        title="Submitted for Review"
+        message="Your job has been submitted for review and is awaiting Admin approval. You will be notified once it is approved."
         confirmLabel="OK"
         cancelLabel=""
         onCancel={() => setSuccess(false)}

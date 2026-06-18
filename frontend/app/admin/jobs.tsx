@@ -32,6 +32,7 @@ export default function AdminJobs() {
   const [salary, setSalary] = useState<string | null>("");
   const [postedDate, setPostedDate] = useState("");
   const [status, setStatus] = useState<string | null>("");
+  const [verificationFilter, setVerificationFilter] = useState<string>("");
   const [previewUri, setPreviewUri] = useState<string | null>(null);
   const [previewMime, setPreviewMime] = useState<string>("");
   const [verifyBusy, setVerifyBusy] = useState(false);
@@ -106,6 +107,36 @@ export default function AdminJobs() {
         </TouchableOpacity>
       </View>
       <Input testID="search" value={q} onChangeText={setQ} placeholder="Search by ID / Title / Company" style={{ marginTop: 8 }} />
+      <View style={{ flexDirection: "row", gap: 6, marginTop: 4 }}>
+        {[
+          { key: "", label: "All Jobs" },
+          { key: "pending", label: "Pending Approvals" },
+          { key: "verified", label: "Approved" },
+          { key: "rejected", label: "Rejected" },
+        ].map((t) => {
+          const active = (verificationFilter || "") === t.key;
+          return (
+            <TouchableOpacity
+              key={t.key || "all"}
+              testID={`vf-${t.key || "all"}`}
+              onPress={() => setVerificationFilter(t.key)}
+              style={{
+                flex: 1,
+                paddingVertical: 6,
+                borderRadius: 14,
+                alignItems: "center",
+                borderWidth: 1,
+                borderColor: active ? colors.primary : colors.border,
+                backgroundColor: active ? colors.primary : colors.surface,
+              }}
+            >
+              <Txt style={{ fontSize: 11, fontWeight: "600", color: active ? "#fff" : colors.textSecondary }}>
+                {t.label}
+              </Txt>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
 
       {showFilters ? (
         <Card style={{ marginTop: 8 }}>
@@ -125,7 +156,7 @@ export default function AdminJobs() {
 
       <Txt variant="small" style={{ marginTop: 12, color: colors.textSecondary }}>{items.length} result(s)</Txt>
       <FlatList
-        data={items}
+        data={verificationFilter ? items.filter((j: any) => (j.verification_status || "verified") === verificationFilter) : items}
         keyExtractor={(j) => j.id}
         scrollEnabled={false}
         renderItem={({ item: j }) => (
