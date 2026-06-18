@@ -3370,6 +3370,327 @@ async def admin_reject_redemption(req_id: str, body: RedemptionRejectBody, _: di
 
 
 # Register router
+# ============================================================
+# ADMIN PHASE B: EDIT + AUDIT LOGS (Users / Jobs / Bookings / Credits)
+# ============================================================
+AUDIT_PURGE_DAYS = 90
+AUDIT_PURGE_ENTITIES = {"job", "interview_booking", "interview_slot"}
+
+
+async def _ensure_audit_ttl_index():
+    """Create TTL index on `purge_at` so docs with that field auto-expire (used for jobs/interview audit only)."""
+    try:
+        await db.audit_logs.create_index("purge_at", expireAfterSeconds=0)
+        await db.audit_logs.create_index([("created_at", -1)])
+        await db.audit_logs.create_index([("entity_type", 1), ("entity_id", 1)])
+        logger.info("audit_logs TTL + indexes ensured")
+    except Exception as ex:
+        logger.warning("Could not ensure audit indexes: %s", ex)
+
+
+@app.on_event("startup")
+async def _audit_startup():
+    await _ensure_audit_ttl_index()
+
+
+def _diff_doc(before: dict, after: dict) -> dict:
+    """Return only changed keys with {key: {before, after}}."""
+    out: dict[str, Any] = {}
+    keys = set((before or {}).keys()) | set((after or {}).keys())
+    for k in keys:
+        b = (before or {}).get(k)
+        a = (after or {}).get(k)
+        if b != a:
+            out[k] = {"before": b, "after": a}
+    return out
+
+
+async def write_audit(
+    actor: dict,
+    action: str,
+    entity_type: str,
+    entity_id: str,
+    *,
+    before: dict | None = None,
+    after: dict | None = None,
+    reason: str = "",
+    extra: dict | None = None,
+) -> None:
+    """Write an audit-log entry. Jobs / interview entries auto-purge after 90 days via TTL."""
+    now = now_iso()
+    doc: dict[str, Any] = {
+        "id": new_id(),
+        "actor_id": actor.get("id", ""),
+        "actor_email": actor.get("email", ""),
+        "actor_name": actor.get("name", "") or actor.get("email", ""),
+        "action": action,
+        "entity_type": entity_type,
+        "entity_id": entity_id,
+        "before": before or {},
+        "after": after or {},
+        "diff": _diff_doc(before or {}, after or {}) if (before or after) else {},
+        "reason": (reason or "").strip(),
+        "extra": extra or {},
+        "created_at": now,
+    }
+    if entity_type in AUDIT_PURGE_ENTITIES:
+        doc["purge_at"] = datetime.utcnow() + timedelta(days=AUDIT_PURGE_DAYS)
+    try:
+        await db.audit_logs.insert_one(doc)
+    except Exception as ex:
+        logger.warning("audit write failed (%s): %s", action, ex)
+
+
+# ---- Edit User ----
+class AdminEditUserBody(BaseModel):
+    name: Optional[str] = None
+    role: Optional[str] = None  # student | professional | employer | admin
+    account_status: Optional[str] = None  # active | suspended
+    reason: Optional[str] = ""
+
+
+@api.patch("/admin/users/{user_id}")
+async def admin_edit_user(user_id: str, body: AdminEditUserBody, admin: dict = Depends(admin_only)):
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    allowed_roles = {"student", "professional", "employer", "admin"}
+    allowed_status = {"active", "suspended"}
+
+    update: dict[str, Any] = {}
+    if body.name is not None:
+        update["name"] = body.name.strip()
+    if body.role is not None:
+        if body.role not in allowed_roles:
+            raise HTTPException(status_code=400, detail=f"Invalid role. Allowed: {sorted(allowed_roles)}")
+        update["role"] = body.role
+    if body.account_status is not None:
+        if body.account_status not in allowed_status:
+            raise HTTPException(status_code=400, detail=f"Invalid status. Allowed: {sorted(allowed_status)}")
+        update["account_status"] = body.account_status
+
+    if not update:
+        raise HTTPException(status_code=400, detail="No editable fields provided.")
+
+    before_snap = {k: user.get(k) for k in update.keys()}
+    await db.users.update_one({"id": user_id}, {"$set": update})
+    after_snap = update
+    await write_audit(
+        admin, "user.edit", "user", user_id,
+        before=before_snap, after=after_snap, reason=body.reason or "",
+        extra={"target_email": user.get("email", "")},
+    )
+    updated = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
+    return {"ok": True, "user": updated}
+
+
+# ---- Adjust Credits ----
+class AdminCreditAdjustBody(BaseModel):
+    delta: int = Field(..., description="Positive to add, negative to remove")
+    reason: str = Field(min_length=2, max_length=400)
+
+
+@api.post("/admin/users/{user_id}/credits/adjust")
+async def admin_adjust_credits(user_id: str, body: AdminCreditAdjustBody, admin: dict = Depends(admin_only)):
+    if body.delta == 0:
+        raise HTTPException(status_code=400, detail="Delta must be non-zero.")
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    before_credits = user.get("credits", 0)
+
+    # If deducting, ensure not going below zero
+    if body.delta < 0 and before_credits + body.delta < 0:
+        raise HTTPException(status_code=400, detail=f"Cannot deduct {-body.delta}. User has only {before_credits} credits.")
+
+    now = now_iso()
+    await db.users.update_one({"id": user_id}, {"$inc": {"credits": body.delta}})
+    # Ledger entry
+    await db.transactions.insert_one({
+        "id": new_id(),
+        "user_id": user_id,
+        "delta": body.delta,
+        "reason": "admin_adjustment",
+        "meta": {
+            "label": f"Admin Adjustment ({'+' if body.delta > 0 else ''}{body.delta})",
+            "admin_id": admin.get("id", ""),
+            "admin_email": admin.get("email", ""),
+            "note": body.reason,
+        },
+        "created_at": now,
+    })
+    after_credits = before_credits + body.delta
+    await write_audit(
+        admin, "user.credits.adjust", "credit_adjustment", user_id,
+        before={"credits": before_credits},
+        after={"credits": after_credits},
+        reason=body.reason,
+        extra={"target_email": user.get("email", ""), "delta": body.delta},
+    )
+    await push_notification(
+        user_id,
+        f"Credits {'added' if body.delta > 0 else 'adjusted'}",
+        f"{abs(body.delta)} credits {'added to' if body.delta > 0 else 'deducted from'} your wallet by admin. New balance: {after_credits}.",
+        "info",
+    )
+    return {"ok": True, "credits": after_credits, "delta": body.delta}
+
+
+# ---- Edit Job ----
+class AdminEditJobBody(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    salary_range: Optional[str] = None
+    location: Optional[str] = None
+    status: Optional[str] = None  # active | closed
+    reason: Optional[str] = ""
+
+
+@api.patch("/admin/jobs/{job_id}")
+async def admin_edit_job(job_id: str, body: AdminEditJobBody, admin: dict = Depends(admin_only)):
+    job = await db.jobs.find_one({"id": job_id}, {"_id": 0})
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    update: dict[str, Any] = {}
+    for k in ("title", "description", "salary_range", "location"):
+        v = getattr(body, k)
+        if v is not None:
+            update[k] = v.strip() if isinstance(v, str) else v
+    if body.status is not None:
+        if body.status not in ("active", "closed"):
+            raise HTTPException(status_code=400, detail="Status must be active or closed.")
+        update["status"] = body.status
+    if not update:
+        raise HTTPException(status_code=400, detail="No editable fields provided.")
+
+    before_snap = {k: job.get(k) for k in update.keys()}
+    await db.jobs.update_one({"id": job_id}, {"$set": update})
+    await write_audit(
+        admin, "job.edit", "job", job_id,
+        before=before_snap, after=update, reason=body.reason or "",
+        extra={"job_title": job.get("title", "")},
+    )
+    updated = await db.jobs.find_one({"id": job_id}, {"_id": 0})
+    return {"ok": True, "job": updated}
+
+
+# ---- Cancel Booking (Admin) — auto-refund 49 credits to student ----
+class AdminCancelBookingBody(BaseModel):
+    reason: str = Field(min_length=2, max_length=400)
+    refund: Optional[bool] = True
+
+
+@api.post("/admin/interviews/bookings/{booking_id}/cancel")
+async def admin_cancel_booking(booking_id: str, body: AdminCancelBookingBody, admin: dict = Depends(admin_only)):
+    bk = await db.interview_bookings.find_one({"id": booking_id}, {"_id": 0})
+    if not bk:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    if bk.get("status") == "cancelled":
+        raise HTTPException(status_code=400, detail="Booking already cancelled.")
+    now = now_iso()
+
+    # Release the slot back to 'available' so other students can book it
+    if bk.get("slot_id"):
+        await db.interview_slots.update_one(
+            {"id": bk["slot_id"]},
+            {"$set": {"status": "available"}, "$unset": {"student_id": "", "student_name": "", "student_email": "", "booked_at": ""}},
+        )
+
+    # Mark booking cancelled
+    await db.interview_bookings.update_one(
+        {"id": booking_id},
+        {"$set": {"status": "cancelled", "cancelled_at": now, "cancel_reason": body.reason, "cancelled_by": admin.get("email", "")}},
+    )
+
+    # Refund credits to student
+    refund_amount = 0
+    if body.refund and bk.get("student_id"):
+        refund_amount = int(bk.get("credits_charged") or ACTION_COST)
+        await db.users.update_one({"id": bk["student_id"]}, {"$inc": {"credits": refund_amount}})
+        await db.transactions.insert_one({
+            "id": new_id(),
+            "user_id": bk["student_id"],
+            "delta": refund_amount,
+            "reason": "interview_admin_refund",
+            "meta": {
+                "label": "Mock Interview Refund (Admin Cancelled)",
+                "booking_id": booking_id,
+                "admin_id": admin.get("id", ""),
+                "admin_email": admin.get("email", ""),
+                "note": body.reason,
+            },
+            "created_at": now,
+        })
+        await push_notification(
+            bk["student_id"],
+            "Mock interview cancelled",
+            f"Your booking on {bk.get('start_at','')} has been cancelled by admin. {refund_amount} credits have been refunded. Reason: {body.reason}",
+            "warning",
+        )
+    # Notify pro
+    if bk.get("pro_id"):
+        await push_notification(
+            bk["pro_id"],
+            "Mock interview cancelled by admin",
+            f"The booking with {bk.get('student_name','student')} on {bk.get('start_at','')} has been cancelled. Reason: {body.reason}",
+            "info",
+        )
+
+    await write_audit(
+        admin, "interview_booking.cancel", "interview_booking", booking_id,
+        before={"status": bk.get("status", ""), "student_id": bk.get("student_id", "")},
+        after={"status": "cancelled", "refund": refund_amount},
+        reason=body.reason,
+        extra={
+            "student_email": bk.get("student_email", ""),
+            "pro_email": bk.get("pro_email", ""),
+            "slot_id": bk.get("slot_id", ""),
+            "start_at": bk.get("start_at", ""),
+        },
+    )
+    return {"ok": True, "status": "cancelled", "refund": refund_amount}
+
+
+# ---- List Audit Logs ----
+@api.get("/admin/audit-logs")
+async def admin_list_audit_logs(
+    action: Optional[str] = None,
+    entity: Optional[str] = None,
+    q: Optional[str] = None,
+    limit: int = 200,
+    _: dict = Depends(admin_only),
+):
+    flt: dict[str, Any] = {}
+    if action:
+        flt["action"] = action
+    if entity:
+        flt["entity_type"] = entity
+    if q:
+        rgx = re.compile(re.escape(q.strip()), re.IGNORECASE)
+        flt["$or"] = [
+            {"actor_email": rgx},
+            {"actor_name": rgx},
+            {"entity_id": rgx},
+            {"reason": rgx},
+            {"extra.target_email": rgx},
+            {"extra.job_title": rgx},
+        ]
+    items = await db.audit_logs.find(flt, {"_id": 0}).sort("created_at", -1).to_list(min(limit, 1000))
+    return {
+        "items": items,
+        "retention_days_for_jobs_and_interviews": AUDIT_PURGE_DAYS,
+    }
+
+
+@api.post("/admin/interviews/slots/{slot_id}/cancel-booking")
+async def admin_cancel_slot_booking(slot_id: str, body: AdminCancelBookingBody, admin: dict = Depends(admin_only)):
+    """Convenience wrapper: find the active booking on this slot and cancel it."""
+    bk = await db.interview_bookings.find_one({"slot_id": slot_id, "status": {"$ne": "cancelled"}}, {"_id": 0})
+    if not bk:
+        raise HTTPException(status_code=404, detail="No active booking found for this slot.")
+    return await admin_cancel_booking(bk["id"], body, admin)
+
+
 app.include_router(api)
 
 app.add_middleware(

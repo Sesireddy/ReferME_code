@@ -118,6 +118,10 @@ export default function AdminDashboard() {
               <Ionicons name="key-outline" size={20} color={colors.warning} />
               <Txt style={styles.menuLabel}>Change Password</Txt>
             </TouchableOpacity>
+            <TouchableOpacity testID="menu-audit-logs" style={styles.menuRow} onPress={() => { setMenuOpen(false); router.push("/admin/audit-logs"); }}>
+              <Ionicons name="time-outline" size={20} color="#2563EB" />
+              <Txt style={styles.menuLabel}>Audit Logs</Txt>
+            </TouchableOpacity>
             <View style={styles.menuDivider} />
             <TouchableOpacity testID="menu-logout" style={styles.menuRow} onPress={() => { setMenuOpen(false); setLogoutOpen(true); }}>
               <Ionicons name="log-out-outline" size={20} color={colors.error} />

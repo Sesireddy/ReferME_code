@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { View, StyleSheet, TouchableOpacity, FlatList, Linking } from "react-native";
+import { View, StyleSheet, TouchableOpacity, FlatList, Linking, Modal, Alert } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Screen } from "@/src/components/Screen";
 import { Txt } from "@/src/components/Txt";
@@ -10,6 +10,7 @@ import { Picker } from "@/src/components/Picker";
 import { ScreenTitle } from "@/src/components/ScreenTitle";
 import { colors } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
+import { successAlert } from "@/src/lib/successAlert";
 
 const STATUS_OPTS = [
   { value: "", label: "All" },
@@ -28,6 +29,33 @@ export default function AdminInterviews() {
   const [pro, setPro] = useState("");
   const [skill, setSkill] = useState("");
   const [date, setDate] = useState("");
+  // Cancel booking modal
+  const [cancelling, setCancelling] = useState<any | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelBusy, setCancelBusy] = useState(false);
+
+  async function submitCancel() {
+    if (!cancelling) return;
+    if (cancelReason.trim().length < 2) return Alert.alert("Reason required", "Please add a short reason for cancelling this booking.");
+    setCancelBusy(true);
+    try {
+      const r = await api<any>(`/admin/interviews/slots/${cancelling.id}/cancel-booking`, {
+        method: "POST",
+        body: { reason: cancelReason.trim(), refund: true },
+      });
+      setCancelling(null);
+      setCancelReason("");
+      successAlert.show({
+        title: "Booking Cancelled",
+        message: `Slot released. Student refunded ${r.refund} credits and both parties notified.`,
+      });
+      load();
+    } catch (e: any) {
+      Alert.alert("Failed", e.message || "Could not cancel booking.");
+    } finally {
+      setCancelBusy(false);
+    }
+  }
   const [status, setStatus] = useState<string | null>("");
 
   const load = useCallback(async () => {
@@ -100,13 +128,68 @@ export default function AdminInterviews() {
                 <Txt style={{ color: "#fff", fontWeight: "700", fontSize: 11, textTransform: "capitalize" }}>{s.status}</Txt>
               </View>
             </View>
+            {s.status === "booked" ? (
+              <Button
+                testID={`cancel-booking-${s.id}`}
+                title="Cancel Booking & Refund 49 credits"
+                variant="outline"
+                onPress={() => { setCancelling(s); setCancelReason(""); }}
+                icon={<Ionicons name="close-circle" size={16} color={colors.error} />}
+                style={{ marginTop: 10 }}
+              />
+            ) : null}
           </Card>
         )}
         ListEmptyComponent={<Txt variant="muted" style={{ marginTop: 16 }}>No interview slots found.</Txt>}
       />
+
+      {/* Cancel Booking Modal */}
+      <Modal visible={!!cancelling} transparent animationType="slide" onRequestClose={() => setCancelling(null)}>
+        <View style={modStyles.modalBg}>
+          <View style={modStyles.modalCard}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+              <Txt variant="h3">Cancel Booking</Txt>
+              <TouchableOpacity onPress={() => setCancelling(null)} hitSlop={10}>
+                <Ionicons name="close" size={22} color={colors.textPrimary} />
+              </TouchableOpacity>
+            </View>
+            {cancelling ? (
+              <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 4 }}>
+                {cancelling.student_name} ↔ {cancelling.pro_name} · {new Date(cancelling.start_at).toLocaleString()}
+              </Txt>
+            ) : null}
+            <Input
+              testID="cancel-reason"
+              label="Reason (required)"
+              placeholder="e.g. Slot mismatch / Compliance / User request"
+              value={cancelReason}
+              onChangeText={setCancelReason}
+              multiline
+              numberOfLines={3}
+            />
+            <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 6 }}>
+              💡 The slot will be released, the student will be auto-refunded 49 credits, and both parties will be notified.
+            </Txt>
+            <Button
+              testID="cancel-submit"
+              title="Cancel Booking & Refund"
+              variant="outline"
+              loading={cancelBusy}
+              onPress={submitCancel}
+              icon={<Ionicons name="close-circle" size={18} color={colors.error} />}
+              style={{ marginTop: 12 }}
+            />
+          </View>
+        </View>
+      </Modal>
     </Screen>
   );
 }
+
+const modStyles = StyleSheet.create({
+  modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
+  modalCard: { backgroundColor: colors.bg, padding: 18, borderTopLeftRadius: 20, borderTopRightRadius: 20 },
+});
 
 function pillColor(s: string) {
   if (s === "available") return colors.success;
