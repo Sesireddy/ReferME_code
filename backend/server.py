@@ -1182,6 +1182,71 @@ def compute_resume_score_breakdown(user: dict) -> dict:
 
 
 
+# ------------------- Talent Potential Score (TPS) -------------------
+# Master skill list used for dropdown options (combined with skills from profiles + jobs)
+MASTER_SKILLS = [
+    "Oracle SQL", "PLSQL", "Java", "Python", "JavaScript", "TypeScript",
+    "React", "React Native", "Angular", "Vue", "Node.js",
+    "AWS", "Azure", "GCP", "DevOps", "Kubernetes", "Docker",
+    "Data Science", "Machine Learning", "Deep Learning", "NLP",
+    "SQL", "MongoDB", "PostgreSQL", "MySQL",
+    "Spring Boot", "Django", "FastAPI", "Flask",
+    "Android", "iOS", "Swift", "Kotlin",
+    "HTML", "CSS", "Sass", "Tailwind",
+    "Go", "Rust", "C++", "C#", ".NET",
+    "Power BI", "Tableau", "Excel",
+]
+
+
+def _interview_count_score(interviews: int) -> int:
+    """Map interview count to bucket score (max 30)."""
+    n = int(interviews or 0)
+    if n <= 0:
+        return 0
+    if n <= 2:
+        return 15
+    if n <= 5:
+        return 25
+    return 30
+
+
+def compute_tps(user: dict) -> float:
+    """Talent Potential Score (0-100).
+
+    Formula:
+        TPS = (resume_score * 0.60)
+            + (interview_pct  * 0.20)
+            + (rating_pct     * 0.20)
+
+    - resume_score: 0-100 (existing rubric).
+    - interview_pct: bucket score (0/15/25/30) normalised to /30 * 100.
+    - rating_pct: stored avg student rating (1-10 scale) normalised to /10 * 100.
+    """
+    profile = user.get("profile") or {}
+    resume_score = int(profile.get("resume_score") or 0)
+    interviews = int(user.get("interviews_attended") or 0)
+    avg_rating = float(user.get("student_rating") or 0)  # 0..10
+
+    interview_score = _interview_count_score(interviews)
+    interview_pct = (interview_score / 30.0) * 100.0
+    rating_pct = (avg_rating / 10.0) * 100.0 if avg_rating > 0 else 0.0
+
+    tps = (resume_score * 0.60) + (interview_pct * 0.20) + (rating_pct * 0.20)
+    return round(max(0.0, min(100.0, tps)), 2)
+
+
+async def recalc_tps_for_user(user_id: str) -> Optional[float]:
+    """Recompute and persist `profile.tps` for a student user. No-op for other roles."""
+    u = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not u or u.get("role") != "student":
+        return None
+    tps = compute_tps(u)
+    prof = u.get("profile") or {}
+    prof["tps"] = tps
+    await db.users.update_one({"id": user_id}, {"$set": {"profile": prof}})
+    return tps
+
+
 def is_student_complete(profile: dict) -> bool:
     # Always-required: phone, gender, dob, education, passed_out_year, current_location,
     # preferred_role, skills + resume.
@@ -1279,6 +1344,9 @@ async def update_profile(body: ProfileBody, u: dict = Depends(current_user)):
     update_fields["profile"] = profile
     update_fields["profile_complete"] = complete
     await db.users.update_one({"id": u["id"]}, {"$set": update_fields})
+    # Refresh TPS for students whenever profile (and resume_score) changes.
+    if role == "student":
+        await recalc_tps_for_user(u["id"])
     u2 = await db.users.find_one({"id": u["id"]}, {"_id": 0})
     return {"user": user_public(u2), "profile": u2.get("profile", {})}
 
@@ -1848,7 +1916,7 @@ async def complete_interview(
         "candidate_id": slot["student_id"],
         "rating": body.rating,
     })
-    # Increment student interviews_attended and refresh resume score
+    # Increment student interviews_attended, aggregate student_rating, refresh resume/TPS
     student = await db.users.find_one_and_update(
         {"id": slot["student_id"]},
         {"$inc": {"interviews_attended": 1}},
@@ -1856,9 +1924,25 @@ async def complete_interview(
         projection={"_id": 0},
     )
     if student:
+        # Aggregate student rating (1-10) — running average
+        prev_sr_count = int(student.get("student_ratings_count") or 0)
+        prev_sr_avg = float(student.get("student_rating") or 0)
+        new_sr_count = prev_sr_count + 1
+        new_sr_avg = round(((prev_sr_avg * prev_sr_count) + float(body.rating)) / new_sr_count, 2)
         new_score = compute_resume_score(student)
         new_profile = {**(student.get("profile", {}) or {}), "resume_score": new_score}
-        await db.users.update_one({"id": student["id"]}, {"$set": {"profile": new_profile}})
+        await db.users.update_one(
+            {"id": student["id"]},
+            {
+                "$set": {
+                    "profile": new_profile,
+                    "student_rating": new_sr_avg,
+                    "student_ratings_count": new_sr_count,
+                }
+            },
+        )
+        # Recalculate TPS now that resume_score, interviews_attended and student_rating are fresh
+        await recalc_tps_for_user(student["id"])
         await push_notification(
             student["id"],
             "Interview completed 🎓",
@@ -2637,21 +2721,66 @@ async def my_student_ranks(u: dict = Depends(require_role(["student"]))):
     }
 
 
+@api.get("/leaderboard/students/options")
+async def leaderboard_options(u: dict = Depends(current_user)):
+    """Return dynamic dropdown options for the leaderboard skill / location filters.
+
+    Skills = MASTER_SKILLS ∪ all profile.skills (students) ∪ jobs.required_skills.
+    Locations = distinct non-empty profile.current_location values.
+    """
+    # Skills from student profiles
+    skill_set: set[str] = set()
+    async for s in db.users.find({"role": "student"}, {"_id": 0, "profile.skills": 1}):
+        for sk in (s.get("profile", {}) or {}).get("skills", []) or []:
+            sk = (sk or "").strip()
+            if sk:
+                skill_set.add(sk)
+    # Skills from job postings
+    async for j in db.jobs.find({}, {"_id": 0, "required_skills": 1, "skills": 1}):
+        for key in ("required_skills", "skills"):
+            for sk in (j.get(key) or []):
+                sk = (sk or "").strip()
+                if sk:
+                    skill_set.add(sk)
+    # Merge with master list (canonical labels stay nicely cased)
+    skill_set.update(MASTER_SKILLS)
+
+    # De-duplicate case-insensitively while keeping the longest/canonical casing
+    canon: dict[str, str] = {}
+    for sk in skill_set:
+        key = sk.lower()
+        if key not in canon or len(sk) > len(canon[key]):
+            canon[key] = sk
+    skills_sorted = sorted(canon.values(), key=lambda x: x.lower())
+
+    # Locations from profiles
+    loc_set: set[str] = set()
+    async for s in db.users.find({"role": "student"}, {"_id": 0, "profile.current_location": 1}):
+        loc = ((s.get("profile") or {}).get("current_location") or "").strip()
+        if loc:
+            loc_set.add(loc)
+    locations_sorted = sorted(loc_set, key=lambda x: x.lower())
+
+    return {"skills": skills_sorted, "locations": locations_sorted}
+
+
 @api.get("/leaderboard/students")
 async def leaderboard_students(
     u: dict = Depends(current_user),
     category: Optional[str] = Query(None),
     skill: Optional[str] = Query(None),
     location: Optional[str] = Query(None),
-    min_score: Optional[int] = Query(None),
-    max_score: Optional[int] = Query(None),
-    min_rating: Optional[float] = Query(None),
-    min_interviews: Optional[int] = Query(None),
-    min_jobs_applied: Optional[int] = Query(None),
-    min_referrals: Optional[int] = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=500),
 ):
+    """LeaderBoard — ranks Students by Talent Potential Score (TPS).
+
+    Ranking order (DESC):
+        1. tps
+        2. resume_score
+        3. avg_rating  (student_rating, 1-10)
+        4. interviews_attended
+    """
     students = await db.users.find({"role": "student"}, {"_id": 0, "password_hash": 0}).to_list(5000)
     out: list[dict] = []
     for s in students:
@@ -2662,43 +2791,38 @@ async def leaderboard_students(
         loc = profile.get("current_location")
         score_val = int(profile.get("resume_score") or 0)
         attended = int(s.get("interviews_attended", 0) or 0)
-        jobs_applied = await db.applications.count_documents({"student_id": sid})
-        referrals_received = await db.applications.count_documents({"student_id": sid, "referrer_pro_id": {"$ne": None}})
-        rating = float(profile.get("rating") or 0)
+        avg_rating = float(s.get("student_rating") or 0)
+
         if category and cat != category:
             continue
-        if skill and not any(skill.lower() in (sk or "").lower() for sk in skills):
+        if skill and not any(skill.lower() == (sk or "").lower() for sk in skills):
             continue
-        if location and location.lower() not in (loc or "").lower():
+        if location and location.lower() != (loc or "").lower():
             continue
-        if min_score is not None and score_val < min_score:
-            continue
-        if max_score is not None and score_val > max_score:
-            continue
-        if min_rating is not None and rating < min_rating:
-            continue
-        if min_interviews is not None and attended < min_interviews:
-            continue
-        if min_jobs_applied is not None and jobs_applied < min_jobs_applied:
-            continue
-        if min_referrals is not None and referrals_received < min_referrals:
-            continue
-        composite = attended * 10 + score_val + jobs_applied * 2 + referrals_received * 5
+
+        # Use stored TPS if present, otherwise compute on the fly for legacy rows
+        tps = profile.get("tps")
+        if tps is None:
+            tps = compute_tps(s)
+
+        primary_skill = (skills[0] if skills else "") or "—"
         out.append({
             "id": sid,
             "name": s.get("name") or s["email"].split("@")[0],
             "category": cat or "—",
             "skills": skills,
+            "skill_set": primary_skill,
             "current_location": loc or "—",
+            "tps": round(float(tps), 2),
             "resume_score": score_val,
             "interviews_attended": attended,
-            "rating": rating,
-            "jobs_applied": jobs_applied,
-            "referrals_received": referrals_received,
-            "composite_score": composite,
+            "avg_rating": round(avg_rating, 2),
+            # Legacy keys (kept for backward compatibility with other screens)
+            "rating": avg_rating,
+            "composite_score": round(float(tps), 2),
             "is_me": sid == u["id"],
         })
-    out.sort(key=lambda x: (-x["composite_score"], -x["resume_score"]))
+    out.sort(key=lambda x: (-x["tps"], -x["resume_score"], -x["avg_rating"], -x["interviews_attended"]))
     for i, e in enumerate(out):
         e["rank"] = i + 1
     total = len(out)
