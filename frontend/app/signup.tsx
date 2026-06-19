@@ -186,11 +186,7 @@ export default function Signup() {
               >
                 {refMessage}
               </Txt>
-            ) : (
-              <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 6, marginLeft: 4 }}>
-                Have a friend on ReferME? Enter their code and they earn 25 credits when you verify.
-              </Txt>
-            )}
+            ) : null}
           </View>
 
           <Button
