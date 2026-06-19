@@ -976,69 +976,169 @@ def pro_missing_fields(user: dict) -> list[str]:
     return missing
 
 
-def compute_resume_score(user: dict) -> int:
-    """Resume score 50-100 (0 if no resume). Driven by profile completeness, skills,
-    certifications, resume size, and mock interviews attended.
+def _education_score(edu: str) -> int:
+    """Education Qualification — max 30 points per spec."""
+    if not edu:
+        return 0
+    e = str(edu).strip().upper().replace(".", "").replace(" ", "")
+    # Normalise common variants
+    # B.Tech / M.Tech / BPharma / MCA / MSc / MCom → 30
+    top = {"BTECH", "MTECH", "BPHARMA", "BPHARM", "MCA", "MSC", "MCOM"}
+    mid_25 = {"DEGREE", "BCA", "BBA", "BA", "BCOM", "BSC"}  # generic Degree variants
+    mid_20 = {"BED", "OTHER", "__OTHER__"}
+    low_15 = {"DIPLOMA", "INTERMEDIATE", "10+2", "12TH", "PUC", "HSC"}
+    low_10 = {"HIGHSCHOOL", "SSC", "10TH", "MATRIC"}
+    if e in top:
+        return 30
+    if e in mid_25:
+        return 25
+    if e in mid_20:
+        return 20
+    if e in low_15 or "INTERMEDIATE" in e:
+        return 15
+    if e in low_10 or "HIGHSCHOOL" in e or "MATRIC" in e:
+        return 10
+    # Try to recognise patterns like "B Tech" / "Bachelor of Technology"
+    if "TECH" in e or "PHARM" in e or e.startswith("M") and ("SC" in e or "COM" in e or "TECH" in e):
+        return 30
+    if "BCA" in e or "BBA" in e or "DEGREE" in e or "BACHELOR" in e:
+        return 25
+    if "BED" in e:
+        return 20
+    if "DIPLOMA" in e:
+        return 15
+    return 20  # default → "Other"
 
-    Range:
-      - 0          → no resume uploaded / linked
-      - 50-65      → basic profile + resume
-      - 66-80      → good profile completion
-      - 81-90      → strong profile (projects / certifications)
-      - 91-100     → fully completed professional profile
+
+def _passed_year_score(year: Any, is_experienced: bool) -> int:
+    """Passed Out Year — max 20 points per spec."""
+    try:
+        y = int(year)
+    except (TypeError, ValueError):
+        return 0
+    if y <= 0 or y > 2100:
+        return 0
+    now_year = datetime.utcnow().year
+    diff = now_year - y
+    if diff < 0:
+        diff = 0
+    if is_experienced:
+        # Ascending: older grad year → higher score
+        if diff > 10:
+            return 20
+        if diff >= 6:
+            return 15
+        if diff >= 3:
+            return 10
+        return 5
+    # Fresher: descending (newer grad → higher)
+    if diff <= 2:
+        return 20
+    if diff <= 5:
+        return 15
+    if diff <= 10:
+        return 10
+    return 5
+
+
+def _skills_score(skills: Any) -> int:
+    """Skill Set — max 30 points per spec."""
+    if isinstance(skills, str):
+        items = [s.strip() for s in skills.split(",") if s.strip()]
+    elif isinstance(skills, list):
+        items = [str(s).strip() for s in skills if str(s).strip()]
+    else:
+        items = []
+    n = len(items)
+    if n >= 10:
+        return 30
+    if n >= 5:
+        return 25
+    if n >= 3:
+        return 20
+    if n == 2:
+        return 15
+    if n == 1:
+        return 10
+    return 0
+
+
+def _resume_upload_score(profile: dict) -> int:
+    """Resume Upload — max 20 points per spec.
+    20 → uploaded and 'parsed' (has at least basic structure inferred from key profile fields).
+    10 → uploaded but key fields missing.
+    0  → no resume.
     """
-    profile = user.get("profile", {}) or {}
     has_resume = bool(profile.get("resume_base64") or profile.get("resume_link"))
     if not has_resume:
         return 0
-    score = 50  # base floor when resume present
-    # Identity & contact (max +6)
-    if user.get("name"):
-        score += 2
-    if user.get("email"):
-        score += 1
-    if profile.get("phone"):
-        score += 3
-    # Education & timeline (max +6)
-    if profile.get("education"):
-        score += 3
-    if profile.get("passed_out_year"):
-        score += 2
-    if profile.get("dob"):
-        score += 1
-    # Location & role preference (max +4)
-    if profile.get("current_location"):
-        score += 2
-    if profile.get("preferred_role"):
-        score += 2
-    # Skills — each skill +2, capped at 10 (5 skills)
-    skills = profile.get("skills", []) or []
-    score += min(len(skills) * 2, 10)
-    # Resume file size — bigger content → more substance
-    rsize = int(profile.get("resume_size") or 0)
-    if rsize > 80_000:
-        score += 5
-    elif rsize > 30_000:
-        score += 3
-    elif rsize > 5_000:
-        score += 1
-    # Profile photo bonus
-    if profile.get("profile_photo") or profile.get("profile_photo_base64"):
-        score += 3
-    # Projects / portfolio bonus
-    projects = profile.get("projects", []) or []
-    if projects:
-        score += min(len(projects) * 2, 6)
-    # Certifications — each +3, capped at +9
-    certs = profile.get("certifications", []) or []
-    score += min(len(certs) * 3, 9)
-    # Experience field for "experienced" preferred role
-    if profile.get("preferred_role") == "experienced" and (profile.get("years_of_experience") or 0) > 0:
-        score += 3
-    # Mock interviews attended — +2 each up to +20
-    attended = int(user.get("interviews_attended") or 0)
-    score += min(attended * 2, 20)
-    return max(50, min(100, int(score)))
+    # Treat resume as 'parsed' when core fields exist alongside it
+    key_fields = ["education", "passed_out_year", "current_location", "phone"]
+    missing = sum(1 for f in key_fields if not profile.get(f))
+    if missing == 0:
+        return 20
+    return 10
+
+
+def compute_resume_score(user: dict) -> int:
+    """Resume Score (0-100) per official ReferME formula:
+       Education(30) + Passed Out Year(20) + Skills(30) + Resume Upload(20)."""
+    profile = user.get("profile", {}) or {}
+    is_experienced = (profile.get("preferred_role") == "experienced") or (
+        int(profile.get("years_of_experience") or 0) > 0
+    )
+    score = (
+        _education_score(profile.get("education") or "")
+        + _passed_year_score(profile.get("passed_out_year"), is_experienced)
+        + _skills_score(profile.get("skills"))
+        + _resume_upload_score(profile)
+    )
+    return max(0, min(100, int(score)))
+
+
+def compute_resume_score_breakdown(user: dict) -> dict:
+    """Same as compute_resume_score but returns the per-section breakdown for UI display."""
+    profile = user.get("profile", {}) or {}
+    is_experienced = (profile.get("preferred_role") == "experienced") or (
+        int(profile.get("years_of_experience") or 0) > 0
+    )
+    edu_s = _education_score(profile.get("education") or "")
+    year_s = _passed_year_score(profile.get("passed_out_year"), is_experienced)
+    skill_s = _skills_score(profile.get("skills"))
+    resume_s = _resume_upload_score(profile)
+    total = max(0, min(100, edu_s + year_s + skill_s + resume_s))
+    # Suggestions for improvement
+    skills_list = profile.get("skills") or []
+    if isinstance(skills_list, str):
+        skills_list = [s.strip() for s in skills_list.split(",") if s.strip()]
+    suggestions = []
+    if not (profile.get("resume_base64") or profile.get("resume_link")):
+        suggestions.append("Upload your resume to add up to 20 points.")
+    elif resume_s < 20:
+        suggestions.append("Complete missing profile fields (education, passed out year, location, phone) to unlock full resume points.")
+    if len(skills_list) < 10:
+        if len(skills_list) == 0:
+            suggestions.append("Add skills (comma-separated) to your profile.")
+        else:
+            suggestions.append(f"Add more skills — you have {len(skills_list)}; aim for 10+ to earn 30 points.")
+    if edu_s < 30:
+        suggestions.append("Update your highest education qualification.")
+    if year_s < 20:
+        suggestions.append("Confirm your passed-out year matches your career stage.")
+    return {
+        "total": total,
+        "max": 100,
+        "education_score": edu_s,
+        "education_max": 30,
+        "passed_out_year_score": year_s,
+        "passed_out_year_max": 20,
+        "skills_score": skill_s,
+        "skills_max": 30,
+        "resume_upload_score": resume_s,
+        "resume_upload_max": 20,
+        "suggestions": suggestions,
+    }
+
 
 
 def is_student_complete(profile: dict) -> bool:
@@ -3981,6 +4081,12 @@ async def resubmit_job(job_id: str, u: dict = Depends(require_role(["professiona
         extra={"job_title": job.get("title", "")},
     )
     return {"ok": True, "verification_status": "pending"}
+
+
+@api.get("/student/resume-score")
+async def my_resume_score(u: dict = Depends(require_role(["student"]))):
+    """Return the live Resume Score breakdown so the Profile screen can render the gauge + suggestions."""
+    return compute_resume_score_breakdown(u)
 
 
 app.include_router(api)
