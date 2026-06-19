@@ -109,10 +109,9 @@ export default function StudentDashboard() {
             <Txt
               style={styles.tpsPillValue}
               numberOfLines={1}
-              adjustsFontSizeToFit
               testID="student-tps"
             >
-              {tps.toFixed(2)}
+              {Math.round(tps)}
             </Txt>
             <Txt style={styles.tpsPillMax} numberOfLines={1}>/100</Txt>
           </View>
@@ -126,21 +125,21 @@ export default function StudentDashboard() {
           <View style={styles.breakdownRow}>
             <BreakdownChip
               icon="document-text"
-              label="Resume 60%"
+              label="Resume"
               contribution={resumeContribution}
               maxContribution={60}
               detail={`${score}/100`}
             />
             <BreakdownChip
               icon="videocam"
-              label="Interviews 20%"
+              label="Interviews"
               contribution={interviewContribution}
               maxContribution={20}
               detail={`${interviewsAttended} attended`}
             />
             <BreakdownChip
               icon="star"
-              label="Rating 20%"
+              label="Rating"
               contribution={ratingContribution}
               maxContribution={20}
               detail={avgRating > 0 ? `★ ${avgRating.toFixed(1)}/10` : "No ratings"}
@@ -289,18 +288,18 @@ const styles = StyleSheet.create({
     alignItems: "baseline",
     alignSelf: "flex-start",
     backgroundColor: "#fff",
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 14,
     marginTop: 8,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.18,
-    shadowRadius: 12,
+    shadowOpacity: 0.22,
+    shadowRadius: 10,
     elevation: 6,
   },
-  tpsPillValue: { fontSize: 38, fontWeight: "900", color: colors.primary, letterSpacing: -0.5 },
-  tpsPillMax: { fontSize: 16, fontWeight: "700", color: colors.textSecondary, marginLeft: 4 },
+  tpsPillValue: { fontSize: 44, fontWeight: "900", color: "#1A1A2E", lineHeight: 50 },
+  tpsPillMax: { fontSize: 18, fontWeight: "700", color: "#6B7280", marginLeft: 6 },
   breakdownRow: { flexDirection: "row", gap: 8, marginTop: 14 },
   breakdownChip: {
     flex: 1,

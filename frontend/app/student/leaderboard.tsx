@@ -203,7 +203,7 @@ function LeaderRow({ entry: e }: { entry: LbItem }) {
           </View>
           <Txt style={styles.tpsLabel}>Talent Potential Score</Txt>
           <View style={{ flex: 1 }} />
-          <Txt style={styles.tpsValue}>{e.tps?.toFixed(2) ?? "0.00"}</Txt>
+          <Txt style={styles.tpsValue}>{Math.round(e.tps ?? 0)}</Txt>
           <Txt style={styles.tpsMax}>/100</Txt>
         </LinearGradient>
 
@@ -273,7 +273,7 @@ function PodiumCol({ entry, rank, height, crown }: { entry: LbItem; rank: number
       <LinearGradient colors={grad} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={[styles.col, { height, borderColor: rank === 1 ? colors.primary : colors.border, borderWidth: rank === 1 ? 2 : 1 }]}>
         <Txt style={{ fontWeight: "800", fontSize: 22 }}>#{rank}</Txt>
         <Txt style={{ fontWeight: "700", textAlign: "center", marginTop: 4 }} numberOfLines={1}>{entry.name}</Txt>
-        <Txt variant="small" style={{ color: colors.textSecondary }}>TPS {entry.tps?.toFixed(1) ?? "0"}</Txt>
+        <Txt variant="small" style={{ color: colors.textSecondary }}>TPS {Math.round(entry.tps ?? 0)}</Txt>
       </LinearGradient>
     </View>
   );
