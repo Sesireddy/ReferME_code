@@ -682,15 +682,56 @@ async def verify_otp(body: VerifyOtpBody):
     return {"message": "OTP verified", "reset_token": body.otp}
 
 
+def normalize_indian_mobile(raw: str) -> tuple[str, str | None]:
+    """
+    Validate and normalize an Indian mobile number to E.164 (+91XXXXXXXXXX).
+
+    Returns (normalized_or_empty, error_message_or_None).
+    Accepts: 8989849312 / 918989849312 / +918989849312 / +91-8989849312 / +91 8989849312
+    Rejects anything not matching the 10-digit Indian format starting with 6/7/8/9.
+    """
+    if not raw:
+        return "", "Please enter a valid 10-digit Indian mobile number."
+    s = str(raw).strip()
+    digits = "".join(ch for ch in s if ch.isdigit())
+    # Strip leading 91 if length is 12; strip leading 0 if length is 11.
+    if len(digits) == 12 and digits.startswith("91"):
+        digits = digits[2:]
+    elif len(digits) == 11 and digits.startswith("0"):
+        digits = digits[1:]
+    elif len(digits) == 13 and digits.startswith("091"):
+        digits = digits[3:]
+    # If user typed +91 with extra country prefix
+    if len(digits) > 10 and digits.startswith("91") and len(digits) - 2 == 10:
+        digits = digits[2:]
+
+    # Country code check: only +91 allowed when present
+    if s.startswith("+") and not (s.lstrip("+").replace("-", "").replace(" ", "").startswith("91")):
+        return "", "Please enter a valid Indian mobile number with country code +91."
+
+    if len(digits) != 10:
+        return "", "Please enter a valid 10-digit Indian mobile number."
+
+    if digits[0] not in "6789":
+        return "", "Indian mobile numbers must start with 6, 7, 8, or 9."
+
+    return f"+91{digits}", None
+
+
+def is_valid_indian_mobile(raw: str) -> bool:
+    _, err = normalize_indian_mobile(raw)
+    return err is None
+
+
 # ------------------- Phone (SMS) OTP — MOCK MODE -------------------
 # In mock mode we generate a 6-digit OTP and return it in the response payload
 # (under `mock_otp`) so the client can complete verification without an SMS gateway.
 @api.post("/profile/phone/send-otp")
 async def phone_send_otp(body: PhoneOtpSendBody, u: dict = Depends(current_user)):
-    phone = (body.phone or "").strip()
-    digits = "".join(ch for ch in phone if ch.isdigit())
-    if len(digits) < 7:
-        raise HTTPException(status_code=400, detail="Invalid phone number")
+    phone_e164, err = normalize_indian_mobile(body.phone or "")
+    if err:
+        raise HTTPException(status_code=400, detail=err)
+    phone = phone_e164
     otp_code = f"{secrets.randbelow(10**6):06d}"
     await db.otps.insert_one({
         "id": new_id(),
@@ -1207,7 +1248,14 @@ async def update_profile(body: ProfileBody, u: dict = Depends(current_user)):
             profile[k] = payload[k]  # allow None to clear
     # SECURITY: clients cannot self-set phone_verified via PUT /profile —
     # only the /profile/phone/verify-otp flow may set it. Reset it if phone changed.
-    new_phone = (profile.get("phone") or "").strip()
+    new_phone_raw = (profile.get("phone") or "").strip()
+    if new_phone_raw:
+        # Normalize + validate
+        normalized, perr = normalize_indian_mobile(new_phone_raw)
+        if perr:
+            raise HTTPException(status_code=400, detail=perr)
+        profile["phone"] = normalized
+    new_phone = profile.get("phone") or ""
     if "phone" in payload and new_phone != prev_phone:
         profile["phone_verified"] = False
         profile["phone_verified_at"] = None

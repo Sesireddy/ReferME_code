@@ -15,6 +15,7 @@ import { Input } from "@/src/components/Input";
 import { Picker } from "@/src/components/Picker";
 import { colors, radius } from "@/src/theme/tokens";
 import { api, clearSession } from "@/src/lib/api";
+import { validateIndianMobile, isValidIndianMobile } from "@/src/lib/phone";
 import { successAlert } from "@/src/lib/successAlert";
 import { ConfirmDialog } from "@/src/components/ConfirmDialog";
 import {
@@ -302,14 +303,14 @@ export default function StudentProfile() {
   }
 
   async function sendPhoneOtp() {
-    const trimmed = phone.trim();
-    if (!trimmed || trimmed.replace(/\D/g, "").length < 7) {
-      Alert.alert("Invalid number", "Enter a valid mobile number first.");
+    const v = validateIndianMobile(phone);
+    if (!v.ok) {
+      Alert.alert("Invalid number", v.error || "Please enter a valid mobile number.");
       return;
     }
     setSendingOtp(true);
     try {
-      const res = await api<any>("/profile/phone/send-otp", { method: "POST", body: { phone: trimmed } });
+      const res = await api<any>("/profile/phone/send-otp", { method: "POST", body: { phone: v.normalized } });
       setOtpInput("");
       setOtpModal({ open: true, mockOtp: res.mock_otp || "" });
     } catch (e: any) {
