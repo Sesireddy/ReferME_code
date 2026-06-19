@@ -27,11 +27,12 @@ const CATEGORY_OPTIONS = [
 ];
 
 const OPEN_POSITIONS_OPTIONS = [
-  { value: "1 to 5", label: "1 to 5" },
-  { value: "1 to 10", label: "1 to 10" },
-  { value: "1 to 50", label: "1 to 50" },
-  { value: "1 to 100", label: "1 to 100" },
+  ...Array.from({ length: 20 }, (_, i) => ({ value: String(i + 1), label: String(i + 1) })),
+  { value: "20+", label: "20+" },
+  { value: "50+", label: "50+" },
   { value: "100+", label: "100+" },
+  { value: "500+", label: "500+" },
+  { value: "1000+", label: "1000+" },
 ];
 
 type Errors = Partial<Record<
@@ -57,7 +58,7 @@ export default function ProPostJob() {
   const [expMin, setExpMin] = useState<string | null>(null);
   const [expMax, setExpMax] = useState<string | null>(null);
   const [skills, setSkills] = useState("");
-  const [openings, setOpenings] = useState<string | null>("1 to 5");
+  const [openings, setOpenings] = useState<string | null>(null);
   // Proof of opening fields
   const [proofLink, setProofLink] = useState("");
   const [proofDataUri, setProofDataUri] = useState<string>("");
@@ -187,7 +188,7 @@ export default function ProPostJob() {
       setTitle(""); setCompany(""); setDesc(""); setLocation(null); setLocationOther("");
       setSalaryRange(null); setIndustry(null); setIndustryOther("");
       setCategory("fresher"); setExpMin(null); setExpMax(null);
-      setSkills(""); setOpenings("1 to 5");
+      setSkills(""); setOpenings(null);
       setProofLink(""); clearProof();
       setErrors({});
     } catch (e: any) {
@@ -310,7 +311,7 @@ export default function ProPostJob() {
           options={OPEN_POSITIONS_OPTIONS}
           value={openings}
           onChange={(v) => { setOpenings(v as string); setErrors((e) => ({ ...e, openings: undefined })); }}
-          placeholder="1 to 5"
+          placeholder="Select Number of Open Positions"
         />
         {errors.openings ? <Txt style={styles.err}>{errors.openings}</Txt> : null}
 

@@ -444,7 +444,11 @@ class BookInterviewBody(BaseModel):
     slot_id: str
 
 
-OPEN_POSITIONS_OPTIONS = ["1 to 5", "1 to 10", "1 to 50", "1 to 100", "100+"]
+OPEN_POSITIONS_OPTIONS = [
+    "1", "2", "3", "4", "5", "6", "7", "8", "9", "10",
+    "11", "12", "13", "14", "15", "16", "17", "18", "19", "20",
+    "20+", "50+", "100+", "500+", "1000+",
+]
 
 
 class JobPostBody(BaseModel):
@@ -463,7 +467,7 @@ class JobPostBody(BaseModel):
     experience_min: Optional[int] = None
     experience_max: Optional[int] = None
     open_positions: Optional[int] = None  # numeric (legacy)
-    open_positions_label: Optional[Literal["1 to 5", "1 to 10", "1 to 50", "1 to 100", "100+"]] = "1 to 5"
+    open_positions_label: Optional[str] = "1"  # one of OPEN_POSITIONS_OPTIONS
     bulk_openings: Optional[int] = None  # backward compat alias
     # Proof of opening (mandatory for professionals: at least one of screenshot OR link)
     proof_screenshot_b64: Optional[str] = None  # data URI or raw base64 (JPG/PNG/PDF)
@@ -487,7 +491,7 @@ class JobPatchBody(BaseModel):
     experience_min: Optional[int] = None
     experience_max: Optional[int] = None
     open_positions: Optional[int] = None
-    open_positions_label: Optional[Literal["1 to 5", "1 to 10", "1 to 50", "1 to 100", "100+"]] = None
+    open_positions_label: Optional[str] = None  # one of OPEN_POSITIONS_OPTIONS
 
 
 class ApplyJobBody(BaseModel):
@@ -1770,9 +1774,13 @@ async def post_job(body: JobPostBody, u: dict = Depends(require_role(["employer"
     if not company_resolved:
         raise HTTPException(status_code=400, detail="Company Name is required.")
     # Numeric open_positions for back-compat; canonical display uses open_positions_label.
-    label = body.open_positions_label or "1 to 5"
-    LABEL_NUMERIC = {"1 to 5": 5, "1 to 10": 10, "1 to 50": 50, "1 to 100": 100, "100+": 100}
-    openings = body.open_positions or LABEL_NUMERIC.get(label, 5)
+    label = body.open_positions_label or "1"
+    if label not in OPEN_POSITIONS_OPTIONS:
+        raise HTTPException(status_code=400, detail=f"Invalid Number of Open Positions. Allowed: {OPEN_POSITIONS_OPTIONS}")
+    if label.endswith("+"):
+        openings = body.open_positions or int(label[:-1])
+    else:
+        openings = body.open_positions or int(label)
     category = body.category or ("experienced" if (body.experience_required or 0) > 0 else "fresher")
     exp_req = body.experience_required or 0
     if category == "experienced" and exp_req <= 0 and not body.experience_min and not body.experience_max:

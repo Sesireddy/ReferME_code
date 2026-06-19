@@ -7,6 +7,16 @@ import { Txt } from "@/src/components/Txt";
 import { Card } from "@/src/components/Card";
 import { Button } from "@/src/components/Button";
 import { Input } from "@/src/components/Input";
+import { Picker } from "@/src/components/Picker";
+
+const OPEN_POSITIONS_OPTIONS = [
+  ...Array.from({ length: 20 }, (_, i) => ({ value: String(i + 1), label: String(i + 1) })),
+  { value: "20+", label: "20+" },
+  { value: "50+", label: "50+" },
+  { value: "100+", label: "100+" },
+  { value: "500+", label: "500+" },
+  { value: "1000+", label: "1000+" },
+];
 import { ScreenTitle } from "@/src/components/ScreenTitle";
 import { colors, radius } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
@@ -61,7 +71,7 @@ export default function ProMyJobs() {
       location: job.location || "",
       salary_range: job.salary_range || "",
       description: job.description || "",
-      open_positions: String(job.open_positions || 1),
+      open_positions_label: job.open_positions_label || (job.open_positions ? String(job.open_positions) : null),
       skills_required: (job.skills_required || []).join(", "),
     });
   }
@@ -76,7 +86,7 @@ export default function ProMyJobs() {
           location: editForm.location,
           salary_range: editForm.salary_range,
           description: editForm.description,
-          open_positions: parseInt(editForm.open_positions, 10) || 1,
+          open_positions_label: editForm.open_positions_label || null,
           skills_required: editForm.skills_required.split(",").map((s: string) => s.trim()).filter(Boolean),
         },
       });
@@ -237,7 +247,13 @@ export default function ProMyJobs() {
               <Input label="Company" value={editForm.company} onChangeText={(v: string) => setEditForm({ ...editForm, company: v })} />
               <Input label="Location" value={editForm.location} onChangeText={(v: string) => setEditForm({ ...editForm, location: v })} />
               <Input label="Salary range" value={editForm.salary_range} onChangeText={(v: string) => setEditForm({ ...editForm, salary_range: v })} />
-              <Input label="Open positions" value={editForm.open_positions} onChangeText={(v: string) => setEditForm({ ...editForm, open_positions: v })} keyboardType="number-pad" />
+              <Picker
+                label="Number of Open Positions"
+                placeholder="Select Number of Open Positions"
+                options={OPEN_POSITIONS_OPTIONS}
+                value={editForm.open_positions_label || null}
+                onChange={(v) => setEditForm({ ...editForm, open_positions_label: v as string })}
+              />
               <Input label="Skills (comma-separated)" value={editForm.skills_required} onChangeText={(v: string) => setEditForm({ ...editForm, skills_required: v })} />
               <Input label="Description" value={editForm.description} onChangeText={(v: string) => setEditForm({ ...editForm, description: v })} multiline />
             </ScrollView>
