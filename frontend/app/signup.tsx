@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { View, StyleSheet, ScrollView, TouchableOpacity, Alert, KeyboardAvoidingView, Platform } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Txt } from "@/src/components/Txt";
@@ -22,6 +22,8 @@ const ROLES: { id: Role; title: string; subtitle: string; icon: any; color: stri
 
 export default function Signup() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ ref?: string }>();
+  const refCode = (params.ref || "").toString().trim();
   const [role, setRole] = useState<Role | null>("student");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -46,7 +48,7 @@ export default function Signup() {
       const res = await api<{ email: string; mock_otp?: string }>("/auth/signup", {
         method: "POST",
         auth: false,
-        body: { email: email.trim().toLowerCase(), password, role, name },
+        body: { email: email.trim().toLowerCase(), password, role, name, ref: refCode || undefined },
       });
       router.push({ pathname: "/otp", params: { email: res.email, purpose: "verify_email", hint: res.mock_otp || "" } });
     } catch (e: any) {
@@ -65,6 +67,15 @@ export default function Signup() {
           </TouchableOpacity>
           <Txt variant="h1">Create account</Txt>
           <Txt variant="muted" style={{ marginTop: 4, marginBottom: 20 }}>Pick how you&apos;ll use ReferME</Txt>
+
+          {refCode ? (
+            <View style={styles.refBanner}>
+              <Ionicons name="gift" size={18} color={colors.success} />
+              <Txt style={styles.refBannerText} numberOfLines={2}>
+                You&apos;ve been invited! Sign up and your friend will earn 25 credits. Code: <Txt style={{ fontWeight: "800" }}>{refCode}</Txt>
+              </Txt>
+            </View>
+          ) : null}
 
           <View style={{ gap: 12, marginBottom: 20 }}>
             {ROLES.map((r) => {

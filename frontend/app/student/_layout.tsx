@@ -28,6 +28,7 @@ export default function StudentLayout() {
       <Tabs.Screen name="my-applications" options={{ href: null }} />
       <Tabs.Screen name="my-mock-interviews" options={{ href: null }} />
       <Tabs.Screen name="my-leaderboard" options={{ href: null }} />
+      <Tabs.Screen name="refer" options={{ href: null }} />
     </Tabs>
   );
 }

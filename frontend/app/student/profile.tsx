@@ -977,7 +977,7 @@ export default function StudentProfile() {
             { key: "applications", label: "My Job Applications", icon: "briefcase", color: "#2563EB", onPress: () => router.push("/student/my-applications") },
             { key: "interviews", label: "My Mock Interviews", icon: "mic", color: "#7C3AED", onPress: () => router.push("/student/my-mock-interviews") },
             { key: "leaderboard", label: "My LeaderBoard Score", icon: "trophy", color: colors.accent, onPress: () => router.push("/student/my-leaderboard") },
-            { key: "refer", label: "Refer a Friend", icon: "people", color: colors.success, onPress: () => { successAlert.show({ title: "🎁 Coming Soon", message: "Refer your friends and earn 25 credits per signup. We're rolling this out in the next update.", intent: "info" }); } },
+            { key: "refer", label: "Refer a Friend", icon: "people", color: colors.success, onPress: () => router.push("/student/refer") },
           ] as MenuItem[]
         }
       />

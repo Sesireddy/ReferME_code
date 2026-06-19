@@ -76,6 +76,17 @@ ACTION_COST = 49  # credits per action (apply / book)
 INTERVIEW_PRO_REWARD = 35  # credits awarded to pro for a completed mock interview
 JOB_POST_REWARD = 100  # one-time credits awarded when a posted job gets >= JOB_POST_REWARD_MIN_APPS valid applications
 JOB_POST_REWARD_MIN_APPS = 4
+
+# ------------------- Referral Program -------------------
+REFERRAL_REWARD = 25  # credits awarded to the referrer for each successful Job Seeker signup
+
+def make_referral_code() -> str:
+    """Generate an opaque, human-readable referral code like 'USER12AB34CD'."""
+    return "USER" + secrets.token_hex(4).upper()
+
+def referral_link_for(code: str) -> str:
+    base = os.environ.get("REFERRAL_BASE_URL", "https://referme.app/invite")
+    return f"{base}?ref={code}"
 REFERRAL_HIRED_REWARD = 500
 HIRING_REWARD = 1500  # credits awarded to job poster on admin-approved hire
 INTERVIEW_MIN_DURATION_MIN = 15  # minimum minutes interview must run before it qualifies for the reward
@@ -343,6 +354,7 @@ class SignupBody(BaseModel):
     password: str = Field(min_length=6)
     role: Role
     name: Optional[str] = ""
+    ref: Optional[str] = None  # Referrer's referral code (e.g., USER12345)
 
 
 class VerifyOtpBody(BaseModel):
@@ -612,6 +624,19 @@ async def signup(body: SignupBody):
     existing = await db.users.find_one({"email": email_lower}, {"_id": 0})
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
+
+    # ---------- Referral anti-fraud ----------
+    referrer_user = None
+    ref_code_raw = (body.ref or "").strip().upper()
+    if ref_code_raw and body.role == "student":
+        # Lookup referrer by code; only students can be referred (per spec)
+        referrer_user = await db.users.find_one({"referral_code": ref_code_raw}, {"_id": 0})
+        if referrer_user:
+            # 1. Self-referral guard: same email as referrer? reject silently (no reward).
+            if referrer_user.get("email", "").lower() == email_lower:
+                referrer_user = None
+        # NOTE: Same-phone duplicate detection happens later via phone OTP verification.
+
     user_doc = {
         "id": new_id(),
         "email": email_lower,
@@ -625,9 +650,28 @@ async def signup(body: SignupBody):
         "total_deposits": 0,
         "profile_complete": False,
         "profile": {},
+        "referral_code": make_referral_code(),
+        "referred_by": referrer_user["id"] if referrer_user else None,
         "created_at": now_iso(),
     }
+    # Ensure referral_code is unique (very unlikely collision but safe)
+    while await db.users.find_one({"referral_code": user_doc["referral_code"]}, {"_id": 0}):
+        user_doc["referral_code"] = make_referral_code()
     await db.users.insert_one(user_doc)
+
+    # Record a pending referral row — payout happens on successful email verification.
+    if referrer_user and body.role == "student":
+        await db.referrals.insert_one({
+            "id": new_id(),
+            "referrer_id": referrer_user["id"],
+            "referred_id": user_doc["id"],
+            "referred_email": email_lower,
+            "code": ref_code_raw,
+            "status": "pending",
+            "reward_credits": REFERRAL_REWARD,
+            "created_at": now_iso(),
+            "completed_at": None,
+        })
     # Signup bonus ledger entry for Job Seekers (Students)
     if body.role == "student":
         await db.transactions.insert_one({
@@ -696,6 +740,45 @@ async def verify_otp(body: VerifyOtpBody):
                 "100 Credits have been added to your wallet as a welcome bonus.",
                 "success",
             )
+            # Complete any pending referral and reward the referrer with REFERRAL_REWARD credits.
+            pending = await db.referrals.find_one(
+                {"referred_id": u["id"], "status": "pending"}, {"_id": 0}
+            )
+            if pending:
+                # Anti-fraud guard: skip if referred email is identical to referrer email
+                referrer = await db.users.find_one({"id": pending["referrer_id"]}, {"_id": 0})
+                if not referrer or referrer.get("email", "").lower() == u.get("email", "").lower():
+                    await db.referrals.update_one(
+                        {"id": pending["id"]},
+                        {"$set": {"status": "rejected", "reason": "self_referral", "completed_at": now_iso()}},
+                    )
+                else:
+                    await db.users.update_one(
+                        {"id": referrer["id"]},
+                        {"$inc": {"credits": REFERRAL_REWARD}},
+                    )
+                    await db.transactions.insert_one({
+                        "id": new_id(),
+                        "user_id": referrer["id"],
+                        "delta": REFERRAL_REWARD,
+                        "reason": "referral_reward",
+                        "meta": {
+                            "label": f"Referral Reward · {u.get('name') or u['email']}",
+                            "referred_id": u["id"],
+                            "referral_id": pending["id"],
+                        },
+                        "created_at": now_iso(),
+                    })
+                    await db.referrals.update_one(
+                        {"id": pending["id"]},
+                        {"$set": {"status": "successful", "completed_at": now_iso()}},
+                    )
+                    await push_notification(
+                        referrer["id"],
+                        f"Referral Reward +{REFERRAL_REWARD} Credits 🎉",
+                        f"{u.get('name') or 'A friend'} just joined ReferME using your link. {REFERRAL_REWARD} credits added.",
+                        "success",
+                    )
         return {"token": token, "user": user_public(u), "welcome_bonus": welcome_bonus}
     return {"message": "OTP verified", "reset_token": body.otp}
 
@@ -1367,6 +1450,75 @@ async def update_profile(body: ProfileBody, u: dict = Depends(current_user)):
         await recalc_tps_for_user(u["id"])
     u2 = await db.users.find_one({"id": u["id"]}, {"_id": 0})
     return {"user": user_public(u2), "profile": u2.get("profile", {})}
+
+
+# ------------------- Referral Program endpoints -------------------
+def _mask_email(e: str) -> str:
+    if not e or "@" not in e:
+        return "—"
+    local, _, dom = e.partition("@")
+    if len(local) <= 2:
+        return f"{local[:1]}***@{dom}"
+    return f"{local[:2]}***@{dom}"
+
+
+async def _ensure_referral_code(u: dict) -> str:
+    code = u.get("referral_code")
+    if code:
+        return code
+    # Backfill for existing users
+    for _ in range(5):
+        c = make_referral_code()
+        existing = await db.users.find_one({"referral_code": c}, {"_id": 0})
+        if not existing:
+            await db.users.update_one({"id": u["id"]}, {"$set": {"referral_code": c}})
+            return c
+    raise HTTPException(status_code=500, detail="Could not allocate referral code")
+
+
+@api.get("/refer/me")
+async def refer_me(u: dict = Depends(current_user)):
+    """Return the current user's referral code, share link and tracking stats."""
+    code = await _ensure_referral_code(u)
+    refs = await db.referrals.find({"referrer_id": u["id"]}, {"_id": 0}).to_list(2000)
+    total = len(refs)
+    successful = sum(1 for r in refs if r.get("status") == "successful")
+    pending = sum(1 for r in refs if r.get("status") == "pending")
+    credits_earned = successful * REFERRAL_REWARD
+    return {
+        "code": code,
+        "link": referral_link_for(code),
+        "reward": REFERRAL_REWARD,
+        "total": total,
+        "successful": successful,
+        "pending": pending,
+        "credits_earned": credits_earned,
+    }
+
+
+@api.get("/refer/list")
+async def refer_list(u: dict = Depends(current_user)):
+    """Return the user's referrals (newest first). Emails are masked."""
+    refs = await db.referrals.find({"referrer_id": u["id"]}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    # Hydrate referred user's name (masked email fallback)
+    referred_ids = [r.get("referred_id") for r in refs if r.get("referred_id")]
+    users = await db.users.find(
+        {"id": {"$in": referred_ids}}, {"_id": 0, "id": 1, "name": 1, "email": 1}
+    ).to_list(1000)
+    um = {x["id"]: x for x in users}
+    out = []
+    for r in refs:
+        ru = um.get(r.get("referred_id")) or {}
+        out.append({
+            "id": r["id"],
+            "status": r.get("status"),
+            "reward_credits": r.get("reward_credits", REFERRAL_REWARD),
+            "created_at": r.get("created_at"),
+            "completed_at": r.get("completed_at"),
+            "name": ru.get("name") or "Friend",
+            "email_masked": _mask_email(ru.get("email") or r.get("referred_email", "")),
+        })
+    return out
 
 
 # ------------------- Wallet & Subscription -------------------

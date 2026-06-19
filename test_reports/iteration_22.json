@@ -1,0 +1,62 @@
+{
+  "summary": "Iteration 22 — Phase 2 Refer a Friend. Backend: 12/12 pytest cases pass (TestReferMe + TestSignupRefBehavior + TestVerifyOtpReferralCompletion + TestReferList + TestReferMeStatsReflectActivity). Verified: (a) /refer/me returns code+link+reward(25)+total/successful/pending/credits_earned; (b) backfill creates a referral_code for legacy users; (c) signup with valid ref → pending referrals row + user.referred_by set; (d) invalid ref → silent (no row); (e) self-referral (same email as referrer) silently dropped; (f) ref ignored for professional & employer signups (employer is 400-blocked entirely); (g) student first-time verify-otp flips pending→successful, awards +25 credits to referrer, writes referral_reward txn, sends in-app notification; (h) welcome_bonus=100 contract preserved both with and without ref; (i) /refer/list returns masked emails ('xx***@domain'), newest-first ordering, reward_credits=25. Frontend: One CRITICAL bug found and fixed by testing agent — /signup screen had a red-screen ReferenceError because `useLocalSearchParams` was not imported in /app/frontend/app/signup.tsx (the symbol was used on line 25 but only useRouter was imported on line 3). Patched the import. After fix verified: /signup?ref=USERECE1AD84 renders the green referral banner with the code + 'earn 25 Credits' copy; submitting the form sends `\"ref\":\"USERECE1AD84\"` in the POST body (network-capture confirmed); /signup with no query param shows no banner and signup still works; /student/refer renders with code USERECE1AD84, copy-code & copy-link buttons, all 7 share tiles (WhatsApp/Telegram/Facebook/Instagram/Gmail/Copy/More), 4 stat boxes (total/successful/pending/earned); Profile menu → 'Refer a Friend' navigates to /student/refer (no longer shows 'Coming Soon'); bottom tab bar still shows exactly 5 tabs (Home/Jobs/Interviews/LeadBoard/Profile) — refer is hidden via href:null.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "/app/frontend/app/signup.tsx",
+        "issue": "MISSING IMPORT (fixed by testing agent): `useLocalSearchParams` was used on line 25 but only `useRouter` was imported on line 3 from expo-router, causing a hard red-screen 'ReferenceError: useLocalSearchParams is not defined' on EVERY visit to /signup (both with and without ?ref=). Fix applied: `import { useRouter, useLocalSearchParams } from \"expo-router\";`",
+        "testID": "signup-submit",
+        "priority": "CRITICAL"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "/app/frontend/app/signup.tsx",
+        "issues": [
+          "The ref banner (lines 71-78) has no testID. Adding `testID=\"signup-ref-banner\"` to the banner View would improve testability (not blocking — verified text content instead)."
+        ]
+      }
+    ],
+    "react_native_issues": [
+      {
+        "component": "Refer screen + shared components",
+        "issue": "Recurring web log 'shadow* style props are deprecated. Use boxShadow' continues to appear in expo.err.log across many shared components (ProfileMenuSheet, Card, etc.). Not introduced by this iteration but still present. Reference: /app/frontend/src/components/ProfileMenuSheet.tsx:94-98 and others."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration22_refer_a_friend.py",
+    "/app/test_reports/pytest/pytest_iter22.xml"
+  ],
+  "action_items": [
+    "(DONE by testing agent) Added missing `useLocalSearchParams` import in /app/frontend/app/signup.tsx — main agent should keep this fix and consider adding a lint rule / TS strict-mode check so undefined symbols are caught at build time.",
+    "(Nice-to-have) Add `testID=\"signup-ref-banner\"` to the ref-banner View in signup.tsx (lines 71-78) for stronger automated checks.",
+    "(Tech debt — not blocking) Migrate `shadow*` style props to `boxShadow` across shared components to silence RN-web deprecation warnings."
+  ],
+  "critical_code_review_comments": [
+    "Backend /refer/me + /refer/list correctly use `{_id:0}` projections — no ObjectId leak.",
+    "Backend correctly enforces `body.role == \"student\"` before lookup → professional & employer refs are dropped without DB writes.",
+    "Self-referral guard exists at both signup (line 636) and verify-otp (line 750) — defense in depth is good.",
+    "Referrer credit-award atomicity: $inc + transactions.insert + referrals.update + push_notification are sequential, not transactional. In MongoDB without a session, a crash between the credit $inc and the referrals update could leave a 'paid but still pending' state — minor risk but worth noting. Consider wrapping in a Motor session transaction.",
+    "/refer/list masks email correctly (first 2 chars + ***@domain) and sorts created_at desc.",
+    "Frontend signup.tsx had a hard red-screen because of a missing import — caught by automated UI test. Suggests build-time type-checking is bypassed or not run."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration22_refer_a_friend.py (new — 12 tests, all passing)",
+    "/app/frontend/app/signup.tsx (1-line fix: added `useLocalSearchParams` to the expo-router import on line 3)"
+  ],
+  "success_rate": {
+    "backend": "100% (12/12)",
+    "frontend": "100% after the 1-line import fix to signup.tsx"
+  },
+  "seed_data_creation": "None permanent. Tests create temporary users via /auth/signup with `referme.io` / `acmecorp.io` test domains — not cleaned up but isolated by uuid-prefixed emails. The self-referral test temporarily mutates the student fixture's email and restores it in a try/finally.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Phase 2 Refer-a-Friend is fully verified end-to-end. Backend referral flow (pending→successful, +25 credits, txn, notification, masked /refer/list, /refer/me backfill) is tested in /app/backend/tests/test_iteration22_refer_a_friend.py. Frontend signup.tsx had a missing import (useLocalSearchParams) which has been fixed by the testing agent — verify this remains in place if signup.tsx is touched again. Anti-fraud guards (self-referral, non-student-role, invalid code) all behave correctly.",
+  "rca_of_issue": "Frontend bug RCA: /app/frontend/app/signup.tsx line 25 used `useLocalSearchParams<{ ref?: string }>()` but the import statement on line 3 (`import { useRouter } from \"expo-router\";`) did NOT include `useLocalSearchParams`. Result: hard ReferenceError on every render of /signup, blocking the entire signup flow including the new ?ref banner. Reproduction: open /signup or /signup?ref=ANY in browser → red-screen 'ReferenceError: useLocalSearchParams is not defined'. Mitigation applied: appended `useLocalSearchParams` to the expo-router import. After a Metro re-bundle (sudo supervisorctl restart expo), the page renders cleanly and ref param is parsed + sent in POST body."
+}
