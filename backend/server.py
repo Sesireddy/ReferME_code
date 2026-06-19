@@ -673,6 +673,9 @@ async def verify_otp(body: VerifyOtpBody):
         raise HTTPException(status_code=400, detail="Incorrect OTP")
     await db.otps.update_one({"id": otp_doc["id"]}, {"$set": {"consumed": True}})
     if body.purpose == "verify_email":
+        # Pre-fetch to detect first-time verification (for welcome-bonus popup)
+        existing = await db.users.find_one({"email": body.email.lower()}, {"_id": 0})
+        was_unverified = bool(existing and not existing.get("is_email_verified"))
         u = await db.users.find_one_and_update(
             {"email": body.email.lower()},
             {"$set": {"is_email_verified": True}},
@@ -683,7 +686,17 @@ async def verify_otp(body: VerifyOtpBody):
             raise HTTPException(status_code=404, detail="User not found")
         token = create_jwt(u["id"], u["role"])
         await push_notification(u["id"], "Welcome to ReferME 🎉", "Your email has been verified.", "success")
-        return {"token": token, "user": user_public(u)}
+        # Job Seeker welcome / signup bonus message
+        welcome_bonus = 0
+        if was_unverified and u["role"] == "student":
+            welcome_bonus = 100
+            await push_notification(
+                u["id"],
+                "Signup Bonus Credited 🎁",
+                "100 Credits have been added to your wallet as a welcome bonus.",
+                "success",
+            )
+        return {"token": token, "user": user_public(u), "welcome_bonus": welcome_bonus}
     return {"message": "OTP verified", "reset_token": body.otp}
 
 

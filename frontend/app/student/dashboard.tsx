@@ -1,6 +1,6 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { View, StyleSheet, TouchableOpacity } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons, FontAwesome5 } from "@expo/vector-icons";
 import { Screen } from "@/src/components/Screen";
@@ -10,9 +10,12 @@ import { Button } from "@/src/components/Button";
 import { ConfirmDialog } from "@/src/components/ConfirmDialog";
 import { colors, radius } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
+import { successAlert } from "@/src/lib/successAlert";
 
 export default function StudentDashboard() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ welcome_bonus?: string }>();
+  const welcomeShownRef = useRef(false);
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
   const [rank, setRank] = useState<number | null>(null);
@@ -57,6 +60,27 @@ export default function StudentDashboard() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // One-time Signup Bonus Welcome popup for newly-registered Job Seekers
+  useEffect(() => {
+    const bonus = Number(params.welcome_bonus || 0);
+    if (bonus > 0 && !welcomeShownRef.current) {
+      welcomeShownRef.current = true;
+      // Defer to next tick so the screen is mounted before the modal opens
+      setTimeout(() => {
+        successAlert.show({
+          title: "🎉 Welcome to ReferME!",
+          message: `${bonus} Credits have been added to your wallet as a Signup Bonus.\n\nUse these credits to apply for jobs and book mock interviews.`,
+          okLabel: "OK",
+          intent: "success",
+          onOk: () => {
+            // Clear the welcome_bonus param so it doesn't re-trigger on remount/back
+            router.setParams({ welcome_bonus: "" });
+          },
+        });
+      }, 200);
+    }
+  }, [params.welcome_bonus, router]);
 
   const score = profile?.resume_score ?? 0;
   const tps: number = Number(profile?.tps ?? 0);

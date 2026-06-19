@@ -52,13 +52,18 @@ export default function OtpScreen() {
     setLoading(true);
     try {
       if (purpose === "verify_email") {
-        const res = await api<{ token: string; user: any }>("/auth/verify-otp", {
+        const res = await api<{ token: string; user: any; welcome_bonus?: number }>("/auth/verify-otp", {
           method: "POST",
           auth: false,
           body: { email, otp, purpose: "verify_email" },
         });
         await setSession(res.token, res.user);
-        routeByRole(res.user.role, router);
+        if (res.user.role === "student" && (res.welcome_bonus || 0) > 0) {
+          // Navigate to dashboard with welcome_bonus flag → triggers a one-time popup there
+          router.replace({ pathname: "/student/dashboard", params: { welcome_bonus: String(res.welcome_bonus) } });
+        } else {
+          routeByRole(res.user.role, router);
+        }
       } else {
         // For reset: pass OTP to reset screen
         router.replace({ pathname: "/reset", params: { email, otp } });
