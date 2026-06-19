@@ -105,21 +105,16 @@ export default function StudentDashboard() {
               TALENT POTENTIAL SCORE
             </Txt>
           </View>
-          <View style={{ flexDirection: "row", alignItems: "baseline", marginTop: 4 }}>
+          <View style={styles.tpsPill}>
             <Txt
-              style={{ color: "#fff", fontSize: 40, fontWeight: "800" }}
+              style={styles.tpsPillValue}
               numberOfLines={1}
               adjustsFontSizeToFit
               testID="student-tps"
             >
               {tps.toFixed(2)}
             </Txt>
-            <Txt
-              style={{ color: "#fff", fontSize: 20, opacity: 0.85, marginLeft: 4 }}
-              numberOfLines={1}
-            >
-              /100
-            </Txt>
+            <Txt style={styles.tpsPillMax} numberOfLines={1}>/100</Txt>
           </View>
 
           {/* Single composite progress bar */}
@@ -289,6 +284,23 @@ const styles = StyleSheet.create({
   heroIcon: { width: 56, height: 56, alignItems: "center", justifyContent: "center", opacity: 0.9, marginLeft: 8 },
   progressTrack: { height: 8, backgroundColor: "rgba(255,255,255,0.25)", borderRadius: 8, marginTop: 12, overflow: "hidden" },
   progressFill: { height: "100%", backgroundColor: "#fff", borderRadius: 8 },
+  tpsPill: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    alignSelf: "flex-start",
+    backgroundColor: "#fff",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 16,
+    marginTop: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  tpsPillValue: { fontSize: 38, fontWeight: "900", color: colors.primary, letterSpacing: -0.5 },
+  tpsPillMax: { fontSize: 16, fontWeight: "700", color: colors.textSecondary, marginLeft: 4 },
   breakdownRow: { flexDirection: "row", gap: 8, marginTop: 14 },
   breakdownChip: {
     flex: 1,
