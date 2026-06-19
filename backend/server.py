@@ -173,6 +173,11 @@ def user_public(u: dict) -> dict:
         out["interviews_conducted"] = int(u.get("interviews_conducted") or 0)
         out["referrals_made"] = int(u.get("referrals_made") or 0)
         out["successful_referrals"] = int(u.get("successful_referrals") or 0)
+    # Student-only fields used by dashboard (TPS components live on user doc + profile)
+    if u.get("role") == "student":
+        out["interviews_attended"] = int(u.get("interviews_attended") or 0)
+        out["student_rating"] = float(u.get("student_rating") or 0)
+        out["student_ratings_count"] = int(u.get("student_ratings_count") or 0)
     return out
 
 

@@ -59,7 +59,18 @@ export default function StudentDashboard() {
   }, [load]);
 
   const score = profile?.resume_score ?? 0;
+  const tps: number = Number(profile?.tps ?? 0);
+  const interviewsAttended: number = Number(user?.interviews_attended ?? 0);
+  const avgRating: number = Number(user?.student_rating ?? 0); // 0..10
   const freeUses = user?.free_uses_left ?? 0;
+
+  // TPS components (same logic as backend compute_tps)
+  const interviewBucket = interviewsAttended <= 0 ? 0 : interviewsAttended <= 2 ? 15 : interviewsAttended <= 5 ? 25 : 30;
+  const interviewPct = (interviewBucket / 30) * 100;
+  const ratingPct = avgRating > 0 ? (avgRating / 10) * 100 : 0;
+  const resumeContribution = score * 0.6;        // out of 60
+  const interviewContribution = interviewPct * 0.2; // out of 20
+  const ratingContribution = ratingPct * 0.2;       // out of 20
 
   return (
     <Screen refreshing={refreshing} onRefresh={load}>
@@ -75,7 +86,7 @@ export default function StudentDashboard() {
         </TouchableOpacity>
       </View>
 
-      {/* Hero card: resume score + free uses — NO credits here (Profile → Wallet only) */}
+      {/* Hero card: Talent Potential Score (TPS) breakdown */}
       <LinearGradient
         colors={["#FF5A5F", "#FFB347"]}
         start={{ x: 0, y: 0 }}
@@ -83,22 +94,25 @@ export default function StudentDashboard() {
         style={styles.heroCard}
       >
         <View style={styles.heroContent}>
-          <Txt
-            style={{ color: "#fff", opacity: 0.85 }}
-            variant="label"
-            numberOfLines={1}
-            adjustsFontSizeToFit
-          >
-            Resume Score
-          </Txt>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+            <Ionicons name="trophy" size={14} color="#fff" />
+            <Txt
+              style={{ color: "#fff", opacity: 0.9, fontWeight: "700", letterSpacing: 0.5 }}
+              variant="label"
+              numberOfLines={1}
+              adjustsFontSizeToFit
+            >
+              TALENT POTENTIAL SCORE
+            </Txt>
+          </View>
           <View style={{ flexDirection: "row", alignItems: "baseline", marginTop: 4 }}>
             <Txt
               style={{ color: "#fff", fontSize: 40, fontWeight: "800" }}
               numberOfLines={1}
               adjustsFontSizeToFit
-              testID="student-score"
+              testID="student-tps"
             >
-              {score}
+              {tps.toFixed(2)}
             </Txt>
             <Txt
               style={{ color: "#fff", fontSize: 20, opacity: 0.85, marginLeft: 4 }}
@@ -107,19 +121,36 @@ export default function StudentDashboard() {
               /100
             </Txt>
           </View>
+
+          {/* Single composite progress bar */}
           <View style={styles.progressTrack}>
-            <View style={[styles.progressFill, { width: `${Math.min(100, score)}%` }]} />
+            <View style={[styles.progressFill, { width: `${Math.min(100, tps)}%` }]} />
           </View>
-          <Txt
-            style={{ color: "#fff", opacity: 0.95, marginTop: 8 }}
-            variant="small"
-            numberOfLines={2}
-          >
-            Improve by attending Mock Interviews
-          </Txt>
-        </View>
-        <View style={styles.heroIcon}>
-          <Ionicons name="rocket" size={40} color="#fff" />
+
+          {/* Breakdown chips */}
+          <View style={styles.breakdownRow}>
+            <BreakdownChip
+              icon="document-text"
+              label="Resume 60%"
+              contribution={resumeContribution}
+              maxContribution={60}
+              detail={`${score}/100`}
+            />
+            <BreakdownChip
+              icon="videocam"
+              label="Interviews 20%"
+              contribution={interviewContribution}
+              maxContribution={20}
+              detail={`${interviewsAttended} attended`}
+            />
+            <BreakdownChip
+              icon="star"
+              label="Rating 20%"
+              contribution={ratingContribution}
+              maxContribution={20}
+              detail={avgRating > 0 ? `★ ${avgRating.toFixed(1)}/10` : "No ratings"}
+            />
+          </View>
         </View>
       </LinearGradient>
 
@@ -159,7 +190,7 @@ export default function StudentDashboard() {
               {rank ? `Rank #${rank}` : "Not ranked yet"}
             </Txt>
             <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 2 }}>
-              Attend interviews & boost resume score
+              Climb by improving your TPS
             </Txt>
           </View>
           <TouchableOpacity onPress={() => router.push("/student/leaderboard")}>
@@ -253,13 +284,65 @@ export default function StudentDashboard() {
 const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 16 },
   iconBtn: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
-  heroCard: { borderRadius: radius.xxl, padding: 18, flexDirection: "row", alignItems: "center", marginBottom: 16, minHeight: 150 },
-  heroContent: { flex: 1, minWidth: 0, paddingRight: 8 },
+  heroCard: { borderRadius: radius.xxl, padding: 18, marginBottom: 16, minHeight: 150 },
+  heroContent: { flex: 1, minWidth: 0 },
   heroIcon: { width: 56, height: 56, alignItems: "center", justifyContent: "center", opacity: 0.9, marginLeft: 8 },
   progressTrack: { height: 8, backgroundColor: "rgba(255,255,255,0.25)", borderRadius: 8, marginTop: 12, overflow: "hidden" },
   progressFill: { height: "100%", backgroundColor: "#fff", borderRadius: 8 },
+  breakdownRow: { flexDirection: "row", gap: 8, marginTop: 14 },
+  breakdownChip: {
+    flex: 1,
+    backgroundColor: "rgba(255,255,255,0.18)",
+    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    minHeight: 78,
+  },
+  breakdownLabel: { color: "#fff", fontSize: 10, fontWeight: "700", opacity: 0.95 },
+  breakdownValue: { color: "#fff", fontWeight: "800", fontSize: 15, marginTop: 4 },
+  breakdownDetail: { color: "#fff", fontSize: 10, opacity: 0.85, marginTop: 2 },
+  miniTrack: { height: 4, backgroundColor: "rgba(255,255,255,0.25)", borderRadius: 4, marginTop: 6, overflow: "hidden" },
+  miniFill: { height: "100%", backgroundColor: "#fff", borderRadius: 4 },
   actionRow: { flexDirection: "row", gap: 12 },
   actionIcon: { width: 44, height: 44, borderRadius: 14, alignItems: "center", justifyContent: "center" },
   rankIcon: { width: 56, height: 56, borderRadius: 18, alignItems: "center", justifyContent: "center" },
   rankBox: { flex: 1, alignItems: "center", paddingVertical: 8, paddingHorizontal: 4 },
 });
+
+function BreakdownChip({ icon, label, contribution, maxContribution, detail }: { icon: any; label: string; contribution: number; maxContribution: number; detail: string }) {
+  const pct = Math.max(0, Math.min(100, (contribution / maxContribution) * 100));
+  return (
+    <View style={styles.breakdownChip}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+        <Ionicons name={icon} size={11} color="#fff" />
+        <Txt
+          style={styles.breakdownLabel}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.7}
+        >
+          {label}
+        </Txt>
+      </View>
+      <Txt
+        style={styles.breakdownValue}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.7}
+      >
+        +{contribution.toFixed(1)}
+      </Txt>
+      <View style={styles.miniTrack}>
+        <View style={[styles.miniFill, { width: `${pct}%` }]} />
+      </View>
+      <Txt
+        style={styles.breakdownDetail}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.7}
+      >
+        {detail}
+      </Txt>
+    </View>
+  );
+}
