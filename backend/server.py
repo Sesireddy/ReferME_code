@@ -631,10 +631,14 @@ async def signup(body: SignupBody):
     if ref_code_raw and body.role == "student":
         # Lookup referrer by code; only students can be referred (per spec)
         referrer_user = await db.users.find_one({"referral_code": ref_code_raw}, {"_id": 0})
-        if referrer_user:
-            # 1. Self-referral guard: same email as referrer? reject silently (no reward).
-            if referrer_user.get("email", "").lower() == email_lower:
-                referrer_user = None
+        if not referrer_user:
+            # Strict mode (per spec): block signup so user can correct or clear the field.
+            raise HTTPException(status_code=400, detail="Invalid referral code. Please check and try again.")
+        if referrer_user.get("account_status") and referrer_user["account_status"] != "active":
+            raise HTTPException(status_code=400, detail="Invalid referral code. Please check and try again.")
+        # Self-referral guard: same email as referrer? reject silently (no reward).
+        if referrer_user.get("email", "").lower() == email_lower:
+            referrer_user = None
         # NOTE: Same-phone duplicate detection happens later via phone OTP verification.
 
     user_doc = {
@@ -1450,6 +1454,25 @@ async def update_profile(body: ProfileBody, u: dict = Depends(current_user)):
         await recalc_tps_for_user(u["id"])
     u2 = await db.users.find_one({"id": u["id"]}, {"_id": 0})
     return {"user": user_public(u2), "profile": u2.get("profile", {})}
+
+
+@api.get("/refer/validate")
+async def refer_validate(code: str = Query(...)):
+    """Validate a referral code. Public endpoint — used by the signup screen for inline feedback.
+
+    Returns: {valid: bool, message?: str, owner_name?: str}
+    - Empty / whitespace → valid (the field is optional; treat as "no code").
+    - Code not found or owner suspended → invalid with message.
+    """
+    c = (code or "").strip().upper()
+    if not c:
+        return {"valid": True}
+    owner = await db.users.find_one({"referral_code": c}, {"_id": 0})
+    if not owner:
+        return {"valid": False, "message": "Invalid referral code. Please check and try again."}
+    if owner.get("account_status") and owner["account_status"] != "active":
+        return {"valid": False, "message": "Invalid referral code. Please check and try again."}
+    return {"valid": True, "owner_name": owner.get("name") or owner.get("email", "").split("@")[0]}
 
 
 # ------------------- Referral Program endpoints -------------------

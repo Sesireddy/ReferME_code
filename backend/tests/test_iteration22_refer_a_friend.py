@@ -114,14 +114,17 @@ class TestSignupRefBehavior:
         assert ref_row["reward_credits"] == REFERRAL_REWARD
         assert ref_row["code"] == ref_code.upper()
 
-    def test_signup_with_invalid_ref_code_completes_silently(self, session):
+    def test_signup_with_invalid_ref_code_rejected_with_400(self, session):
+        """Iteration 23: contract changed — invalid non-empty ref now blocks signup with HTTP 400.
+        No user and no referral row should be created."""
         invitee_email, r = _signup_student_unverified(session, ref_code="XXNOTAREALCODE99", role="student")
-        assert r.status_code == 200, r.text
+        assert r.status_code == 400, r.text
+        assert r.json().get("detail") == "Invalid referral code. Please check and try again."
         mc, db = _db()
         invitee = db.users.find_one({"email": invitee_email}, {"_id": 0})
         ref_row = db.referrals.find_one({"referred_email": invitee_email}, {"_id": 0})
         mc.close()
-        assert invitee is not None and invitee.get("referred_by") is None
+        assert invitee is None, "User must NOT be created when ref is invalid"
         assert ref_row is None
 
     def test_signup_self_referral_silently_dropped(self, session):

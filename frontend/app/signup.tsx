@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, StyleSheet, ScrollView, TouchableOpacity, Alert, KeyboardAvoidingView, Platform } from "react-native";
+import { View, StyleSheet, ScrollView, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, TextInput, ActivityIndicator } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -23,13 +23,47 @@ const ROLES: { id: Role; title: string; subtitle: string; icon: any; color: stri
 export default function Signup() {
   const router = useRouter();
   const params = useLocalSearchParams<{ ref?: string }>();
-  const refCode = (params.ref || "").toString().trim();
   const [role, setRole] = useState<Role | null>("student");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  // Referral code: prefilled from URL ?ref=, user can edit/clear.
+  const [refCode, setRefCode] = useState<string>(((params.ref as string) || "").toString().trim().toUpperCase());
+  const [refStatus, setRefStatus] = useState<"idle" | "checking" | "valid" | "invalid">("idle");
+  const [refMessage, setRefMessage] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [employerDialog, setEmployerDialog] = useState(false);
+
+  // Debounced live validation of the referral code
+  React.useEffect(() => {
+    const code = (refCode || "").trim().toUpperCase();
+    if (!code) {
+      setRefStatus("idle");
+      setRefMessage("");
+      return;
+    }
+    setRefStatus("checking");
+    setRefMessage("");
+    const t = setTimeout(async () => {
+      try {
+        const r = await api<{ valid: boolean; message?: string; owner_name?: string }>(
+          `/refer/validate?code=${encodeURIComponent(code)}`,
+          { auth: false }
+        );
+        if (r.valid) {
+          setRefStatus("valid");
+          setRefMessage(r.owner_name ? `Referred by ${r.owner_name}` : "Valid code ✓");
+        } else {
+          setRefStatus("invalid");
+          setRefMessage(r.message || "Invalid referral code. Please check and try again.");
+        }
+      } catch {
+        setRefStatus("invalid");
+        setRefMessage("Could not validate. Please try again.");
+      }
+    }, 450);
+    return () => clearTimeout(t);
+  }, [refCode]);
 
   function selectRole(r: Role) {
     if (r === "employer") {
@@ -43,6 +77,12 @@ export default function Signup() {
     if (!role) return Alert.alert("Pick a role", "Choose Student, Professional, or Employer.");
     if (!email || !password) return Alert.alert("Missing fields", "Enter email and password.");
     if (password.length < 6) return Alert.alert("Weak password", "Use at least 6 characters.");
+    if (refCode && refStatus === "invalid") {
+      return Alert.alert(
+        "Invalid referral code",
+        "Please correct the referral code or clear the field to continue."
+      );
+    }
     setLoading(true);
     try {
       const res = await api<{ email: string; mock_otp?: string }>("/auth/signup", {
@@ -67,15 +107,6 @@ export default function Signup() {
           </TouchableOpacity>
           <Txt variant="h1">Create account</Txt>
           <Txt variant="muted" style={{ marginTop: 4, marginBottom: 20 }}>Pick how you&apos;ll use ReferME</Txt>
-
-          {refCode ? (
-            <View style={styles.refBanner}>
-              <Ionicons name="gift" size={18} color={colors.success} />
-              <Txt style={styles.refBannerText} numberOfLines={2}>
-                You&apos;ve been invited! Sign up and your friend will earn 25 credits. Code: <Txt style={{ fontWeight: "800" }}>{refCode}</Txt>
-              </Txt>
-            </View>
-          ) : null}
 
           <View style={{ gap: 12, marginBottom: 20 }}>
             {ROLES.map((r) => {
@@ -108,7 +139,68 @@ export default function Signup() {
           <Input testID="signup-email" label="Email" placeholder="you@example.com" autoCapitalize="none" keyboardType="email-address" value={email} onChangeText={setEmail} />
           <Input testID="signup-password" label="Password" placeholder="At least 6 characters" secure value={password} onChangeText={setPassword} />
 
-          <Button testID="signup-submit" title="Send OTP" onPress={handleSignup} loading={loading} style={{ marginTop: 8 }} />
+          {/* Referral Code (Optional) */}
+          <View style={{ marginTop: 4 }}>
+            <Txt variant="label" style={{ marginBottom: 6, color: colors.textSecondary }}>
+              Referral Code (Optional)
+            </Txt>
+            <View
+              style={[
+                styles.refField,
+                refStatus === "invalid" && { borderColor: colors.error },
+                refStatus === "valid" && { borderColor: colors.success },
+              ]}
+            >
+              <Ionicons name="gift-outline" size={18} color={colors.textSecondary} />
+              <TextInput
+                testID="signup-ref"
+                value={refCode}
+                onChangeText={(t) => setRefCode(t.toUpperCase().replace(/\s+/g, ""))}
+                placeholder="Enter Referral Code (Optional)"
+                placeholderTextColor={colors.textSecondary}
+                autoCapitalize="characters"
+                autoCorrect={false}
+                style={styles.refInput}
+              />
+              {refStatus === "checking" ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : refStatus === "valid" ? (
+                <Ionicons name="checkmark-circle" size={20} color={colors.success} />
+              ) : refStatus === "invalid" ? (
+                <Ionicons name="alert-circle" size={20} color={colors.error} />
+              ) : refCode ? (
+                <TouchableOpacity onPress={() => setRefCode("")} hitSlop={8}>
+                  <Ionicons name="close-circle" size={18} color={colors.textSecondary} />
+                </TouchableOpacity>
+              ) : null}
+            </View>
+            {refMessage ? (
+              <Txt
+                testID="signup-ref-msg"
+                variant="small"
+                style={{
+                  color: refStatus === "valid" ? colors.success : refStatus === "invalid" ? colors.error : colors.textSecondary,
+                  marginTop: 6,
+                  marginLeft: 4,
+                }}
+              >
+                {refMessage}
+              </Txt>
+            ) : (
+              <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 6, marginLeft: 4 }}>
+                Have a friend on ReferME? Enter their code and they earn 25 credits when you verify.
+              </Txt>
+            )}
+          </View>
+
+          <Button
+            testID="signup-submit"
+            title="Send OTP"
+            onPress={handleSignup}
+            loading={loading}
+            disabled={refCode.length > 0 && refStatus === "invalid"}
+            style={{ marginTop: 16 }}
+          />
           <TouchableOpacity onPress={() => router.replace("/login")} style={{ alignSelf: "center", marginTop: 18 }}>
             <Txt variant="muted">Already have an account? <Txt style={{ color: colors.primary, fontWeight: "700" }}>Log in</Txt></Txt>
           </TouchableOpacity>
@@ -134,4 +226,16 @@ export default function Signup() {
 const styles = StyleSheet.create({
   c: { flex: 1, backgroundColor: colors.bg },
   roleIcon: { width: 56, height: 56, borderRadius: radius.lg, alignItems: "center", justifyContent: "center" },
+  refField: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    paddingHorizontal: 12,
+    height: 48,
+    gap: 8,
+  },
+  refInput: { flex: 1, color: colors.textPrimary, fontSize: 14, paddingVertical: 0, letterSpacing: 1 },
 });

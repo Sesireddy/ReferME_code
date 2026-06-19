@@ -1,0 +1,48 @@
+{
+  "summary": "Iteration 23 — Referral Code (Optional) field on Job Seeker signup with live validation. Backend: 12/12 new pytest cases pass in /app/backend/tests/test_iter23_refer_validate.py covering (a) GET /api/refer/validate empty/whitespace → {valid:true}; (b) GET /api/refer/validate?code=USERECE1AD84 → {valid:true, owner_name:'seseendra'}; (c) case-insensitive lookup (lowercase input works); (d) bogus code → {valid:false, message:'Invalid referral code. Please check and try again.'}; (e) suspended-owner code → invalid same message; (f) POST /auth/signup with ref omitted/empty → success with referred_by=None and no referral row; (g) POST /auth/signup with ref=USERECE1AD84 → 200, creates referrals row status='pending', reward_credits=25, sets referred_by; (h) POST /auth/signup with bogus ref → HTTP 400 detail='Invalid referral code. Please check and try again.' AND no user is persisted AND no referral row is created (verified directly in MongoDB); (i) POST /auth/signup with suspended owner's code → HTTP 400 same canonical message, no user/no row; (j) Phase 2 contract preserved: verify-otp still flips pending→successful, awards +25 credits to referrer (verified by reading owner.credits before & after), and welcome_bonus=100 still returned. Updated one stale test in iteration22 file to match the new strict-block contract (was expecting 200 silent-drop, now correctly expects 400). Full regression: 24/24 pass across iteration22 + iter23 suites. Frontend: ALL UI states verified via Playwright on mobile viewport (390x844) at /signup — idle state shows helper 'Have a friend on ReferME? Enter their code and they earn 25 credits when you verify.'; typing 'userwrong 99' (with spaces) auto-uppercases & strips → 'USERWRONG99', shows red border + alert-circle icon + error text + Send OTP gets aria-disabled=true; typing 'USERECE1AD84' shows green border + checkmark + 'Referred by seseendra' + Send OTP re-enabled (aria-disabled=None); clearing the field returns to idle (ref-msg removed, Send OTP enabled because optional); lowercase input 'userece1ad84' was correctly upper-cased to 'USERECE1AD84' in real-time. testID 'signup-ref' and 'signup-ref-msg' both present and functional.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {
+        "component": "Web preview deprecation warnings (pre-existing, not introduced by iter23)",
+        "issue": "Console still emits 'shadow* style props are deprecated. Use boxShadow' and 'props.pointerEvents is deprecated. Use style.pointerEvents'. Same warnings flagged in iter22 — not blocking. Reference: shared component styles across /app/frontend/src/components/."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter23_refer_validate.py",
+    "/app/test_reports/pytest/pytest_iter23.xml"
+  ],
+  "action_items": [
+    "(Optional) Migrate `shadow*` style props to `boxShadow` and `props.pointerEvents` to `style.pointerEvents` across shared components to silence RN-web deprecation warnings — recurring tech debt, not blocking.",
+    "(Optional) Consider explicitly returning `message: null` (or omitting cleanly) from /refer/validate on valid responses to make the contract more explicit for clients. Currently behaviour is correct (no `message` key when valid)."
+  ],
+  "critical_code_review_comments": [
+    "Backend signup correctly performs the referrer lookup BEFORE user insert (server.py:631-638). On invalid ref the HTTPException is raised before db.users.insert_one, so no orphan user is created — confirmed by post-condition assertion in test_signup_with_bogus_ref_returns_400_and_no_user.",
+    "Suspended-owner guard exists on BOTH /refer/validate (server.py:1473) AND /auth/signup (server.py:637) → consistent rejection on either path.",
+    "/refer/validate correctly trims + upper-cases input (server.py:1467) → case-insensitive lookup works (verified test test_valid_code_lowercased_input).",
+    "Frontend correctly debounces validation at 450ms (signup.tsx:64), uses auth:false (public call), and resets to idle on empty.",
+    "Frontend disable logic is precise: `disabled={refCode.length > 0 && refStatus === 'invalid'}` (signup.tsx:201) — empty code stays enabled (correct, optional field).",
+    "Frontend explicitly sends `ref: refCode || undefined` (signup.tsx:91), so an empty string is NOT sent — clean backend contract.",
+    "Anti-fraud is good: same canonical error message is used by both /refer/validate and /auth/signup → no info leak about whether owner exists vs suspended."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter23_refer_validate.py (NEW — 12 tests)",
+    "/app/backend/tests/test_iteration22_refer_a_friend.py (renamed obsolete test test_signup_with_invalid_ref_code_completes_silently → test_signup_with_invalid_ref_code_rejected_with_400, now asserts the new strict-block contract)"
+  ],
+  "success_rate": {
+    "backend": "100% (24/24 across iter22 + iter23)",
+    "frontend": "100% — idle, invalid (red+disable), valid (green+enable), clear→idle, auto-uppercase all verified"
+  },
+  "seed_data_creation": "Test creates a fallback seed-owner user with referral_code=USERECE1AD84/email seseendra@referme.io if absent from DB; otherwise reuses the existing user. Forces account_status='active' at fixture start and at teardown of the suspended-state subtests. No permanent state mutation beyond pre-existing iter22 test users.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 23 (live referral validation on signup) is fully verified end-to-end. Backend: 12 dedicated tests in test_iter23_refer_validate.py + 1 updated test in iteration22 file. Frontend: live validation, debounce, auto-uppercase, status icons (spinner/check/alert), helper text, and disable-on-invalid all working. Existing referral code USERECE1AD84 (owner seseendra) is present in DB and used by tests. If main agent later changes /refer/validate response shape (e.g., adds a `code_normalized` field), update test_iter23_refer_validate.py:TestReferValidate accordingly.",
+  "rca_of_issue": "N/A — no bugs found in this iteration."
+}
