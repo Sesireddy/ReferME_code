@@ -24,6 +24,10 @@ export default function StudentLayout() {
       <Tabs.Screen name="wallet" options={{ href: null }} />
       {/* Applications detail/list — hidden from tab bar; reached from Profile / Dashboard */}
       <Tabs.Screen name="applications" options={{ href: null }} />
+      {/* Profile menu sub-screens — hidden from tab bar; reached from Profile menu */}
+      <Tabs.Screen name="my-applications" options={{ href: null }} />
+      <Tabs.Screen name="my-mock-interviews" options={{ href: null }} />
+      <Tabs.Screen name="my-leaderboard" options={{ href: null }} />
     </Tabs>
   );
 }

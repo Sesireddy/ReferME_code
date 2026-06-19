@@ -1,0 +1,50 @@
+{
+  "summary": "Iteration 21 — Phase 1 Job Seeker Profile Menu Enhancement. Tested backend hydration of /api/applications + 5 new menu items + 3 new sub-screens. All backend tests pass (6/6). All UI flows pass: menu opens with 5 items (Home, My Job Applications, My Mock Interviews, My LeaderBoard Score, Refer a Friend), navigation works for every item, 'Refer a Friend' shows 'Coming Soon' alert, /api/applications now returns company + location hydrated from jobs (verified TEST Hospital / Mumbai render in My Applications rows). My Applications search filter, status chips (Hired empty for this user), and sort toggle (Latest↔Oldest) all functional with proper empty state. My Mock Interviews shows Upcoming/Completed tabs with correct empty messages. My LeaderBoard correctly displays #1 overall/category/skill ranks, TPS 84, resume 85/100, 5 interviews, ★8.4/10 rating, and TPS formula. Bottom tab bar still shows only the 5 expected tabs (Home/Jobs/Interviews/LeadBoard/Profile) — new my-* screens are properly hidden via href:null. Back chevron returns to Profile screen as expected.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "/student/my-applications",
+        "issues": [
+          "Status filter chip row uses ScrollView with paddingVertical:10 but chips have paddingVertical:6 — the row appears taller than necessary on mobile. Consider reducing contentContainerStyle paddingVertical to 6 for a tighter look (cosmetic only, no functional impact)."
+        ]
+      }
+    ],
+    "react_native_issues": [
+      {
+        "component": "ProfileMenuSheet",
+        "issue": "Uses deprecated `shadow*` style props (shadowColor/shadowOffset/shadowOpacity/shadowRadius) in styles.sheet — RN web logs 'shadow* style props are deprecated. Use boxShadow'. Same convention used elsewhere in app, so not a regression introduced by this iteration. Reference: /app/frontend/src/components/ProfileMenuSheet.tsx:94-98"
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration21_profile_menu.py",
+    "/app/test_reports/pytest/pytest_iter21.xml"
+  ],
+  "action_items": [
+    "(Optional / non-blocking) Tighten chipRow vertical padding in /app/frontend/app/student/my-applications.tsx for visual polish.",
+    "(Optional / non-blocking) Migrate `shadow*` style props to `boxShadow` in ProfileMenuSheet (and other shared components) to silence RN web deprecation warnings — not introduced by this iteration."
+  ],
+  "critical_code_review_comments": [
+    "Backend hydration code is clean and uses `{_id:0}` projection — no ObjectId leak.",
+    "Hydration query uses a single $in over job_ids — O(1) DB hop per request, efficient.",
+    "Phase 1 acceptance criteria fully met: 5 menu items + 3 new screens hidden from tab bar via href:null in _layout.tsx; back chevron present on each new screen; testIDs added consistently (profile-menu-btn, menu-*, back-btn, apps-search, apps-sort, status-*, tab-upcoming, tab-completed)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration21_profile_menu.py (new — 6 backend tests, all passing)"
+  ],
+  "success_rate": {
+    "backend": "100% (6/6)",
+    "frontend": "100% of testable flows (Completed-tab card-with-data path not exercised because student has 0 bookings; backend contract verified separately)"
+  },
+  "seed_data_creation": "None. Used existing seseendrar@gmail.com data (2 applications, 0 bookings, TPS 84.47, resume 85, 5 interviews_attended, student_rating 8.4, rank #1).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Phase 1 verified end-to-end. To exercise 'Completed' interview card UI (Pro Name, Skill Set, Date, Overall Rating, Feedback display), use an account that actually has completed bookings — the seseendrar account has interviews_attended=5 metric but 0 booking docs returned by /interviews/my-bookings, so only the empty state was visually verified for that tab. Backend contract for both tabs was unit-tested.",
+  "rca_of_issue": "N/A — no regressions found."
+}

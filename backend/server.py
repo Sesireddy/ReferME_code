@@ -2444,6 +2444,19 @@ async def list_applications(u: dict = Depends(current_user)):
     else:
         q = {}
     apps = await db.applications.find(q, {"_id": 0}).sort("created_at", -1).to_list(200)
+    # For students, hydrate with company + location from the job so the My Applications screen
+    # can show those fields without an extra round-trip per row.
+    if u["role"] == "student" and apps:
+        job_ids = list({a["job_id"] for a in apps if a.get("job_id")})
+        jobs = await db.jobs.find(
+            {"id": {"$in": job_ids}},
+            {"_id": 0, "id": 1, "company": 1, "location": 1, "title": 1, "employer_name": 1},
+        ).to_list(1000)
+        jm = {j["id"]: j for j in jobs}
+        for a in apps:
+            j = jm.get(a.get("job_id")) or {}
+            a["company"] = a.get("company") or j.get("company") or j.get("employer_name") or ""
+            a["location"] = a.get("location") or j.get("location") or ""
     return apps
 
 

@@ -18,6 +18,7 @@ import { api, clearSession } from "@/src/lib/api";
 import { validateIndianMobile, isValidIndianMobile } from "@/src/lib/phone";
 import { successAlert } from "@/src/lib/successAlert";
 import { ConfirmDialog } from "@/src/components/ConfirmDialog";
+import { ProfileMenuSheet, MenuItem } from "@/src/components/ProfileMenuSheet";
 import {
   EDUCATION_OPTIONS,
   GENDER_OPTIONS,
@@ -59,6 +60,7 @@ type ResumeTab = (typeof RESUME_TABS)[number]["id"];
 export default function StudentProfile() {
   const router = useRouter();
   const [signoutOpen, setSignoutOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [user, setUser] = useState<any>(null);
 
   // Form state — Personal
@@ -460,8 +462,20 @@ export default function StudentProfile() {
   return (
     <Screen refreshing={refreshing} onRefresh={load}>
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-        <View style={{ flex: 1 }}>
-          <ScreenTitle title="Profile" icon="person-circle" color={colors.primary} />
+        <View style={{ flexDirection: "row", alignItems: "center", flex: 1, gap: 8 }}>
+          <TouchableOpacity
+            testID="profile-menu-btn"
+            onPress={() => setMenuOpen(true)}
+            hitSlop={10}
+            style={styles.menuBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Open menu"
+          >
+            <Ionicons name="menu" size={22} color={colors.textPrimary} />
+          </TouchableOpacity>
+          <View style={{ flex: 1 }}>
+            <ScreenTitle title="Profile" icon="person-circle" color={colors.primary} />
+          </View>
         </View>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
           <View style={styles.photoCol}>
@@ -953,6 +967,21 @@ export default function StudentProfile() {
         onConfirm={() => setMissingDialog({ open: false, items: [] })}
       />
 
+      <ProfileMenuSheet
+        visible={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        topOffset={86}
+        items={
+          [
+            { key: "home", label: "Home", icon: "home", color: colors.primary, onPress: () => router.push("/student/dashboard") },
+            { key: "applications", label: "My Job Applications", icon: "briefcase", color: "#2563EB", onPress: () => router.push("/student/my-applications") },
+            { key: "interviews", label: "My Mock Interviews", icon: "mic", color: "#7C3AED", onPress: () => router.push("/student/my-mock-interviews") },
+            { key: "leaderboard", label: "My LeaderBoard Score", icon: "trophy", color: colors.accent, onPress: () => router.push("/student/my-leaderboard") },
+            { key: "refer", label: "Refer a Friend", icon: "people", color: colors.success, onPress: () => { successAlert.show({ title: "🎁 Coming Soon", message: "Refer your friends and earn 25 credits per signup. We're rolling this out in the next update.", intent: "info" }); } },
+          ] as MenuItem[]
+        }
+      />
+
       {/* OTP Verification Modal (Mock SMS) */}
       <Modal
         visible={otpModal.open}
@@ -1053,6 +1082,7 @@ const styles = StyleSheet.create({
   mockOtpPill: { flexDirection: "row", alignItems: "center", alignSelf: "flex-start", backgroundColor: "#FFF5F5", borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, marginTop: 8 },
   photoCol: { alignItems: "center" },
   photoCtrls: { flexDirection: "row", alignItems: "center", marginTop: 4 },
+  menuBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   photoPreviewBg: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.85)" },
   fileBox: {
     flexDirection: "row",
