@@ -13,6 +13,7 @@ import { api, clearSession } from "@/src/lib/api";
 import { ConfirmDialog } from "@/src/components/ConfirmDialog";
 import { Picker } from "@/src/components/Picker";
 import { ScreenTitle } from "@/src/components/ScreenTitle";
+import { ProfileMenuSheet, MenuItem } from "@/src/components/ProfileMenuSheet";
 import { EXPERIENCE_OPTIONS, LOCATION_OPTIONS } from "@/src/lib/constants";
 
 function maskPhone(p?: string): string {
@@ -58,6 +59,7 @@ export default function ProProfile() {
   const [sentGmailOtp, setSentGmailOtp] = useState<string | null>(null);
   const [gmailBusy, setGmailBusy] = useState(false);
   const [signoutOpen, setSignoutOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [missingDialogOpen, setMissingDialogOpen] = useState(false);
   const [savedOk, setSavedOk] = useState(false);
 
@@ -196,17 +198,29 @@ export default function ProProfile() {
 
   return (
     <Screen refreshing={refreshing} onRefresh={load}>
-      <View style={{ marginBottom: 12 }}>
-        <ScreenTitle
-          title="Profile"
-          icon="person-circle"
-          color="#7C3AED"
-          right={
-            <TouchableOpacity testID="profile-logout-btn" onPress={logout} hitSlop={10}>
-              <Ionicons name="log-out-outline" size={24} color={colors.textPrimary} />
-            </TouchableOpacity>
-          }
-        />
+      <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 12, gap: 8 }}>
+        <TouchableOpacity
+          testID="pro-menu-btn"
+          onPress={() => setMenuOpen(true)}
+          hitSlop={10}
+          style={styles.menuBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Open menu"
+        >
+          <Ionicons name="menu" size={22} color={colors.textPrimary} />
+        </TouchableOpacity>
+        <View style={{ flex: 1 }}>
+          <ScreenTitle
+            title="Profile"
+            icon="person-circle"
+            color="#7C3AED"
+            right={
+              <TouchableOpacity testID="profile-logout-btn" onPress={logout} hitSlop={10}>
+                <Ionicons name="log-out-outline" size={24} color={colors.textPrimary} />
+              </TouchableOpacity>
+            }
+          />
+        </View>
       </View>
       {/* Top profile card: photo + name + credits chip → wallet */}
       <Card>
@@ -365,6 +379,21 @@ export default function ProProfile() {
         onConfirm={confirmLogout}
       />
 
+      <ProfileMenuSheet
+        visible={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        topOffset={86}
+        items={
+          [
+            { key: "home", label: "Home", icon: "home", color: "#7C3AED", onPress: () => router.push("/professional/dashboard") },
+            { key: "jobs", label: "My Posted Jobs", icon: "briefcase", color: "#2563EB", onPress: () => router.push("/professional/my-jobs") },
+            { key: "interviews", label: "My Mock Interviews", icon: "mic", color: "#0EA5E9", onPress: () => router.push("/professional/my-mock-interviews") },
+            { key: "leaderboard", label: "LeaderBoard", icon: "trophy", color: "#F59E0B", onPress: () => router.push("/professional/my-leaderboard") },
+            { key: "refer", label: "Refer a Friend", icon: "people", color: "#22C55E", onPress: () => router.push("/professional/refer") },
+          ] as MenuItem[]
+        }
+      />
+
       {/* Gmail OTP modal */}
       <Modal visible={gmailOtpOpen} transparent animationType="slide" onRequestClose={() => setGmailOtpOpen(false)}>
         <View style={styles.modalBg}>
@@ -404,5 +433,6 @@ const styles = StyleSheet.create({
   badgePending: { backgroundColor: "#FFF3E0" },
   modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "flex-end" },
   modalSheet: { backgroundColor: colors.bg, padding: 20, borderTopLeftRadius: 24, borderTopRightRadius: 24 },
+  menuBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   devOtp: { backgroundColor: "#FFF8E1", padding: 10, borderRadius: 8, marginBottom: 10 },
 });

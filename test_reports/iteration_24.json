@@ -1,0 +1,56 @@
+{
+  "summary": "Iteration 24 — Working Professional Profile Menu Enhancement + WPS leaderboard. Backend: 14/14 pytest in /app/backend/tests/test_iteration24_pro_menu_wps.py PASS. Verified (a) WPS formula matches spec at boundaries — compute_wps(0,0)=0, compute_wps(125,45)=92.0 (0.6*100 + 0.4*80), and all bucket edges for _pro_interview_score and _pro_jobs_score; (b) GET /api/leaderboard/professional/me/stats returns all spec keys {rank, interviews_conducted, jobs_posted, wps, rating, ratings_count, total_pros} (plus an extra successful_referrals — additive, harmless); (c) RBAC: student=403, employer=403, admin=403 (require_role(['professional'])), unauth=401; (d) GET /api/leaderboard/professionals returns enriched rows with wps, jobs_posted, rank, score (back-compat alias = wps), is_me; rows sorted by wps desc with monotonic ranks 1..N; (e) Adding 2 jobs in DB lifts /me/stats.jobs_posted to 2 and wps to 8.0 (0.6*0 + 0.4*20). Frontend (Playwright, 390x844 mobile viewport, fresh-signup pro token injected to localStorage): testID `pro-menu-btn` renders top-left next to ScreenTitle on /professional/profile; tap opens slide-down ProfileMenuSheet with EXACTLY 5 items menu-home/jobs/interviews/leaderboard/refer all visible; menu-jobs→/professional/my-jobs ✅; menu-interviews→/professional/my-mock-interviews with tab-upcoming + tab-completed both visible ✅; menu-leaderboard→/professional/my-leaderboard renders 'YOUR RANK' hero, '/100' WPS pill, and 4-card grid (Interviews Conducted, Jobs Posted, Average Rating, WPS) ✅; menu-refer→/professional/refer renders all 7 share tiles (whatsapp/telegram/facebook/instagram/gmail/copy/native) plus copy-code & copy-link buttons ✅; bottom tab bar still shows exactly 5 tabs (Home, Interviews, My Jobs, Post a Job, Profile) — my-mock-interviews, my-leaderboard, refer all hidden via href:null in /app/frontend/app/professional/_layout.tsx ✅.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/leaderboard/professionals",
+        "issue": "Hard cap at .to_list(1000) before sorting (server.py:3085). With 3667+ pros in DB, ~2667 pros are silently excluded from the leaderboard candidate pool — depending on natural insertion order, a pro with non-zero WPS might never appear. Recommend: switch to a MongoDB aggregation pipeline (sort by interviews_conducted desc plus a $lookup or pre-aggregated counter for jobs) and $limit 200 inside the DB, OR raise the cap. The /me/stats endpoint already has a solo-compute fallback for pros not in the slice (good), so personal stats are still correct — but the public leaderboard view can be misleading."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {
+        "component": "Multiple shared components (recurring tech debt, pre-existing)",
+        "issue": "Console emits 'shadow* style props are deprecated. Use boxShadow' and 'props.pointerEvents is deprecated. Use style.pointerEvents' on every screen render — same warnings flagged in iter22/iter23. Reference: /app/frontend/src/components/Card.tsx, ProfileMenuSheet.tsx, and other shared components."
+      },
+      {
+        "component": "ProfileMenuSheet animation (pre-existing on web)",
+        "issue": "Console warning: 'Animated: useNativeDriver is not supported because the native animated module is missing. Falling back to JS-based animation.' — only on web preview, not a real bug on device. Reference: /app/frontend/src/components/ProfileMenuSheet.tsx:34-35 (useNativeDriver:true)."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration24_pro_menu_wps.py",
+    "/app/test_reports/pytest/pytest_iter24.xml"
+  ],
+  "action_items": [
+    "(MINOR) Replace `.to_list(1000)` in /leaderboard/professionals (server.py:3085) with an aggregation pipeline that sorts + limits 200 inside MongoDB (e.g. compute jobs_posted via $lookup or maintain a counter on the user doc), so leaderboard correctness is independent of natural fetch order. Personal /me/stats is already safe via its fallback branch.",
+    "(Tech debt — recurring) Migrate `shadow*` style props → `boxShadow` and `props.pointerEvents` → `style.pointerEvents` across shared components to clean up RN-web warnings (iter22 & iter23 also flagged this).",
+    "(Optional) On web, the ProfileMenuSheet animation falls back to JS due to missing native module. Either accept (current behavior, looks fine) or guard `useNativeDriver` on Platform.OS !== 'web'."
+  ],
+  "critical_code_review_comments": [
+    "compute_wps correctly clamps to [0,100] and rounds to 2 decimals (server.py:124). Bucket boundaries match the spec: interviews ≤5→20, ≤20→40, ≤50→60, ≤100→80, >100→100; jobs ≤3→20, ≤10→40, ≤25→60, ≤50→80, >50→100.",
+    "/me/stats has a defensive fallback (server.py:3125-3138) for pros NOT in the leaderboard slice: it does a solo db.jobs.count_documents query — so personal WPS is always correct even when the user is outside top-200 / outside the .to_list cap. Good defensive code.",
+    "Backward-compat: server.py:3116 sets row.score = row.wps so older clients keep working. Verified by test_score_alias_equals_wps_for_all_rows.",
+    "Frontend /professional/my-leaderboard correctly handles rank=null (renders '#—' on hero, server returns null when pro is outside top-200). Reference: my-leaderboard.tsx:59.",
+    "Frontend bottom tab bar correctly hides the 3 new pro menu screens (my-mock-interviews, my-leaderboard, refer) via href:null in _layout.tsx — verified 5 tabs rendered.",
+    "ProfileMenuSheet onPress is wrapped in a `setTimeout(0)` defer (so modal can animate out before navigating) — small UX nicety. testID=`menu-{key}` is consistent on every item.",
+    "/professional/refer correctly handles info=null with `info?.code || '—'` fallback (refer.tsx:92). On a brand-new pro, /refer/me's backfill ensures a code is generated so the dash is only transient (sub-second). No data-loss bug here."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration24_pro_menu_wps.py (NEW — 14 tests across 4 classes: TestWpsFormula, TestMyProStatsEndpoint, TestProsLeaderboardEnriched, TestBackwardCompat)"
+  ],
+  "success_rate": {
+    "backend": "100% (14/14)",
+    "frontend": "100% — all 7 menu/navigation/screen flows verified via Playwright"
+  },
+  "seed_data_creation": "None permanent. Test creates a fresh professional via /auth/signup + /auth/verify-otp using a uuid-prefixed @referme.io email; uses the conftest student/employer/admin fixtures. Two TEST jobs are inserted in test_jobs_posted_count_reflects_db and deleted in the finally block.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 24 (Pro Profile Menu + WPS leaderboard) is fully verified. Backend covers WPS formula at all bucket boundaries, /me/stats RBAC + payload shape, /professionals enriched fields + back-compat score alias. Frontend Playwright covers menu open/close + all 5 navigations + screen-render checks. Known minor concern: /leaderboard/professionals .to_list(1000) cap — flagged as a future fix; /me/stats fallback masks it for personal views. The freshly-signed-up pro often falls outside the top-200 slice (because DB has >3000 pros) — my test_me_flagged_and_rank_matches_my_stats branches on this and is robust. If the cap is later raised or replaced by an aggregation, that branch will start consistently exercising the cross-check path."
+}

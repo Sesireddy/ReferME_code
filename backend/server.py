@@ -80,6 +80,49 @@ JOB_POST_REWARD_MIN_APPS = 4
 # ------------------- Referral Program -------------------
 REFERRAL_REWARD = 25  # credits awarded to the referrer for each successful Job Seeker signup
 
+
+# ------------------- Working Professional Score (WPS) -------------------
+def _pro_interview_score(n: int) -> int:
+    """Interview Activity Score (0..100) — bucketed by total interviews conducted."""
+    if n <= 0:
+        return 0
+    if n <= 5:
+        return 20
+    if n <= 20:
+        return 40
+    if n <= 50:
+        return 60
+    if n <= 100:
+        return 80
+    return 100
+
+
+def _pro_jobs_score(n: int) -> int:
+    """Job Posting Activity Score (0..100) — bucketed by total jobs posted."""
+    if n <= 0:
+        return 0
+    if n <= 3:
+        return 20
+    if n <= 10:
+        return 40
+    if n <= 25:
+        return 60
+    if n <= 50:
+        return 80
+    return 100
+
+
+def compute_wps(interviews_conducted: int, jobs_posted: int) -> float:
+    """Working Professional Score (0-100).
+
+    Formula:
+        WPS = (interview_score * 0.60) + (job_score * 0.40)
+    """
+    ints = _pro_interview_score(int(interviews_conducted or 0))
+    jobs = _pro_jobs_score(int(jobs_posted or 0))
+    wps = ints * 0.6 + jobs * 0.4
+    return round(max(0.0, min(100.0, wps)), 2)
+
 def make_referral_code() -> str:
     """Generate an opaque, human-readable referral code like 'USER12AB34CD'."""
     return "USER" + secrets.token_hex(4).upper()
@@ -3040,29 +3083,69 @@ async def leaderboard_students(
 @api.get("/leaderboard/professionals")
 async def leaderboard_pros(u: dict = Depends(current_user)):
     pros = await db.users.find({"role": "professional"}, {"_id": 0, "password_hash": 0}).to_list(1000)
-    def score(p: dict) -> int:
-        return (
-            p.get("interviews_conducted", 0) * 5
-            + p.get("referrals_made", 0) * 3
-            + p.get("successful_referrals", 0) * 20
-            + int(round(float(p.get("rating") or 0) * 4))  # rating weights ~max 40
-        )
-    pros.sort(key=score, reverse=True)
-    return [
-        {
-            "rank": i + 1,
+    # Aggregate jobs_posted per professional (one query)
+    pro_ids = [p["id"] for p in pros]
+    counts = {}
+    if pro_ids:
+        async for row in db.jobs.aggregate([
+            {"$match": {"posted_by": {"$in": pro_ids}}},
+            {"$group": {"_id": "$posted_by", "n": {"$sum": 1}}},
+        ]):
+            counts[row["_id"]] = row.get("n", 0)
+    enriched = []
+    for p in pros:
+        ints = int(p.get("interviews_conducted", 0) or 0)
+        jobs = int(counts.get(p["id"], 0))
+        wps = compute_wps(ints, jobs)
+        enriched.append({
             "id": p["id"],
             "name": p.get("name") or p["email"].split("@")[0],
-            "score": score(p),
-            "interviews_conducted": p.get("interviews_conducted", 0),
-            "referrals_made": p.get("referrals_made", 0),
-            "successful_referrals": p.get("successful_referrals", 0),
+            "interviews_conducted": ints,
+            "jobs_posted": jobs,
+            "referrals_made": int(p.get("referrals_made", 0) or 0),
+            "successful_referrals": int(p.get("successful_referrals", 0) or 0),
             "rating": float(p.get("rating") or 0),
             "ratings_count": int(p.get("ratings_count") or 0),
+            "wps": wps,
             "is_me": p["id"] == u["id"],
+        })
+    enriched.sort(key=lambda x: (-x["wps"], -x["interviews_conducted"], -x["jobs_posted"]))
+    for i, e in enumerate(enriched):
+        e["rank"] = i + 1
+        # Backwards-compatible "score" alias (older clients consumed this key)
+        e["score"] = e["wps"]
+    return enriched[:200]
+
+
+@api.get("/leaderboard/professional/me/stats")
+async def my_pro_stats(u: dict = Depends(require_role(["professional"]))):
+    """Personal WPS + rank summary for the Working Professional menu screen."""
+    board = await leaderboard_pros(u)
+    me = next((b for b in board if b["is_me"]), None)
+    if not me:
+        # Fresh pro that's not in top-200 — compute solo
+        ints = int(u.get("interviews_conducted", 0) or 0)
+        jobs = int(await db.jobs.count_documents({"posted_by": u["id"]}))
+        wps = compute_wps(ints, jobs)
+        me = {
+            "rank": None,
+            "interviews_conducted": ints,
+            "jobs_posted": jobs,
+            "wps": wps,
+            "rating": float(u.get("rating") or 0),
+            "ratings_count": int(u.get("ratings_count") or 0),
+            "successful_referrals": int(u.get("successful_referrals") or 0),
         }
-        for i, p in enumerate(pros[:50])
-    ]
+    return {
+        "rank": me.get("rank"),
+        "interviews_conducted": me["interviews_conducted"],
+        "jobs_posted": me["jobs_posted"],
+        "wps": me["wps"],
+        "rating": me.get("rating"),
+        "ratings_count": me.get("ratings_count"),
+        "successful_referrals": me.get("successful_referrals"),
+        "total_pros": len(board),
+    }
 
 
 # ------------------- Payouts -------------------

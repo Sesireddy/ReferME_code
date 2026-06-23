@@ -24,6 +24,8 @@ export default function ProLayout() {
       <Tabs.Screen name="wallet" options={{ href: null }} />
       <Tabs.Screen name="redeem" options={{ href: null }} />
       <Tabs.Screen name="my-jobs/[id]" options={{ href: null }} />
+      <Tabs.Screen name="my-mock-interviews" options={{ href: null }} />
+      <Tabs.Screen name="my-leaderboard" options={{ href: null }} />
     </Tabs>
   );
 }
