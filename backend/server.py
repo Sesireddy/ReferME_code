@@ -3082,7 +3082,8 @@ async def leaderboard_students(
 
 @api.get("/leaderboard/professionals")
 async def leaderboard_pros(u: dict = Depends(current_user)):
-    pros = await db.users.find({"role": "professional"}, {"_id": 0, "password_hash": 0}).to_list(1000)
+    # Stream all pros via cursor (no 1000 row cap)
+    pros = await db.users.find({"role": "professional"}, {"_id": 0, "password_hash": 0}).to_list(None)
     # Aggregate jobs_posted per professional (one query)
     pro_ids = [p["id"] for p in pros]
     counts = {}
