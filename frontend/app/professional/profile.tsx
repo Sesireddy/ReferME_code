@@ -14,6 +14,7 @@ import { ConfirmDialog } from "@/src/components/ConfirmDialog";
 import { Picker } from "@/src/components/Picker";
 import { ScreenTitle } from "@/src/components/ScreenTitle";
 import { ProfileMenuSheet, MenuItem } from "@/src/components/ProfileMenuSheet";
+import { validateIndianMobile } from "@/src/lib/phone";
 import { EXPERIENCE_OPTIONS, LOCATION_OPTIONS } from "@/src/lib/constants";
 
 function maskPhone(p?: string): string {
@@ -43,6 +44,14 @@ export default function ProProfile() {
   // editable
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  // Mobile verification state (mirrors student profile)
+  const [phoneVerified, setPhoneVerified] = useState(false);
+  const [verifiedPhone, setVerifiedPhone] = useState("");
+  const [phoneError, setPhoneError] = useState<string | null>(null);
+  const [sendingOtp, setSendingOtp] = useState(false);
+  const [verifyingOtp, setVerifyingOtp] = useState(false);
+  const [otpModal, setOtpModal] = useState<{ open: boolean; mockOtp: string }>({ open: false, mockOtp: "" });
+  const [otpInput, setOtpInput] = useState("");
   const [company, setCompany] = useState("");
   const [designation, setDesignation] = useState("");
   const [years, setYears] = useState("");
@@ -73,6 +82,8 @@ export default function ProProfile() {
       setMissingFields(me.missing_fields || []);
       setName(me.user.name || "");
       setPhone(me.profile?.phone || "");
+      setPhoneVerified(!!me.profile?.phone_verified);
+      setVerifiedPhone(me.profile?.phone_verified ? (me.profile?.phone || "") : "");
       setCompany(me.profile?.company || "");
       setDesignation(me.profile?.designation || "");
       setYears(String(me.profile?.experience_years ?? me.profile?.years_of_experience ?? ""));
@@ -299,12 +310,50 @@ export default function ProProfile() {
           testID="phone"
           label="Mobile Number"
           value={editingPhone ? phone : maskPhone(phone)}
-          onChangeText={setPhone}
+          onChangeText={(v) => {
+            setPhone(v);
+            // Any edit invalidates current verification + clears stale error
+            if (v.trim() !== verifiedPhone.trim()) setPhoneVerified(false);
+            else setPhoneVerified(true);
+            const r = validateIndianMobile(v);
+            setPhoneError(!v || r.ok ? null : r.error);
+          }}
           onFocus={() => setEditingPhone(true)}
           onBlur={() => setEditingPhone(false)}
           keyboardType="phone-pad"
           placeholder="+91 9876543210"
         />
+        {phoneError ? (
+          <Txt variant="small" style={{ color: colors.error, marginTop: -8, marginBottom: 6 }}>{phoneError}</Txt>
+        ) : null}
+        {phoneVerified && phone && verifiedPhone === phone ? (
+          <View style={styles.verifiedRow}>
+            <Ionicons name="checkmark-circle" size={16} color={colors.success} />
+            <Txt variant="small" style={{ color: colors.success, fontWeight: "700", marginLeft: 4 }}>
+              Mobile Number Verified
+            </Txt>
+          </View>
+        ) : (
+          <Button
+            testID="send-phone-otp"
+            title={sendingOtp ? "Sending OTP…" : "Verify Mobile Number"}
+            variant="secondary"
+            onPress={async () => {
+              const v = validateIndianMobile(phone);
+              if (!v.ok) { Alert.alert("Invalid number", v.error || "Please enter a valid mobile number."); return; }
+              setSendingOtp(true);
+              try {
+                const res = await api<any>("/profile/phone/send-otp", { method: "POST", body: { phone: v.normalized } });
+                setOtpInput("");
+                setOtpModal({ open: true, mockOtp: res.mock_otp || "" });
+              } catch (e: any) {
+                Alert.alert("Could not send OTP", e.message || String(e));
+              } finally { setSendingOtp(false); }
+            }}
+            disabled={!validateIndianMobile(phone).ok}
+            style={{ marginTop: -4, marginBottom: 8 }}
+          />
+        )}
         <Input label="Company Email (Used Only For Verification)" value={user?.email || ""} editable={false} />
         <Txt variant="small" style={{ color: colors.textSecondary, marginTop: -8, marginBottom: 8 }}>
           🔒 Read-only after verification.
@@ -379,6 +428,54 @@ export default function ProProfile() {
         onConfirm={confirmLogout}
       />
 
+      {/* Phone OTP Modal */}
+      <Modal visible={otpModal.open} transparent animationType="slide" onRequestClose={() => setOtpModal({ open: false, mockOtp: "" })}>
+        <View style={styles.modalBg}>
+          <View style={styles.modalSheet}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+              <Txt variant="h3">Verify mobile number</Txt>
+              <TouchableOpacity onPress={() => setOtpModal({ open: false, mockOtp: "" })} hitSlop={10}>
+                <Ionicons name="close" size={22} color={colors.textPrimary} />
+              </TouchableOpacity>
+            </View>
+            <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 4 }}>
+              Enter the 6-digit code we sent to {phone}.
+            </Txt>
+            {otpModal.mockOtp ? (
+              <Txt variant="small" style={{ marginTop: 6, color: colors.accent }}>Mock OTP: {otpModal.mockOtp}</Txt>
+            ) : null}
+            <Input
+              testID="phone-otp-input"
+              label="OTP"
+              placeholder="123456"
+              keyboardType="number-pad"
+              value={otpInput}
+              onChangeText={setOtpInput}
+            />
+            <Button
+              testID="phone-otp-submit"
+              title={verifyingOtp ? "Verifying…" : "Verify"}
+              onPress={async () => {
+                if (!otpInput.trim() || otpInput.trim().length < 4) { Alert.alert("Enter OTP", "Please enter the 6-digit code."); return; }
+                setVerifyingOtp(true);
+                try {
+                  const res = await api<any>("/profile/phone/verify-otp", { method: "POST", body: { phone: phone.trim(), otp: otpInput.trim() } });
+                  setPhoneVerified(true);
+                  setVerifiedPhone(phone.trim());
+                  setOtpModal({ open: false, mockOtp: "" });
+                  setOtpInput("");
+                  if (res.user) setUser((prev: any) => ({ ...(prev || {}), ...res.user, profile: res.profile || prev?.profile }));
+                  Alert.alert("Verified", "Your mobile number has been verified.");
+                } catch (e: any) {
+                  Alert.alert("OTP failed", e.message || "Incorrect or expired code.");
+                } finally { setVerifyingOtp(false); }
+              }}
+              style={{ marginTop: 6 }}
+            />
+          </View>
+        </View>
+      </Modal>
+
       <ProfileMenuSheet
         visible={menuOpen}
         onClose={() => setMenuOpen(false)}
@@ -434,5 +531,6 @@ const styles = StyleSheet.create({
   modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "flex-end" },
   modalSheet: { backgroundColor: colors.bg, padding: 20, borderTopLeftRadius: 24, borderTopRightRadius: 24 },
   menuBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+  verifiedRow: { flexDirection: "row", alignItems: "center", marginTop: -8, marginBottom: 8, paddingVertical: 6, paddingHorizontal: 10, borderRadius: 8, backgroundColor: colors.success + "1A", alignSelf: "flex-start" },
   devOtp: { backgroundColor: "#FFF8E1", padding: 10, borderRadius: 8, marginBottom: 10 },
 });

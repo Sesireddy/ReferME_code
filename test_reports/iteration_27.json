@@ -1,0 +1,60 @@
+{
+  "summary": "Iteration 27 — Indian mobile validation + OTP gate extended to Working Professional module. Backend (11/11 pytest at /app/backend/tests/test_iteration27_pro_phone_gate.py PASS): PUT /api/profile validates Indian mobile format on the pro role too (rejects '12345' with 'Please enter a valid 10-digit Indian mobile number.', rejects '+44 7700900900' with 'Please enter a valid Indian mobile number with country code +91.', rejects '5989849312' with 'Indian mobile numbers must start with 6, 7, 8, or 9.', accepts '8989849312' → normalized to '+918989849312' with phone_verified=false). require_phone_verified gate enforces 403 PRO_PHONE_GATE_MSG on POST /api/interviews/slots, /api/jobs, /api/redemption/submit when the calling pro has no verified phone; same calls succeed (or pass the phone gate and only fail on unrelated business rules) after the pro completes /profile/phone/send-otp + /profile/phone/verify-otp with the returned mock_otp. Employer is correctly NOT phone-gated on POST /jobs. Frontend Pro Profile (Playwright mobile 390x844, login → /professional/profile): live-validation works — typing '12345' shows red 'Please enter a valid 10-digit Indian mobile number.' below the input and the Verify Mobile Number button is aria-disabled=true; typing '+44 7700900900' shows '...country code +91.'; typing '5989849312' shows 'Indian mobile numbers must start with 6, 7, 8, or 9.'; typing valid '8989849312' clears the error and enables the button (aria-disabled=null). OTP modal opens correctly on Verify tap, mock_otp shown inline (e.g. 'Mock OTP: 215285'). HOWEVER, submitting the correct mock OTP returns HTTP 400 from /api/profile/phone/verify-otp — the frontend posts `phone: phone.trim()` (raw 10-digit '8989849312') but /profile/phone/send-otp stored the OTP keyed to the E.164 normalized form '+918989849312' (frontend line 346 sends `v.normalized`), and backend looks up the OTP doc via exact phone match (server.py:920-928). The verified badge therefore never appears and editing the number while verified cannot be tested end-to-end. This is a critical frontend bug introduced in iter27 — pros cannot complete mobile verification, which in turn blocks every endpoint guarded by require_phone_verified (slots/jobs/redemption). Reproduced 2/2 attempts.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "professional/profile.tsx — Verify OTP modal",
+        "issue": "OTP submit sends raw 10-digit phone instead of E.164. Result: backend exact-match lookup fails with 400 'OTP invalid or expired' and pros can NEVER mark their phone as verified. Reference: /app/frontend/app/professional/profile.tsx:462 — body sends `phone: phone.trim()` (e.g. '8989849312') but send-otp at line 346 sent `phone: v.normalized` (e.g. '+918989849312'), and server.py:920-928 does exact-string match on phone. Fix: use `validateIndianMobile(phone).normalized` (or persist the normalized value into the `phone` state right when send-otp succeeds) so verify-otp uses the same key as send-otp.",
+        "testID": "phone-otp-submit",
+        "priority": "CRITICAL"
+      },
+      {
+        "component": "professional/profile.tsx — OTP modal copy",
+        "issue": "Modal title 'Enter the 6-digit code we sent to {phone}' shows the raw 10-digit number (e.g. '8989849312') instead of a formatted '+91 8989849312' because it interpolates the raw `phone` state. Minor UX nit, follows from the same un-normalized state. Reference: /app/frontend/app/professional/profile.tsx:442",
+        "testID": "phone-otp-input",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Pro mobile verification → slot/job/redemption gate",
+        "issue": "End-to-end blocked by the verify-otp 400 above. Because the verified badge cannot be achieved via the UI, none of the gated actions (POST /interviews/slots, /jobs, /redemption/submit) are usable by a pro without manual DB hack or backend-only OTP. Backend itself works (validated via pytest — direct calls with the normalized phone succeed).",
+        "affected_testIDs": ["send-phone-otp", "phone-otp-submit", "phone-otp-input"]
+      }
+    ],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration27_pro_phone_gate.py",
+    "/app/test_reports/pytest/pytest_iter27.xml"
+  ],
+  "action_items": [
+    "[CRITICAL] In /app/frontend/app/professional/profile.tsx:462, replace `body: { phone: phone.trim(), otp: otpInput.trim() }` with the normalized E.164 number — e.g. `const norm = validateIndianMobile(phone).normalized || phone.trim(); ... body: { phone: norm, otp: otpInput.trim() }`. Also update setVerifiedPhone(phone.trim()) → setVerifiedPhone(norm) on line 464 so the verified-row equality check at line 329 (`verifiedPhone === phone`) keeps working when the user re-opens the screen and the server returns the normalized phone via /auth/me.",
+    "[LOW] Show the formatted '+91 9876543210' in the OTP modal subtitle (line 442) by interpolating the normalized phone instead of raw input.",
+    "[LOW] Same defensive fix is worth mirroring on the student profile if it has the same bug (out of scope for this iteration)."
+  ],
+  "critical_code_review_comments": [
+    "server.py:835-868 normalize_indian_mobile correctly strips +91/91/0 prefixes, validates 10-digit length and the 6/7/8/9 starting digit — used uniformly in PUT /profile (line 1483) and /profile/phone/send-otp (line 895). Backend contract is clean.",
+    "server.py:880-887 require_phone_verified is a no-op for non-professionals — confirmed by the employer-not-gated test. The fresh DB read on every gated call (line 884) is intentional so client-side staleness can't bypass the check; cost is fine since each gated endpoint already issues other queries.",
+    "server.py:1488-1493 PUT /profile correctly resets phone_verified=False whenever the phone value actually changes, and silently drops any client-supplied phone_verified value — covered by prior iter phase-B tests, still passing.",
+    "Frontend /app/frontend/src/lib/phone.ts mirrors the backend normalizer 1:1 including the same three error strings — good for consistent error UX between client validation and server rejection.",
+    "professional/profile.tsx send-otp branch (line 346) uses `v.normalized` which is why /profile/phone/send-otp returns 200 and stores the OTP keyed to '+91...' — the verify branch (line 462) is the asymmetric one and is the root cause of the verification failure."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration27_pro_phone_gate.py (NEW — 11 tests: 4 profile validation + 2 slots gate + 3 jobs gate + 2 redemption gate)"
+  ],
+  "success_rate": {
+    "backend": "100% (11/11)",
+    "frontend": "60% — validation messages + Verify-button enable/disable + OTP modal open all work; OTP submit + verified badge + edit-resets-verified flow blocked by the line 462 bug (HTTP 400 from verify-otp)."
+  },
+  "seed_data_creation": "Pytest seeds fresh pro users per test via /auth/signup + mock_otp /auth/verify-otp under conftest._signup_verify; gmail_verified is flipped via direct Mongo write for slot tests. Frontend test signed up a throwaway pro `iter27_<rand>@acmecorp.io` per run.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend gate for Working Professional is fully verified — re-running /app/backend/tests/test_iteration27_pro_phone_gate.py should stay 11/11 green. The open issue is purely frontend: /professional/profile.tsx line 462 sends un-normalized phone to /api/profile/phone/verify-otp. Once main agent fixes that 1-line bug, please re-test by (a) sign up pro `@acmecorp.io`, (b) /professional/profile, (c) type '8989849312', (d) tap Verify, (e) submit the inline 'Mock OTP: XXXXXX', (f) expect '✅ Mobile Number Verified' badge to appear and (g) edit the phone to '9876512345' and expect the badge to disappear + Verify button to reappear. Then attempt POST /interviews/slots / /jobs / /redemption/submit from this pro and expect no 403 phone gate.",
+  "rca_of_issue": "ROOT CAUSE: Asymmetric phone normalization between send-otp and verify-otp on the Pro profile screen.\n- send-otp (profile.tsx:346) posts the validated E.164 form: `phone: validateIndianMobile(phone).normalized` → backend stores otp doc with phone='+918989849312'.\n- verify-otp (profile.tsx:462) posts the raw input: `phone: phone.trim()` → '8989849312'.\n- Backend (server.py:918-928) does an exact-match `find_one({phone, user_id, purpose:'verify_phone', ...})` → no doc found → 400 'OTP invalid or expired'.\n\nREPRO STEPS:\n1. Signup as professional (`*@acmecorp.io`), verify email OTP.\n2. /professional/profile → type '8989849312' in Mobile Number.\n3. Tap 'Verify Mobile Number' → OTP modal opens, shows 'Mock OTP: 123456'.\n4. Type the same 6 digits → tap Verify → backend returns 400.\n5. Alert 'OTP failed - Incorrect or expired code.' appears, modal stays open, badge never shows.\n\nMITIGATION: 1-line fix in /app/frontend/app/professional/profile.tsx:462 — normalize the phone before posting. Suggested code:\n```\nconst norm = validateIndianMobile(phone).normalized || phone.trim();\nconst res = await api<any>('/profile/phone/verify-otp', { method: 'POST', body: { phone: norm, otp: otpInput.trim() } });\nsetVerifiedPhone(norm);\n```"
+}

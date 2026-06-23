@@ -873,6 +873,20 @@ def is_valid_indian_mobile(raw: str) -> bool:
     return err is None
 
 
+# ------------------- Phone-verified gate (Pro safety) -------------------
+PRO_PHONE_GATE_MSG = "Please add and verify your mobile number to continue. Go to Profile → Verify Mobile Number."
+
+
+async def require_phone_verified(u: dict) -> None:
+    """Reject the request if the Working Professional has not verified their mobile number."""
+    if u.get("role") != "professional":
+        return
+    fresh = await db.users.find_one({"id": u["id"]}, {"_id": 0, "profile.phone_verified": 1, "profile.phone": 1})
+    prof = (fresh or {}).get("profile") or {}
+    if not prof.get("phone_verified") or not prof.get("phone"):
+        raise HTTPException(status_code=403, detail=PRO_PHONE_GATE_MSG)
+
+
 # ------------------- Phone (SMS) OTP — MOCK MODE -------------------
 # In mock mode we generate a 6-digit OTP and return it in the response payload
 # (under `mock_otp`) so the client can complete verification without an SMS gateway.
@@ -1781,6 +1795,7 @@ async def list_professionals(
 
 @api.post("/interviews/slots")
 async def create_slot(body: InterviewSlotBody, u: dict = Depends(require_role(["professional"]))):
+    await require_phone_verified(u)
     if not u.get("is_email_verified"):
         raise HTTPException(status_code=403, detail="Verify your email before posting interview slots.")
     if not u.get("gmail_verified"):
@@ -2237,6 +2252,7 @@ async def mark_interview_joined(slot_id: str, u: dict = Depends(current_user)):
 # ------------------- Jobs & Applications & Referrals -------------------
 @api.post("/jobs")
 async def post_job(body: JobPostBody, u: dict = Depends(require_role(["employer", "professional"]))):
+    await require_phone_verified(u)
     # Mandatory-field guards (Pydantic validates length, but emit human messages for the UI).
     if not body.title or len(body.title.strip()) < 2:
         raise HTTPException(status_code=400, detail="Job Title is required.")
@@ -3787,6 +3803,7 @@ async def submit_redemption(
     body: RedemptionSubmitBody,
     u: dict = Depends(require_role(["professional"])),
 ):
+    await require_phone_verified(u)
     if not _upi_valid(body.upi_id):
         raise HTTPException(status_code=400, detail="Please enter a valid UPI ID (e.g. name@bank)")
     if body.credits < REDEMPTION_MIN_CREDITS:
