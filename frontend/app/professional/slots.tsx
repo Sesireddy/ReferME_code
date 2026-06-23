@@ -1,6 +1,9 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { View, StyleSheet, Alert, TouchableOpacity, Modal, ScrollView } from "react-native";
+import { View, StyleSheet, Alert, TouchableOpacity, Modal, ScrollView, Image } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import * as ImagePicker from "expo-image-picker";
+import * as DocumentPicker from "expo-document-picker";
+import * as FileSystem from "expo-file-system/legacy";
 import { Screen } from "@/src/components/Screen";
 import { Txt } from "@/src/components/Txt";
 import { Card } from "@/src/components/Card";
@@ -47,7 +50,11 @@ export default function ProSlots() {
   const [completingSlot, setCompletingSlot] = useState<any | null>(null);
   const [ratingValue, setRatingValue] = useState<number>(8);
   const [feedback, setFeedback] = useState("");
+  const [proofData, setProofData] = useState<string>(""); // data URL of screenshot/PDF
+  const [proofPreview, setProofPreview] = useState<string>(""); // image preview URI
+  const [proofKind, setProofKind] = useState<"image" | "pdf" | "">("");
   const [submittingComplete, setSubmittingComplete] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const [gmailVerified, setGmailVerified] = useState<boolean | null>(null);
   const [gmailGateOpen, setGmailGateOpen] = useState(false);
@@ -120,21 +127,81 @@ export default function ProSlots() {
     setCompletingSlot(slot);
     setRatingValue(8);
     setFeedback("");
+    setProofData("");
+    setProofPreview("");
+    setProofKind("");
+  }
+
+  async function pickProofImage() {
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        return Alert.alert("Permission required", "Please allow photo library access to upload proof.");
+      }
+      const res = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: false,
+        quality: 0.75,
+        base64: true,
+      });
+      if (res.canceled || !res.assets?.length) return;
+      const a = res.assets[0];
+      const mime = a.mimeType || "image/jpeg";
+      const dataUrl = `data:${mime};base64,${a.base64}`;
+      setProofData(dataUrl);
+      setProofPreview(a.uri);
+      setProofKind("image");
+    } catch (e: any) {
+      Alert.alert("Could not pick image", String(e?.message || e));
+    }
+  }
+
+  async function pickProofPdf() {
+    try {
+      const res = await DocumentPicker.getDocumentAsync({ type: ["application/pdf", "image/*"], copyToCacheDirectory: true });
+      if (res.canceled || !res.assets?.length) return;
+      const a = res.assets[0];
+      const base64 = await FileSystem.readAsStringAsync(a.uri, { encoding: FileSystem.EncodingType.Base64 });
+      const mime = a.mimeType || (a.name?.endsWith(".pdf") ? "application/pdf" : "image/jpeg");
+      const dataUrl = `data:${mime};base64,${base64}`;
+      setProofData(dataUrl);
+      setProofPreview(mime.startsWith("image/") ? a.uri : "");
+      setProofKind(mime === "application/pdf" ? "pdf" : "image");
+    } catch (e: any) {
+      Alert.alert("Could not pick file", String(e?.message || e));
+    }
+  }
+
+  function clickMarkDone() {
+    if (ratingValue < 1 || ratingValue > 10) {
+      return Alert.alert("Please provide a candidate rating.");
+    }
+    if (!feedback || feedback.trim().length < 20) {
+      return Alert.alert("Please provide feedback for the candidate.", "Minimum 20 characters.");
+    }
+    if (!proofData) {
+      return Alert.alert("Please upload interview proof before marking the interview as completed.");
+    }
+    setConfirmOpen(true);
   }
 
   async function submitComplete() {
     if (!completingSlot) return;
-    if (ratingValue < 1 || ratingValue > 10) {
-      return Alert.alert("Pick a rating", "Rating must be 1-10");
-    }
+    setConfirmOpen(false);
     setSubmittingComplete(true);
     try {
       const r = await api<any>(`/interviews/${completingSlot.id}/complete`, {
         method: "POST",
-        body: { rating: ratingValue, feedback },
+        body: { rating: ratingValue, feedback: feedback.trim(), proof_screenshot: proofData },
       });
       setCompletingSlot(null);
-      Alert.alert("Earned", `+${r.earned} credits\nCandidate rated ${r.candidate_rating}/10\nYour rating: ${r.pro_rating}/10`);
+      setProofData(""); setProofPreview(""); setProofKind("");
+      successAlert.show({
+        title: "Interview Completed Successfully",
+        message: `Thank you for conducting the mock interview.\n\n${r.earned} Credits have been added to your wallet.`,
+        intent: "success",
+        okLabel: "OK",
+      });
       load();
     } catch (e: any) {
       Alert.alert("Failed", e.message);
@@ -238,25 +305,70 @@ export default function ProSlots() {
                 </TouchableOpacity>
               ))}
             </ScrollView>
+            <Txt variant="label" style={{ marginBottom: 6 }}>Feedback <Txt style={{ color: colors.error }}>*</Txt></Txt>
             <Input
               testID="feedback"
-              label="Feedback (optional)"
-              placeholder="Strengths, areas to improve…"
+              placeholder="Strengths, areas to improve (minimum 20 characters)"
               value={feedback}
               onChangeText={setFeedback}
               multiline
             />
+            <Txt variant="small" style={{ color: feedback.trim().length >= 20 ? colors.success : colors.textSecondary, marginTop: -4, marginBottom: 8 }}>
+              {feedback.trim().length}/20 minimum characters
+            </Txt>
+
+            <Txt variant="label" style={{ marginBottom: 6 }}>Interview Proof Screenshot <Txt style={{ color: colors.error }}>*</Txt></Txt>
+            <Txt variant="small" style={{ color: colors.textSecondary, marginBottom: 6 }}>
+              Upload your Google Meet / Zoom / Teams screenshot (JPG, PNG, PDF)
+            </Txt>
+            {proofData ? (
+              <View style={styles.proofBox}>
+                {proofKind === "image" && proofPreview ? (
+                  <Image source={{ uri: proofPreview }} style={styles.proofImg} resizeMode="cover" />
+                ) : (
+                  <View style={[styles.proofImg, { alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceAlt }]}>
+                    <Ionicons name="document-text" size={36} color={colors.primary} />
+                    <Txt variant="small" style={{ marginTop: 4 }}>PDF uploaded</Txt>
+                  </View>
+                )}
+                <TouchableOpacity testID="remove-proof" onPress={() => { setProofData(""); setProofPreview(""); setProofKind(""); }} style={styles.proofRemove}>
+                  <Ionicons name="close" size={18} color="#fff" />
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={{ flexDirection: "row", gap: 8, marginBottom: 8 }}>
+                <TouchableOpacity testID="pick-image" onPress={pickProofImage} style={[styles.uploadBtn, { backgroundColor: "#7C3AED" + "12", borderColor: "#7C3AED" }]}>
+                  <Ionicons name="image" size={18} color="#7C3AED" />
+                  <Txt style={{ color: "#7C3AED", fontWeight: "700", marginLeft: 6 }}>Image</Txt>
+                </TouchableOpacity>
+                <TouchableOpacity testID="pick-pdf" onPress={pickProofPdf} style={[styles.uploadBtn, { backgroundColor: colors.primary + "12", borderColor: colors.primary }]}>
+                  <Ionicons name="document-attach" size={18} color={colors.primary} />
+                  <Txt style={{ color: colors.primary, fontWeight: "700", marginLeft: 6 }}>PDF / File</Txt>
+                </TouchableOpacity>
+              </View>
+            )}
+
             <View style={{ height: 8 }} />
             <View style={{ flexDirection: "row", gap: 8 }}>
               <Button title="Cancel" variant="secondary" onPress={() => setCompletingSlot(null)} style={{ flex: 1 }} />
-              <Button testID="submit-complete" title={`Mark Done · +35`} onPress={submitComplete} loading={submittingComplete} style={{ flex: 1 }} />
+              <Button testID="submit-complete" title={`Mark Done · +35`} onPress={clickMarkDone} loading={submittingComplete} style={{ flex: 1 }} />
             </View>
             <Txt variant="small" style={{ marginTop: 8, color: colors.textSecondary, textAlign: "center" }}>
-              Requires both participants to have joined the session and a minimum 15 minutes since the scheduled start.
+              Allowed once the scheduled start time has passed.
             </Txt>
           </View>
         </View>
       </Modal>
+
+      <ConfirmDialog
+        visible={confirmOpen}
+        title="Submit Interview Feedback?"
+        message={"You are about to submit the candidate rating, feedback, and interview proof.\n\nOnce submitted, this action cannot be edited."}
+        confirmLabel="Submit"
+        cancelLabel="Cancel"
+        onCancel={() => setConfirmOpen(false)}
+        onConfirm={submitComplete}
+      />
 
       <ConfirmDialog
         visible={gmailGateOpen}
@@ -276,4 +388,8 @@ const styles = StyleSheet.create({
   modalSheet: { backgroundColor: colors.bg, padding: 20, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: "85%" },
   rateBtn: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceAlt, marginRight: 8 },
   rateBtnActive: { backgroundColor: "#7C3AED" },
+  uploadBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 12, borderRadius: radius.lg, borderWidth: 1 },
+  proofBox: { position: "relative", marginBottom: 8 },
+  proofImg: { width: "100%", height: 160, borderRadius: radius.lg, backgroundColor: colors.surfaceAlt },
+  proofRemove: { position: "absolute", top: 8, right: 8, width: 28, height: 28, borderRadius: 14, backgroundColor: "rgba(0,0,0,0.6)", alignItems: "center", justifyContent: "center" },
 });

@@ -1,0 +1,45 @@
+{
+  "summary": "Iteration 25 — Mock Interview Completion enhancement. Backend: 9/9 pytest in /app/backend/tests/test_iteration25_complete_interview.py PASS. Verified (a) Pydantic validation rejects missing feedback (422), short feedback (<20 chars, 422), missing proof_screenshot (422), short proof_screenshot (<20 chars, 422); (b) /complete BEFORE scheduled start time → 400 with detail 'Interview cannot be marked completed before the scheduled start time.'; (c) Happy path: rating + 20+ char feedback + 20+ char proof_screenshot returns 200 with body {earned:35, candidate_rating, pro_rating}, slot persisted with status=completed, proof_screenshot, candidate_feedback, candidate_rating in Mongo, +35 credits awarded to pro (verified via /auth/me delta); (d) /interviews/my-bookings as STUDENT does NOT include proof_screenshot key for the completed row; as PROFESSIONAL the same row DOES include proof_screenshot with the exact data URL submitted; (e) Aggregations: pro ratings_count + interviews_conducted +1 each, student interviews_attended +1, student_rating > 0 (running avg recalculated); (f) RBAC: student token → 403, different pro → 404 (ownership check). Frontend (Playwright, 390x844 mobile, fresh pro token injected to localStorage, slot seeded via Mongo with start_at=now-5m end_at=now+25m status=booked student_id assigned): /professional/slots renders the booked slot, testID=`complete-{slot_id}` button tap opens 'Rate the candidate' sheet; all required elements present — rating-1..rating-10, feedback input with red asterisk, '0/20 minimum characters' helper that turns green at 60/20, 'Upload Image' (testID=pick-image) + 'PDF / File' (testID=pick-pdf) buttons visible, 'Mark Done · +35' (testID=submit-complete) plus footnote 'Allowed once the scheduled start time has passed.'; tapping Mark Done with empty fields does NOT open ConfirmDialog (blocked by Alert); after typing 60 chars feedback + selecting rating-9, tapping Mark Done STILL does not open ConfirmDialog (blocked by Alert until proof uploaded). expo-image-picker / expo-document-picker cannot be triggered in headless web preview, so the post-picker → ConfirmDialog 'Submit Interview Feedback?' → SuccessAlert '+35 Credits' transition is verified by code-review of /app/frontend/app/professional/slots.tsx lines 175-211 (clickMarkDone gates all 3 fields then sets confirmOpen=true; submitComplete fires successAlert.show with 'Interview Completed Successfully' + '${r.earned} Credits have been added to your wallet.') and by the green-path backend test which confirms the API behaviour the dialog wraps.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {
+        "component": "Shared components (recurring tech debt — same as iter22/23/24)",
+        "issue": "Console emits 'shadow* style props are deprecated. Use boxShadow' and 'props.pointerEvents is deprecated. Use style.pointerEvents' on every render. Not introduced by iter25 but still present in /app/frontend/src/components/Card.tsx and other shared components."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration25_complete_interview.py",
+    "/app/test_reports/pytest/pytest_iter25.xml"
+  ],
+  "action_items": [
+    "(Tech debt, pre-existing) Replace `shadow*` style props with `boxShadow` and `props.pointerEvents` with `style.pointerEvents` in shared components to silence RN-web deprecation warnings. Same item flagged in iter22-24."
+  ],
+  "critical_code_review_comments": [
+    "CompleteInterviewBody at server.py:590-594 correctly enforces rating Field(ge=1, le=10), feedback Field(min_length=20), proof_screenshot Field(min_length=20). Pydantic returns 422 with field-level location, and the route's own guards at server.py:2142-2148 also return 400 with friendly messages — both layers tested.",
+    "/interviews/{slot_id}/complete at server.py:2117-2148 correctly relaxes the old join-required + 15-min-minimum gates. The only time guard is `if sd and now_dt < sd: raise 400 'Interview cannot be marked completed before the scheduled start time.'` — matches the spec exactly.",
+    "/interviews/my-bookings at server.py:2088-2090 strips proof_screenshot ONLY for role=student. Admin role returns [] from this endpoint (server.py:2082-2083 — only student/professional get rows) so admin cannot consume proof here; the spec note 'admin + pro only' for proof visibility is actually 'pro only' on this endpoint. If admin needs to see proof, they would need /admin/interviews/search — flag for E1 to confirm intent.",
+    "+35 credit award via _credit_user at server.py:2160-2164 fires AFTER the 422/400 guards, so partial-failure cannot leak credits. Verified by attempting all 4 invalid-input variants — none of them increment credits.",
+    "Frontend /app/frontend/app/professional/slots.tsx:175-186 clickMarkDone gates rating(1-10), feedback.trim().length>=20, proofData truthy BEFORE setting confirmOpen=true. ConfirmDialog at lines 363-371 uses correct title 'Submit Interview Feedback?' with Submit/Cancel labels. submitComplete at 188-211 calls successAlert.show with title 'Interview Completed Successfully' and message 'Thank you for conducting the mock interview.\\n\\n${r.earned} Credits have been added to your wallet.' — matches spec verbatim.",
+    "Frontend proof picker correctly uses expo-image-picker (line 4) AND expo-document-picker (line 5) with separate pick-image / pick-pdf testIDs. Both produce data:<mime>;base64,<...> strings which satisfy the backend's 20-char min_length.",
+    "Spec ambiguity: prompt says 'admin + pro' can see proof_screenshot, but /interviews/my-bookings only serves student/professional. If admin retrieval of proof is required, E1 should ensure /admin/interviews/search includes proof_screenshot — out of scope for this review-request file list but worth a sanity check."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration25_complete_interview.py (NEW — 9 tests across 3 classes: TestCompleteValidation x5, TestCompleteHappyPath x2, TestCompleteRBAC x2)"
+  ],
+  "success_rate": {
+    "backend": "100% (9/9)",
+    "frontend": "Dialog render + field state gates verified. Picker-driven full submission cannot run in headless web (native module gated) — submission code path verified by code review + green-path backend test."
+  },
+  "seed_data_creation": "Backend pytest: signs up fresh professional + student per test class via /auth/signup + /auth/verify-otp (mock_otp), gmail-verifies pro via direct Mongo update, seeds an interview_slots document with status=booked and start_at in the past. All seeded slots have _test_marker='iter25' and are deleted in the fixture teardown. Frontend test: same approach via /tmp/setup_iter25.py with _test_marker='iter25_ui'; post-test cleanup script removed 1 slot + 2 users.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter25 (Mandatory feedback + proof + scheduled-start gate, +35 credit reward only when all 3 valid, proof hidden from student my-bookings) is fully verified end-to-end. Backend: 9/9 pytest at /app/backend/tests/test_iteration25_complete_interview.py. Frontend: testIDs on the slots screen are stable — complete-{slot_id}, rating-{1..10}, feedback, pick-image, pick-pdf, remove-proof, submit-complete. The expo-image-picker / expo-document-picker cannot be triggered in headless browser; if a future iteration needs end-to-end UI submission tests, you'll need to monkey-patch the picker functions via page.addInitScript injecting fake modules OR call api.post('/interviews/{id}/complete') directly from the page context after seeding state. Known cross-iteration tech debt: shadow*/pointerEvents deprecation warnings (not iter25's fault). Spec ambiguity: admin proof visibility — /interviews/my-bookings only serves student+pro, so admin sees proof only via /admin/interviews/search; if E1 intended admin to see proof on student dashboards, that would need an extra endpoint."
+}

@@ -589,7 +589,9 @@ class HireBody(BaseModel):
 
 class CompleteInterviewBody(BaseModel):
     rating: int = Field(ge=1, le=10)
-    feedback: Optional[str] = ""
+    feedback: str = Field(min_length=20)
+    # Interview proof screenshot (data URL or raw base64). Required.
+    proof_screenshot: str = Field(min_length=20)
 
 
 class ReferOwnJobBody(BaseModel):
@@ -2083,6 +2085,9 @@ async def my_bookings(
     now_dt = datetime.now(timezone.utc)
     out = []
     for s in slots:
+        # Spec: proof screenshot is visible only to Admin + Working Professional
+        if u["role"] == "student":
+            s.pop("proof_screenshot", None)
         try:
             sd = datetime.fromisoformat((s.get("start_at") or "").replace("Z", "+00:00"))
             ed = datetime.fromisoformat((s.get("end_at") or "").replace("Z", "+00:00"))
@@ -2122,20 +2127,24 @@ async def complete_interview(
         raise HTTPException(status_code=400, detail="Slot not booked")
     if not slot.get("student_id"):
         raise HTTPException(status_code=400, detail="No candidate booked for this slot")
-    # Both-joined validation: require both participants to have joined at least once
-    joined = slot.get("joined_by") or []
-    if slot["pro_id"] not in joined or slot["student_id"] not in joined:
-        raise HTTPException(status_code=400, detail="Both participants must join the interview before it can be completed")
-    # Minimum duration validation: scheduled slot must have started at least INTERVIEW_MIN_DURATION_MIN ago
+    # Spec rule: allow completion once the scheduled start time has passed (no join-required gate).
     try:
         sd = datetime.fromisoformat((slot.get("start_at") or "").replace("Z", "+00:00"))
     except Exception:
         sd = None
     now_dt = datetime.now(timezone.utc)
-    if sd and (now_dt - sd) < timedelta(minutes=INTERVIEW_MIN_DURATION_MIN):
+    if sd and now_dt < sd:
         raise HTTPException(
             status_code=400,
-            detail=f"Interview must run for at least {INTERVIEW_MIN_DURATION_MIN} minutes before completion",
+            detail="Interview cannot be marked completed before the scheduled start time.",
+        )
+    # Field-level guards (Pydantic also enforces, but produce friendly messages)
+    if not body.feedback or len(body.feedback.strip()) < 20:
+        raise HTTPException(status_code=400, detail="Please provide feedback for the candidate.")
+    if not body.proof_screenshot:
+        raise HTTPException(
+            status_code=400,
+            detail="Please upload interview proof before marking the interview as completed.",
         )
     await db.interview_slots.update_one(
         {"id": slot_id},
@@ -2143,7 +2152,8 @@ async def complete_interview(
             "status": "completed",
             "completed_at": now_iso(),
             "candidate_rating": body.rating,
-            "candidate_feedback": body.feedback or "",
+            "candidate_feedback": body.feedback.strip(),
+            "proof_screenshot": body.proof_screenshot,
         }},
     )
     # Pro reward
