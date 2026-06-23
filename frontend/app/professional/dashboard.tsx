@@ -92,15 +92,15 @@ export default function ProDashboard() {
       </Card>
 
       <View style={styles.row}>
-        <TouchableOpacity testID="cta-conduct" style={{ flex: 1 }} onPress={() => router.push("/professional/slots")}>
-          <Card style={{ borderColor: "#7C3AED", borderWidth: 2 }}>
+        <TouchableOpacity testID="cta-conduct" style={styles.tile} onPress={() => router.push("/professional/slots")}>
+          <Card style={[styles.tileCard, { borderColor: "#7C3AED", borderWidth: 2 }]}>
             <Ionicons name="videocam" size={24} color="#7C3AED" />
             <Txt variant="h3" style={{ marginTop: 8 }}>Conduct Interview</Txt>
             <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 4 }}>+35 credits / session</Txt>
           </Card>
         </TouchableOpacity>
-        <TouchableOpacity testID="cta-post-job" style={{ flex: 1 }} onPress={() => router.push("/professional/post-job")}>
-          <Card style={{ borderColor: colors.primary, borderWidth: 2 }}>
+        <TouchableOpacity testID="cta-post-job" style={styles.tile} onPress={() => router.push("/professional/post-job")}>
+          <Card style={[styles.tileCard, { borderColor: colors.primary, borderWidth: 2 }]}>
             <Ionicons name="briefcase" size={24} color={colors.primary} />
             <Txt variant="h3" style={{ marginTop: 8 }}>Post a Job</Txt>
             <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 4 }}>+100 at 4 apps</Txt>
@@ -109,15 +109,15 @@ export default function ProDashboard() {
       </View>
 
       <View style={styles.row}>
-        <TouchableOpacity testID="cta-my-jobs" style={{ flex: 1 }} onPress={() => router.push("/professional/my-jobs")}>
-          <Card style={{ borderColor: colors.secondary, borderWidth: 2 }}>
+        <TouchableOpacity testID="cta-my-jobs" style={styles.tile} onPress={() => router.push("/professional/my-jobs")}>
+          <Card style={[styles.tileCard, { borderColor: colors.secondary, borderWidth: 2 }]}>
             <Ionicons name="folder-open" size={24} color={colors.textPrimary} />
             <Txt variant="h3" style={{ marginTop: 8 }}>My Posted Jobs</Txt>
             <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 4 }}>Manage applicants</Txt>
           </Card>
         </TouchableOpacity>
-        <TouchableOpacity testID="cta-refer" style={{ flex: 1 }} onPress={() => router.push("/professional/my-jobs")}>
-          <Card style={{ borderColor: "#FFD566", borderWidth: 2 }}>
+        <TouchableOpacity testID="cta-refer" style={styles.tile} onPress={() => router.push("/professional/my-jobs")}>
+          <Card style={[styles.tileCard, { borderColor: "#FFD566", borderWidth: 2 }]}>
             <Ionicons name="share-social" size={24} color={colors.textPrimary} />
             <Txt variant="h3" style={{ marginTop: 8 }}>Refer Candidate</Txt>
             <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 4 }}>+₹1500/hire</Txt>
@@ -166,6 +166,8 @@ const styles = StyleSheet.create({
   iconBtn: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   hero: { padding: 20, borderRadius: radius.xxl, flexDirection: "row", alignItems: "center" },
   heroIcon: { width: 80, alignItems: "center", justifyContent: "center", opacity: 0.85 },
-  row: { flexDirection: "row", gap: 12, marginTop: 12 },
+  row: { flexDirection: "row", gap: 12, marginTop: 12, alignItems: "stretch" },
+  tile: { flex: 1 },
+  tileCard: { flex: 1, justifyContent: "flex-start" },
   rankIcon: { width: 56, height: 56, borderRadius: 18, alignItems: "center", justifyContent: "center" },
 });
