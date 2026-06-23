@@ -186,8 +186,8 @@ export default function StudentDashboard() {
             <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 4 }}>Practice with pros</Txt>
           </Card>
         </TouchableOpacity>
-        <TouchableOpacity testID="cta-apply-job" style={{ flex: 1 }} onPress={() => router.push("/student/jobs")}>
-          <Card style={{ borderColor: colors.primary, borderWidth: 2 }}>
+        <TouchableOpacity testID="cta-apply-job" style={styles.tile} onPress={() => router.push("/student/jobs")}>
+          <Card style={[styles.tileCard, { borderColor: colors.primary, borderWidth: 2 }]}>
             <View style={[styles.actionIcon, { backgroundColor: "#FFE4E5" }]}>
               <FontAwesome5 name="handshake" size={20} color={colors.primary} />
             </View>
@@ -338,7 +338,9 @@ const styles = StyleSheet.create({
   breakdownDetail: { color: "#fff", fontSize: 10, opacity: 0.85, marginTop: 2 },
   miniTrack: { height: 4, backgroundColor: "rgba(255,255,255,0.25)", borderRadius: 4, marginTop: 6, overflow: "hidden" },
   miniFill: { height: "100%", backgroundColor: "#fff", borderRadius: 4 },
-  actionRow: { flexDirection: "row", gap: 12 },
+  actionRow: { flexDirection: "row", gap: 12, alignItems: "stretch" },
+  tile: { flex: 1 },
+  tileCard: { flex: 1, justifyContent: "flex-start" },
   actionIcon: { width: 44, height: 44, borderRadius: 14, alignItems: "center", justifyContent: "center" },
   rankIcon: { width: 56, height: 56, borderRadius: 18, alignItems: "center", justifyContent: "center" },
   rankBox: { flex: 1, alignItems: "center", paddingVertical: 8, paddingHorizontal: 4 },
