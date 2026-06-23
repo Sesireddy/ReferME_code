@@ -1143,13 +1143,14 @@ STUDENT_PROFILE_FIELDS = [
 PRO_PROFILE_FIELDS = [
     "phone", "company", "designation", "experience_years", "expertise",
     "current_location", "skills", "profile_photo_base64", "alternate_gmail",
+    "gender", "education", "education_details",
 ]
 EMPLOYER_PROFILE_FIELDS = ["company_name", "company_website", "company_size", "company_logo_base64", "bio"]
 
 
 def compute_pro_profile_completion(user: dict) -> int:
-    """Working professional profile completion percentage based on 10 mandatory factors."""
-    return 100 - int(round(len(pro_missing_fields(user)) / 10 * 100))
+    """Working professional profile completion percentage based on 9 mandatory factors."""
+    return 100 - int(round(len(pro_missing_fields(user)) / 9 * 100))
 
 
 def pro_missing_fields(user: dict) -> list[str]:
@@ -1176,8 +1177,7 @@ def pro_missing_fields(user: dict) -> list[str]:
         missing.append("Current Location")
     if not ((p.get("skills") or []) or (p.get("expertise") or [])):
         missing.append("Skill Set")
-    if not (p.get("profile_photo_base64") or "").strip():
-        missing.append("Profile Photo")
+    # Profile Photo is OPTIONAL per spec — do not flag as missing.
     return missing
 
 
