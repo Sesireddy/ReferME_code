@@ -1,0 +1,44 @@
+{
+  "summary": "Iteration 26 — Admin Mock Interview Bookings tab enhancement (expose proof/rating/feedback/credits to Admin). Backend: 9/9 pytest at /app/backend/tests/test_iteration26_admin_interviews_search.py PASS. Verified GET /api/admin/interviews/search returns completed slots with proof_screenshot (data URI, >=20 chars), candidate_rating (int 1-10), candidate_feedback (full text) intact for admin token; filters (status=completed, candidate, pro, skill, q) all narrow results correctly; booked slots return without proof_screenshot/candidate_rating populated; non-admin (student) returns 403 and unauthenticated returns 401/403. MongoDB _id is stripped (server.py:3551 projection {_id:0}). Frontend (Playwright, 390x844 mobile, admin login admin@referme.app / Admin@12345 → /admin/dashboard → /admin/interviews, seeded 1 completed slot + 1 booked slot via Mongo with _test_marker='iter26_ui'): the completed slot card renders all spec'd elements — '9/10' star chip, '+35 credits' chip, 'Proof attached' chip, 'Feedback' label + 2-line preview 'Excellent candidate. Strong fundamentals, great communication. Recommend hire fo…', red 1x1 PNG proof thumbnail, purple 'View Full Proof' button with testID=`view-proof-{slot_id}`, outlined 'View full details' link with testID=`detail-{slot_id}`; tapping View Full Proof opens the full-screen lightbox modal showing the PNG with close (X) icon in top-right (lightbox.png screenshot confirms full-screen red image with translucent close circle); tapping View full details opens the bottom-sheet 'Interview Details' modal listing exactly Candidate / Professional / Skills / Scheduled / Status (COMPLETED) / Overall Rating (9/10) / Credits Awarded (+35) / Feedback (full text), Close button works. Booked slot (status=booked) does NOT render any view-proof or detail testIDs (booked view-proof count=0, booked detail count=0) — only the Booked pill + 'Cancel Booking & Refund 49 credits' button. Search input filters items.length (UI Test → 2 of 296 results). PDF Linking.openURL branch verified by code review (interviews.tsx:196 ternary) but not triggered in this UI session because seed used image/png MIME. Filter popup Apply/Reset code path unchanged from iter17 — not re-exercised. Tech debt (pre-existing, not iter26): shadow*/pointerEvents deprecation warnings still emitted by shared components.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {
+        "component": "Shared components (pre-existing tech debt, NOT iter26)",
+        "issue": "Console emits 'shadow* style props are deprecated. Use boxShadow' and 'props.pointerEvents is deprecated. Use style.pointerEvents' on every render. Same item flagged in iter22-25. Reference: /app/frontend/src/components/Card.tsx and other shared style consumers."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration26_admin_interviews_search.py",
+    "/app/test_reports/pytest/pytest_iter26.xml"
+  ],
+  "action_items": [
+    "(Tech debt only) Migrate shadow*/pointerEvents → boxShadow/style.pointerEvents in /app/frontend/src/components/* to silence RN-web deprecation warnings."
+  ],
+  "critical_code_review_comments": [
+    "/admin/interviews/search at server.py:3526-3552 uses {'_id': 0} projection — no Mongo ObjectId leaks. Filter logic correctly maps `status` query-string → `slot_status` Python param via alias='status' (line 3534). Sort desc by start_at + limit 300 default / 2000 max.",
+    "interviews.tsx clearly gates the completion box behind `isCompleted = s.status === 'completed'` (line 122), so available/booked/cancelled slots cannot accidentally render proof/rating/feedback widgets. Confirmed at runtime — the booked slot card had zero `view-proof-*` and `detail-*` testIDs.",
+    "interviews.tsx line 125 `isPdf = hasProof && String(s.proof_screenshot).startsWith('data:application/pdf')` correctly routes PDF proofs to Linking.openURL (line 196) and rasters to the in-app lightbox. Lightbox close-on-tap-anywhere uses TouchableOpacity wrapping the full Modal background (line 269) — both code-correct and runtime-verified.",
+    "creditsAwarded constant at line 123 is hardcoded `isCompleted ? 35 : 0` — matches INTERVIEW_PRO_REWARD constant in backend/.env (35). If the constant ever changes server-side, this UI label would drift. Worth replacing with a value pulled from /admin/interviews/search row (e.g. earned/credits_awarded field) when the backend starts persisting it on the slot doc.",
+    "Detail modal Row at line 297 shows '+35' even when the slot is completed but the server did not actually award credits (e.g. if a future RBAC path lets admin force-complete without reward). Currently this is fine because /interviews/{id}/complete is the only path that flips to status='completed' and it always awards 35, but worth tracking if business logic forks.",
+    "No skeleton/loading state on the FlatList while `refreshing=true` — only the pull-to-refresh indicator on the Screen wrapper. Minor UX nit, not a bug."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration26_admin_interviews_search.py (NEW — 9 tests: 7 completion-fields + filters, 2 RBAC)"
+  ],
+  "success_rate": {
+    "backend": "100% (9/9)",
+    "frontend": "100% — every spec'd UI element rendered, both testIDs (view-proof, detail) tappable, lightbox + detail modal verified visually, non-completed slot correctly skips completion box."
+  },
+  "seed_data_creation": "Backend pytest: each test seeds and tears down its own completed slot via direct Mongo insert with _test_marker='iter26'. Frontend test: /tmp/seed_iter26_ui.py inserted 1 completed slot (rating=9, feedback='Excellent candidate…', proof_screenshot=data:image/png;base64,1x1 red PNG) + 1 booked slot under _test_marker='iter26_ui'. Both removed post-run (2 docs deleted).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "iter26 admin Interviews tab enhancement is fully verified — both backend (/admin/interviews/search exposes proof_screenshot, candidate_rating, candidate_feedback for completed slots; status / candidate / pro / skill filters all narrow correctly; admin-only RBAC) and frontend (every completion-box element renders for completed slots, hidden for booked/available/cancelled; view-proof testID opens lightbox; detail testID opens bottom-sheet listing all 8 spec'd rows). For future regression: stable testIDs are `view-proof-{slot_id}` and `detail-{slot_id}` on every completed card. Existing cancel-booking testID remains `cancel-booking-{slot_id}`. PDF proof branch (Linking.openURL when proof_screenshot starts with 'data:application/pdf') was code-reviewed only — to exercise it in an E2E test, seed a slot with proof_screenshot='data:application/pdf;base64,<...>' and observe that the View Full Proof button does NOT open the in-app Image modal but instead calls window.open. No new tech debt introduced by iter26."
+}
