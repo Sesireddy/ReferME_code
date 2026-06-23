@@ -1,0 +1,30 @@
+{
+  "summary": "Iteration 28 — retest of the iter27 frontend OTP-verify fix on /app/frontend/app/professional/profile.tsx. The 1-line fix (`const norm = validateIndianMobile(phone).normalized || phone.trim()` used for the verify-otp body, setPhone, setVerifiedPhone, and OTP-modal subtitle) is in place and fully resolves the bug. Playwright run on mobile viewport 390x844: signed up fresh pro `iter28_<rand>@acmecorp.io` via /api/auth/signup + /api/auth/verify-otp (UA header required — default urllib UA hits Cloudflare 1010), logged in via the UI, navigated to /professional/profile, typed '8989849312', tapped Verify Mobile Number → modal opened with subtitle 'Enter the 6-digit code we sent to +918989849312' (now correctly E.164, no longer raw 10-digit), 'Mock OTP: 718139' shown inline, entered it, tapped Verify → POST /api/profile/phone/verify-otp returned 200 (was 400 in iter27), 'Mobile Number Verified' green badge appeared, and the phone field now renders the masked verified form '+91 XXXXXXXX9312'. Phone-verified gate downstream: from a 2nd API login with the same pro's token, POST /api/interviews/slots, /api/jobs, /api/redemption/submit all bypass the 403 PRO_PHONE_GATE_MSG and instead fail with 400/422 on payload schema (missing required fields in my minimal test bodies), confirming the gate is satisfied. Backend pytest suite at /app/backend/tests/test_iteration27_pro_phone_gate.py is unchanged and was previously 11/11 PASS — not re-run this iteration per E1's instruction.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration27_pro_phone_gate.py (unchanged from iter27, not re-run)"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "/app/frontend/app/professional/profile.tsx:460-466 — verify-otp branch now computes `const norm = validateIndianMobile(phone).normalized || phone.trim()` once and consistently posts `phone: norm`, then setPhone(norm) + setVerifiedPhone(norm) so the verified-row equality check (line 329 `verifiedPhone === phone`) stays true after verification. Also profile.tsx:442 subtitle interpolates `validateIndianMobile(phone).normalized || phone` so the modal shows '+918989849312' instead of the raw 10-digit input. Both align with backend exact-match lookup at server.py:920-928 and PUT /profile normalisation at server.py:1483. Clean fix, no remaining asymmetry between send-otp and verify-otp."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% (iter27 suite still applies, not re-executed)",
+    "frontend": "100% — OTP verify modal returns 200, verified badge shows, gated endpoints pass phone gate"
+  },
+  "seed_data_creation": "Single throwaway pro `iter28_<random>@acmecorp.io` per run via /auth/signup + mock_otp /auth/verify-otp. Cloudflare on the preview gateway rejects Python urllib's default User-Agent (HTTP 1010); programmatic backend calls from test scripts must set `User-Agent: Mozilla/5.0 ...` (or any non-empty UA). Browser/Playwright traffic is unaffected.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "iter27 OTP-verify bug is fully resolved. Future testers re-running the pro phone verification flow on /professional/profile should see: (a) OTP modal subtitle showing the normalized E.164 number, (b) /api/profile/phone/verify-otp returning 200 on correct mock OTP, (c) green 'Mobile Number Verified' badge appearing, and (d) downstream gated endpoints (/api/interviews/slots, /api/jobs, /api/redemption/submit) no longer returning 403 PRO_PHONE_GATE_MSG. NOTE for next agents using urllib/requests against the preview URL: always send an explicit User-Agent header — the default `Python-urllib/3.x` UA is blocked by Cloudflare with body 'error code: 1010'.",
+  "rca_of_issue": "iter27 RCA still accurate. The fix shipped by E1 normalizes the phone on the verify-otp branch using validateIndianMobile(phone).normalized before POST, matching what send-otp already does, so the backend's exact-match lookup on (user_id, phone, purpose='verify_phone') now finds the stored OTP doc. Verified by 1/1 successful run end-to-end on mobile viewport 390x844."
+}

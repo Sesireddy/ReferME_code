@@ -439,7 +439,7 @@ export default function ProProfile() {
               </TouchableOpacity>
             </View>
             <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 4 }}>
-              Enter the 6-digit code we sent to {phone}.
+              Enter the 6-digit code we sent to {validateIndianMobile(phone).normalized || phone}.
             </Txt>
             {otpModal.mockOtp ? (
               <Txt variant="small" style={{ marginTop: 6, color: colors.accent }}>Mock OTP: {otpModal.mockOtp}</Txt>
@@ -457,11 +457,13 @@ export default function ProProfile() {
               title={verifyingOtp ? "Verifying…" : "Verify"}
               onPress={async () => {
                 if (!otpInput.trim() || otpInput.trim().length < 4) { Alert.alert("Enter OTP", "Please enter the 6-digit code."); return; }
+                const norm = validateIndianMobile(phone).normalized || phone.trim();
                 setVerifyingOtp(true);
                 try {
-                  const res = await api<any>("/profile/phone/verify-otp", { method: "POST", body: { phone: phone.trim(), otp: otpInput.trim() } });
+                  const res = await api<any>("/profile/phone/verify-otp", { method: "POST", body: { phone: norm, otp: otpInput.trim() } });
                   setPhoneVerified(true);
-                  setVerifiedPhone(phone.trim());
+                  setPhone(norm);
+                  setVerifiedPhone(norm);
                   setOtpModal({ open: false, mockOtp: "" });
                   setOtpInput("");
                   if (res.user) setUser((prev: any) => ({ ...(prev || {}), ...res.user, profile: res.profile || prev?.profile }));
