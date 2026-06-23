@@ -14,18 +14,6 @@ export const LOCATION_OPTIONS = [
   { value: "__OTHER__", label: "Others (specify)" },
 ];
 
-export const EDUCATION_OPTIONS = [
-  "B.Tech", "Degree (B.A)", "Degree (B.Com)", "Degree (B.Sc)", "BBA", "BCA",
-  "B.Ed", "B.Pharma", "LLB", "Diploma", "MCA", "M.Sc", "M.Com",
-].map((e) => ({ value: e, label: e })).concat({ value: "__OTHER__", label: "Other (specify)" });
-
-export const GENDER_OPTIONS = [
-  { value: "male", label: "Male" },
-  { value: "female", label: "Female" },
-  { value: "other", label: "Other" },
-  { value: "prefer_not_to_say", label: "Prefer Not To Say" },
-];
-
 export const PREFERRED_ROLE_OPTIONS = [
   { value: "fresher", label: "Fresher" },
   { value: "experienced", label: "Experienced" },
@@ -127,4 +115,15 @@ export const SKILL_OPTIONS = [
   "Salesforce", "SAP", "Workday",
   "Product Management", "Project Management", "Business Analysis", "Agile / Scrum",
   "UI / UX Design", "Figma",
+].map((v) => ({ value: v, label: v }));
+
+export const GENDER_OPTIONS = [
+  { value: "male", label: "Male" },
+  { value: "female", label: "Female" },
+  { value: "other", label: "Other" },
+  { value: "prefer_not_to_say", label: "Prefer not to say" },
+];
+
+export const EDUCATION_OPTIONS = [
+  "High School", "Diploma", "Bachelor's", "Master's", "PhD", "Other",
 ].map((v) => ({ value: v, label: v }));

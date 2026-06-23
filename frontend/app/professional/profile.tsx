@@ -15,7 +15,8 @@ import { Picker } from "@/src/components/Picker";
 import { ScreenTitle } from "@/src/components/ScreenTitle";
 import { ProfileMenuSheet, MenuItem } from "@/src/components/ProfileMenuSheet";
 import { validateIndianMobile } from "@/src/lib/phone";
-import { EXPERIENCE_OPTIONS, LOCATION_OPTIONS } from "@/src/lib/constants";
+import { successAlert } from "@/src/lib/successAlert";
+import { EXPERIENCE_OPTIONS, LOCATION_OPTIONS, GENDER_OPTIONS, EDUCATION_OPTIONS } from "@/src/lib/constants";
 
 function maskPhone(p?: string): string {
   if (!p) return "";
@@ -53,6 +54,14 @@ export default function ProProfile() {
   const [otpModal, setOtpModal] = useState<{ open: boolean; mockOtp: string }>({ open: false, mockOtp: "" });
   const [otpInput, setOtpInput] = useState("");
   const [company, setCompany] = useState("");
+  // Gender + Education (new fields per spec)
+  const [gender, setGender] = useState<string>("");
+  const [education, setEducation] = useState<string>("");
+  // View / Edit Mode workflow
+  const [editMode, setEditMode] = useState<boolean>(false);
+  const [hasEverSaved, setHasEverSaved] = useState<boolean>(false);
+  // Snapshot for Cancel
+  const [snap, setSnap] = useState<any>(null);
   const [designation, setDesignation] = useState("");
   const [years, setYears] = useState("");
   const [location, setLocation] = useState("");
@@ -93,6 +102,12 @@ export default function ProProfile() {
       setPhotoB64(me.profile?.profile_photo_base64 || null);
       setGmailVerified(!!me.user.gmail_verified);
       setAltGmail(me.user.alternate_gmail || me.profile?.alternate_gmail || "");
+      setGender(me.profile?.gender || "");
+      setEducation(me.profile?.education || "");
+      // If user has saved before (any of the mandatory fields filled), default to view mode
+      const everSaved = !!(me.profile?.company || me.profile?.designation || me.user?.profile_complete);
+      setHasEverSaved(everSaved);
+      setEditMode(!everSaved);
     } catch {}
     setRefreshing(false);
   }, []);
@@ -115,7 +130,8 @@ export default function ProProfile() {
   }
 
   async function save() {
-    // 1) Validate mandatory fields client-side first (mirror of backend pro_missing_fields)
+    // 1) Validate mandatory fields client-side first (mirror of backend pro_missing_fields).
+    //    Profile photo is OPTIONAL — no penalty if not uploaded (per spec).
     const localMissing: string[] = [];
     if (!name.trim()) localMissing.push("Full Name");
     if (!phone.trim()) localMissing.push("Mobile Number");
@@ -125,7 +141,6 @@ export default function ProProfile() {
     if (!years.trim() || parseInt(years, 10) <= 0) localMissing.push("Total Experience");
     if (!location.trim()) localMissing.push("Current Location");
     if (skills.split(",").map((s) => s.trim()).filter(Boolean).length === 0) localMissing.push("Skill Set");
-    if (!photoB64) localMissing.push("Profile Photo");
     if (localMissing.length > 0) {
       setMissingFields(localMissing);
       setMissingDialogOpen(true);
@@ -146,16 +161,39 @@ export default function ProProfile() {
           skills: skillsArr,
           expertise: skillsArr,
           profile_photo_base64: photoB64,
+          gender,
+          education,
         },
       });
-      setSavedOk(true);
       setMissingDialogOpen(false);
+      // Switch to Read-Only Mode after a successful save
+      setHasEverSaved(true);
+      setEditMode(false);
+      setSnap(null);
+      successAlert.show({ title: "Profile updated successfully.", intent: "success", okLabel: "OK" });
       load();
     } catch (e: any) {
       Alert.alert("Cannot save", e.message);
     } finally {
       setBusy(false);
     }
+  }
+
+  function enterEditMode() {
+    // Snapshot current values so Cancel restores them
+    setSnap({ name, phone, company, designation, years, location, skills, gender, education, altGmail, photoB64 });
+    setEditMode(true);
+  }
+
+  function cancelEdit() {
+    if (snap) {
+      setName(snap.name); setPhone(snap.phone); setCompany(snap.company);
+      setDesignation(snap.designation); setYears(snap.years); setLocation(snap.location);
+      setSkills(snap.skills); setGender(snap.gender); setEducation(snap.education);
+      setAltGmail(snap.altGmail); setPhotoB64(snap.photoB64);
+    }
+    setSnap(null);
+    setEditMode(false);
   }
 
   async function sendGmailOtp() {
@@ -226,9 +264,17 @@ export default function ProProfile() {
             icon="person-circle"
             color="#7C3AED"
             right={
-              <TouchableOpacity testID="profile-logout-btn" onPress={logout} hitSlop={10}>
-                <Ionicons name="log-out-outline" size={24} color={colors.textPrimary} />
-              </TouchableOpacity>
+              <View style={{ flexDirection: "row", gap: 8 }}>
+                {hasEverSaved && !editMode ? (
+                  <TouchableOpacity testID="edit-profile-btn" onPress={enterEditMode} style={styles.editPill} hitSlop={10}>
+                    <Ionicons name="create-outline" size={14} color="#fff" />
+                    <Txt style={{ color: "#fff", fontWeight: "700", marginLeft: 4, fontSize: 12 }}>Edit Profile</Txt>
+                  </TouchableOpacity>
+                ) : null}
+                <TouchableOpacity testID="profile-logout-btn" onPress={logout} hitSlop={10}>
+                  <Ionicons name="log-out-outline" size={24} color={colors.textPrimary} />
+                </TouchableOpacity>
+              </View>
             }
           />
         </View>
@@ -236,13 +282,17 @@ export default function ProProfile() {
       {/* Top profile card: photo + name + credits chip → wallet */}
       <Card>
         <View style={{ flexDirection: "row", alignItems: "center" }}>
-          <TouchableOpacity onPress={pickPhoto} style={styles.avatarWrap}>
+          <TouchableOpacity onPress={editMode ? pickPhoto : undefined} activeOpacity={editMode ? 0.7 : 1} style={styles.avatarWrap}>
             {photoB64 ? (
               <Image source={{ uri: photoB64 }} style={styles.avatarImg} />
             ) : (
-              <View style={styles.avatarPlaceholder}><Txt style={{ color: "#fff", fontSize: 24, fontWeight: "700" }}>{initials}</Txt></View>
+              <View style={styles.avatarPlaceholder}>
+                <Ionicons name="person" size={32} color="#fff" />
+              </View>
             )}
-            <View style={styles.cameraBadge}><Ionicons name="camera" size={12} color="#fff" /></View>
+            {editMode ? (
+              <View style={styles.cameraBadge}><Ionicons name="camera" size={12} color="#fff" /></View>
+            ) : null}
           </TouchableOpacity>
           <View style={{ flex: 1, marginLeft: 12 }}>
             <Txt variant="h2" numberOfLines={1}>{user?.name || (user?.email || "").split("@")[0]}</Txt>
@@ -305,14 +355,13 @@ export default function ProProfile() {
       {/* Personal info */}
       <Card style={{ marginTop: 12 }}>
         <Txt variant="h3">Personal Information</Txt>
-        <Input testID="name" label="Full Name" value={name} onChangeText={setName} />
+        <Input testID="name" label="Full Name" value={name} onChangeText={setName} editable={editMode} />
         <Input
           testID="phone"
           label="Mobile Number"
           value={editingPhone ? phone : maskPhone(phone)}
           onChangeText={(v) => {
             setPhone(v);
-            // Any edit invalidates current verification + clears stale error
             if (v.trim() !== verifiedPhone.trim()) setPhoneVerified(false);
             else setPhoneVerified(true);
             const r = validateIndianMobile(v);
@@ -322,6 +371,7 @@ export default function ProProfile() {
           onBlur={() => setEditingPhone(false)}
           keyboardType="phone-pad"
           placeholder="+91 9876543210"
+          editable={editMode}
         />
         {phoneError ? (
           <Txt variant="small" style={{ color: colors.error, marginTop: -8, marginBottom: 6 }}>{phoneError}</Txt>
@@ -333,7 +383,7 @@ export default function ProProfile() {
               Mobile Number Verified
             </Txt>
           </View>
-        ) : (
+        ) : editMode ? (
           <Button
             testID="send-phone-otp"
             title={sendingOtp ? "Sending OTP…" : "Verify Mobile Number"}
@@ -353,7 +403,7 @@ export default function ProProfile() {
             disabled={!validateIndianMobile(phone).ok}
             style={{ marginTop: -4, marginBottom: 8 }}
           />
-        )}
+        ) : null}
         <Input label="Company Email (Used Only For Verification)" value={user?.email || ""} editable={false} />
         <Txt variant="small" style={{ color: colors.textSecondary, marginTop: -8, marginBottom: 8 }}>
           🔒 Read-only after verification.
@@ -375,8 +425,13 @@ export default function ProProfile() {
       {/* Professional info */}
       <Card style={{ marginTop: 12 }}>
         <Txt variant="h3">Professional Details</Txt>
-        <Input testID="company" label="Company Name" value={company} onChangeText={setCompany} />
-        <Input testID="designation" label="Designation" value={designation} onChangeText={setDesignation} placeholder="Senior Engineer" />
+        <Picker testID="gender" label="Gender" options={GENDER_OPTIONS} value={gender} onChange={(v) => setGender(v as string)} placeholder="Select gender" disabled={!editMode} />
+        <Picker testID="education" label="Education" options={EDUCATION_OPTIONS} value={EDUCATION_OPTIONS.some((o) => o.value === education) ? education : (education ? "__OTHER__" : "")} onChange={(v) => setEducation(v === "__OTHER__" ? (education && !EDUCATION_OPTIONS.some((o) => o.value === education) ? education : "") : (v as string))} placeholder="Select education" disabled={!editMode} />
+        {(education === "__OTHER__" || (education && !EDUCATION_OPTIONS.some((o) => o.value === education))) ? (
+          <Input testID="education-other" label="Specify education" value={education === "__OTHER__" ? "" : education} onChangeText={setEducation} placeholder="Enter your qualification" editable={editMode} />
+        ) : null}
+        <Input testID="company" label="Company Name" value={company} onChangeText={setCompany} editable={editMode} />
+        <Input testID="designation" label="Designation" value={designation} onChangeText={setDesignation} placeholder="Senior Engineer" editable={editMode} />
         <Picker
           testID="years"
           label="Your Total Experience"
@@ -384,6 +439,7 @@ export default function ProProfile() {
           value={years}
           onChange={(v) => setYears(v as string)}
           placeholder="Select experience"
+          disabled={!editMode}
         />
         <Picker
           testID="location"
@@ -392,14 +448,28 @@ export default function ProProfile() {
           value={LOCATION_OPTIONS.some((o) => o.value === location) ? location : (location ? "__OTHER__" : "")}
           onChange={(v) => setLocation(v === "__OTHER__" ? (location && !LOCATION_OPTIONS.some((o) => o.value === location) ? location : "") : (v as string))}
           placeholder="Select city"
+          disabled={!editMode}
         />
         {(location === "__OTHER__" || (location && !LOCATION_OPTIONS.some((o) => o.value === location))) ? (
-          <Input testID="location-other" label="Specify location" value={location === "__OTHER__" ? "" : location} onChangeText={setLocation} placeholder="Enter your city" />
+          <Input testID="location-other" label="Specify location" value={location === "__OTHER__" ? "" : location} onChangeText={setLocation} placeholder="Enter your city" editable={editMode} />
         ) : null}
-        <Input testID="skills" label="Skill Set (comma-separated)" value={skills} onChangeText={setSkills} placeholder="React, System Design, Java" />
+        <Input testID="skills" label="Skill Set (comma-separated)" value={skills} onChangeText={setSkills} placeholder="React, System Design, Java" editable={editMode} />
       </Card>
 
-      <Button testID="save-profile" title={completion >= 100 ? "Edit Profile" : "Save Profile"} onPress={save} loading={busy} style={{ marginTop: 14 }} />
+      {editMode ? (
+        <View style={{ flexDirection: "row", gap: 10, marginTop: 14 }}>
+          {hasEverSaved ? (
+            <Button testID="cancel-edit" title="Cancel" variant="outline" onPress={cancelEdit} style={{ flex: 1 }} />
+          ) : null}
+          <Button
+            testID="save-profile"
+            title={hasEverSaved ? "Save Changes" : "Save Profile"}
+            onPress={save}
+            loading={busy}
+            style={{ flex: hasEverSaved ? 1 : undefined, ...(hasEverSaved ? {} : { width: "100%" }) }}
+          />
+        </View>
+      ) : null}
 
       <ConfirmDialog
         visible={savedOk}
@@ -534,5 +604,6 @@ const styles = StyleSheet.create({
   modalSheet: { backgroundColor: colors.bg, padding: 20, borderTopLeftRadius: 24, borderTopRightRadius: 24 },
   menuBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   verifiedRow: { flexDirection: "row", alignItems: "center", marginTop: -8, marginBottom: 8, paddingVertical: 6, paddingHorizontal: 10, borderRadius: 8, backgroundColor: colors.success + "1A", alignSelf: "flex-start" },
+  editPill: { flexDirection: "row", alignItems: "center", backgroundColor: "#7C3AED", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999 },
   devOtp: { backgroundColor: "#FFF8E1", padding: 10, borderRadius: 8, marginBottom: 10 },
 });
