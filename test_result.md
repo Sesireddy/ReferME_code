@@ -125,32 +125,40 @@ backend:
 
   - task: "Email provider migration: SendGrid → Resend"
     implemented: true
-    working: "NA"
+    working: true
     file: "/app/backend/server.py, /app/backend/.env, /app/backend/requirements.txt"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
         - working: false
           agent: "main"
           comment: "Previous SendGrid API key returned 401 Unauthorized on every send, so all OTP/booking emails were silently mock-logged."
         - working: "NA"
           agent: "main"
-          comment: "Migrated to Resend. Added resend==2.32.2 to requirements.txt. Added RESEND_API_KEY + RESEND_FROM_EMAIL to backend/.env (key: re_gtari...). Rewrote send_html_email() in server.py to try Resend first (using asyncio.to_thread for non-blocking) and fall back to SendGrid then mock. MOCK_OTP_MODE now also considers RESEND_API_KEY. Live smoke test to delivered@resend.dev returned a Resend email id (d83b1acc-93b7-...), confirming the API key and from-address (noreply@referme.today) are valid + domain is verified. Backend reloads cleanly. Needs an end-to-end test of /api/auth/signup → /api/auth/verify-otp without the OTP being echoed in the response (since real email now sends)."
+          comment: "Migrated to Resend. Added resend==2.32.2. Rewrote send_html_email() to try Resend first via asyncio.to_thread, fallback to SendGrid then mock. MOCK_OTP_MODE now also considers RESEND_API_KEY. Live smoke test returned a Resend email id."
+        - working: false
+          agent: "testing"
+          comment: "Iter31: 8/9 pass. CRITICAL booking bug — /api/interviews/book fires two emails back-to-back (student + pro), Resend free tier 2 req/sec → second hits 429 → SendGrid fallback also 401 → pro never gets booking email + ICS invite."
+        - working: "NA"
+          agent: "main"
+          comment: "Added global async throttle inside send_html_email: _resend_lock + RESEND_MIN_GAP_SECS (default 0.55s) ensures every Resend send respects 2 req/sec — auto-applies to ALL callers, not just the booking endpoint. Local asyncio.gather of two sends now both succeed (~700ms apart, both got Resend IDs)."
+        - working: true
+          agent: "testing"
+          comment: "Iter32: 9/9 iter31 tests now pass + new iter32 DB-status test passes. Booking flow emits two consecutive 'Resend OK' logs ~800ms apart, zero 429s, zero SendGrid fallback. Booking doc persists student_email_status='sent' AND pro_email_status='sent'. P0 closed."
 
 metadata:
   created_by: "main_agent"
   version: "1.0"
-  test_sequence: 31
+  test_sequence: 32
   run_ui: false
 
 test_plan:
-  current_focus:
-    - "Email provider migration: SendGrid → Resend"
+  current_focus: []
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
 
 agent_communication:
   - agent: "main"
-    message: "Iteration 31: Switched email provider from SendGrid to Resend. The new send_html_email() in server.py tries Resend first, then SendGrid, then logs in mock mode. Live smoke test to delivered@resend.dev succeeded (id=d83b1acc-...). Note: TEST_RETURN_OTP=1 is still set in .env, so signup/forgot endpoints still echo the OTP in the JSON response — please use that value to complete /api/auth/verify-otp tests rather than parsing an inbox. Validate: (a) /api/auth/signup returns OTP in response (TEST_RETURN_OTP mode); (b) backend logs show 'Resend OK to=... id=...' instead of any 'SendGrid send failed' warning; (c) /api/auth/verify-otp succeeds with that OTP; (d) /api/auth/forgot followed by /api/auth/reset-password works (also issues an OTP email via Resend); (e) Phase A + Phase B regression endpoints still pass."
+    message: "Iter32: Resend migration is fully live + throttle bug fixed. All booking + auth flows green via Resend. SendGrid kept only as silent fallback. Awaiting user direction on next item (Phase C refactor / Razorpay live / AI Resume Review / MSG91 keys)."
