@@ -125,18 +125,24 @@ backend:
 
   - task: "Mark as Hired modal — replace base64 textarea with Image/PDF picker"
     implemented: true
-    working: "NA"
+    working: true
     file: "/app/frontend/app/professional/my-jobs/[id].tsx"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
         - working: false
           agent: "main"
           comment: "User reported the 'Mark as Hired' modal still asked for a raw base64 paste — terrible UX. Required a proper file attachment chooser supporting Image (camera roll) AND PDF."
         - working: "NA"
           agent: "main"
-          comment: "Replaced base64 multi-line Input with two file-picker buttons (Image + PDF/File) using expo-image-picker + expo-document-picker — same pattern already used in /app/frontend/app/professional/slots.tsx (interview-completion proof). Selected file is converted to a data URL (data:image/jpeg;base64,... or data:application/pdf;base64,...) and POSTed unchanged to /api/applications/hire as proof_base64. Backend HireBody.proof_base64 is Optional[str], no backend changes needed. Image preview + 'PDF uploaded' card + 'remove' (X) overlay button are rendered after pick. Cancel/close also resets proofB64/proofPreview/proofKind so the modal opens clean next time. Lint clean."
+          comment: "Replaced base64 multi-line Input with two file-picker buttons (Image + PDF/File) using expo-image-picker + expo-document-picker — same pattern already used in slots.tsx. Selected file is converted to a data URL and POSTed as proof_base64. Backend unchanged. Lint clean."
+        - working: true
+          agent: "testing"
+          comment: "Iter33 frontend verification PASS 8/8: raw base64 textarea is gone; testIDs pick-hire-image + pick-hire-pdf render with 'Image' / 'PDF / File' labels; evidence note Input preserved; doHire alert + null proof_base64 path works; cancel/close reset state; slots.tsx regression intact. Flagged one defensive-symmetry nit (open handler didn't reset proofPreview/proofKind) which main agent then fixed."
+        - working: true
+          agent: "main"
+          comment: "Applied the defensive-symmetry fix: 'Mark Hired' button onPress now also resets proofPreview + proofKind, so modal opens 100% clean every time."
 
 metadata:
   created_by: "main_agent"

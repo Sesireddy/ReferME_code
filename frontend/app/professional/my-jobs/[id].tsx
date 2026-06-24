@@ -225,7 +225,7 @@ export default function JobApplicants() {
                     testID={`hire-${a.id}`}
                     title={a.status === "referred" ? "Mark Hired" : "Hired"}
                     variant="secondary"
-                    onPress={() => { setHireApp(a); setHireNote(""); setProofB64(""); }}
+                    onPress={() => { setHireApp(a); setHireNote(""); setProofB64(""); setProofPreview(""); setProofKind(""); }}
                     style={{ flex: 1, height: 38 }}
                   />
                 ) : null}
