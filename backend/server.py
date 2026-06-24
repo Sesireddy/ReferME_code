@@ -42,6 +42,14 @@ EMERGENT_AUTH_URL = os.environ.get(
 )
 
 MOCK_OTP_MODE = not (bool(RESEND_API_KEY) or bool(SENDGRID_API_KEY))
+
+# --- Resend rate-limiter (free tier = 2 req/sec) ---
+# Serialise Resend sends with a global async lock; keep at least RESEND_MIN_GAP_SECS
+# between API calls so back-to-back emails (e.g. student + pro on booking) don't 429.
+import asyncio as _asyncio_for_throttle  # noqa: E402
+RESEND_MIN_GAP_SECS = float(os.environ.get("RESEND_MIN_GAP_SECS", "0.55"))
+_resend_lock = _asyncio_for_throttle.Lock()
+_resend_last_sent_monotonic = 0.0
 MOCK_PAYMENTS_MODE = not (RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET)
 # When TEST_RETURN_OTP=1, expose the generated OTP in the signup/forgot response
 # so backend test suites can complete the verify-otp step without a real inbox.
@@ -275,6 +283,8 @@ async def send_html_email(
     if RESEND_API_KEY:
         try:
             import resend  # type: ignore
+            import asyncio as _asyncio
+            import time as _time
 
             resend.api_key = RESEND_API_KEY
             params: dict = {
@@ -292,10 +302,18 @@ async def send_html_email(
                     }
                     for a in attachments
                 ]
-            # resend.Emails.send is sync; run in a thread so we don't block the event loop
-            import asyncio as _asyncio
-
-            resp = await _asyncio.to_thread(resend.Emails.send, params)
+            # Global throttle so concurrent callers respect Resend free tier (2 req/sec).
+            # We hold the lock for the duration of the request AND for any wait time
+            # required so the next coroutine waits its full share too.
+            global _resend_last_sent_monotonic
+            async with _resend_lock:
+                now = _time.monotonic()
+                wait = (_resend_last_sent_monotonic + RESEND_MIN_GAP_SECS) - now
+                if wait > 0:
+                    await _asyncio.sleep(wait)
+                # resend.Emails.send is sync; run in a thread so we don't block the event loop
+                resp = await _asyncio.to_thread(resend.Emails.send, params)
+                _resend_last_sent_monotonic = _time.monotonic()
             email_id = (resp or {}).get("id") if isinstance(resp, dict) else getattr(resp, "id", None)
             logger.info("Resend OK to=%s subject=%s id=%s", to_email, subject, email_id)
             return True

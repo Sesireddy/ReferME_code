@@ -1,0 +1,45 @@
+{
+  "summary": "P0 booking-email Resend rate-limit bug is FIXED and verified. The global async throttle in send_html_email() (_resend_lock + RESEND_MIN_GAP_SECS=0.55s in /app/backend/server.py:47-51, applied at server.py:309-313) now serialises Resend calls so the back-to-back student+pro confirmation emails inside POST /api/interviews/book go out ~848ms apart — well above Resend's 2 req/sec free-tier limit. Re-ran /app/backend/tests/test_iter31_resend_migration.py → 9/9 PASS (was 8/9 in iter31). Added /app/backend/tests/test_iter32_booking_email_status.py to additionally assert the booking record in Mongo persists student_email_status='sent' AND pro_email_status='sent' → PASS. Backend logs show two consecutive 'Resend OK to=... subject=ReferME · Mock Interview confirmed' / 'subject=ReferME · New Mock Interview booking' lines per booking, zero 429s, zero 'SendGrid send failed' warnings on the new path. Auth happy paths (signup → verify-otp → forgot → reset → login) and admin login regression all green.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "send_html_email() / server.py:303-309",
+        "issue": "(carry-over P3 from iter31, NOT a regression and explicitly out of scope per main agent) SendGrid fallback is still wired; on a hypothetical Resend 5xx it would still try SendGrid which 401s in this env. Not exercised on the happy path because the throttle prevents 429. Safe to remove or feature-flag once Resend is the confirmed long-term provider."
+      },
+      {
+        "endpoint": "routers/interviews.py:317-322",
+        "issue": "(minor observability nit) student_email_status / pro_email_status are persisted as the string literals 'sent' | 'queued'. There is no distinct 'failed' value — if Resend ever returns an unrecoverable error and the fallback also fails, the field reads 'queued' which is misleading. Consider a third state 'failed' + optional error_msg field for support visibility."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter31_resend_migration.py",
+    "/app/backend/tests/test_iter32_booking_email_status.py",
+    "/app/test_reports/pytest/pytest_iter32_resend.xml",
+    "/app/test_reports/pytest/pytest_iter32_email_status.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py:47-51 — throttle implementation is correct: module-level asyncio.Lock + monotonic timestamp, awaited inside an `async with _resend_lock` block before each Resend send. Gap is configurable via RESEND_MIN_GAP_SECS env var (default 0.55s = ~1.8 req/sec, comfortably under the 2/sec free-tier ceiling). No risk of cross-event-loop reuse because the lock is created at import time in the same loop the FastAPI app uses.",
+    "(carry-over from iter31, low-prio) routers/interviews.py still fires the two emails sequentially under the throttle. This adds ~0.55-0.85s to the booking response time. If perceived latency becomes an issue, switch to Resend Batch API or move sends to a BackgroundTasks queue — but functionally the current solution is correct."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter32_booking_email_status.py (NEW — single test asserting booking doc has student_email_status='sent' AND pro_email_status='sent' end-to-end via the live Resend path)"
+  ],
+  "success_rate": {
+    "backend": "100% (9/9 iter31 regression + 1/1 iter32 DB email-status assertion)",
+    "frontend": "N/A — backend-only per request"
+  },
+  "seed_data_creation": "Throw-away signup users only: delivered+iter31_student_*@resend.dev, test_stu_iter32_*@resend.dev (students), test_pro_iter31_*@acmecorp.io, test_pro_iter32_*@acmecorp.io (pros). Each pro gets one 30-min future slot which is booked once and cleaned up in fixture teardown (interview_slots, interview_bookings, users collections). Admin / redeem.pro / demo-employer seeds untouched.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "P0 from iter31 is resolved. Throttle constants live in /app/backend/server.py:47-51 (RESEND_MIN_GAP_SECS, _resend_lock, _resend_last_sent_monotonic). If a future change introduces a 3rd email per booking (e.g., admin notification), the throttle will serialise it too — no extra work needed up to ~1.8 req/sec sustained. If a fan-out to many recipients is added (>4 sends per request), consider switching to Resend Batch API or raising RESEND_MIN_GAP_SECS tolerance with a proper token-bucket worker. Booking docs now expose {student_email_status, pro_email_status} fields — surface them in admin UI / observability dashboards.",
+  "rca_of_issue": "Iter31 RCA was: two send_html_email() calls fired back-to-back in routers/interviews.py:288-299 exceeded Resend free-tier 2 req/sec, second call 429'd, fallback to SendGrid 401'd, pro never got the .ics. FIX applied by main agent: instead of pacing at the call-site, the throttle was added globally inside send_html_email() so every Resend call goes through the same async lock + min-gap guard. Verification (this iter): backend.err.log timestamps show the two booking-confirmation Resend calls at 15:34:08.770 (student) and 15:34:09.618 (pro) — 848ms apart, both 'Resend OK' with valid email IDs, zero 429s, zero SendGrid fallback warnings. DB booking record asserted to contain student_email_status='sent' AND pro_email_status='sent'. Bug is fully closed."
+}
