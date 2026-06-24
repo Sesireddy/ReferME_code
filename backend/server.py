@@ -1515,94 +1515,6 @@ async def update_profile(body: ProfileBody, u: dict = Depends(current_user)):
     return {"user": user_public(u2), "profile": u2.get("profile", {})}
 
 
-@api.get("/refer/validate")
-async def refer_validate(code: str = Query(...)):
-    """Validate a referral code. Public endpoint — used by the signup screen for inline feedback.
-
-    Returns: {valid: bool, message?: str, owner_name?: str}
-    - Empty / whitespace → valid (the field is optional; treat as "no code").
-    - Code not found or owner suspended → invalid with message.
-    """
-    c = (code or "").strip().upper()
-    if not c:
-        return {"valid": True}
-    owner = await db.users.find_one({"referral_code": c}, {"_id": 0})
-    if not owner:
-        return {"valid": False, "message": "Invalid referral code. Please check and try again."}
-    if owner.get("account_status") and owner["account_status"] != "active":
-        return {"valid": False, "message": "Invalid referral code. Please check and try again."}
-    return {"valid": True, "owner_name": owner.get("name") or owner.get("email", "").split("@")[0]}
-
-
-# ------------------- Referral Program endpoints -------------------
-def _mask_email(e: str) -> str:
-    if not e or "@" not in e:
-        return "—"
-    local, _, dom = e.partition("@")
-    if len(local) <= 2:
-        return f"{local[:1]}***@{dom}"
-    return f"{local[:2]}***@{dom}"
-
-
-async def _ensure_referral_code(u: dict) -> str:
-    code = u.get("referral_code")
-    if code:
-        return code
-    # Backfill for existing users
-    for _ in range(5):
-        c = make_referral_code()
-        existing = await db.users.find_one({"referral_code": c}, {"_id": 0})
-        if not existing:
-            await db.users.update_one({"id": u["id"]}, {"$set": {"referral_code": c}})
-            return c
-    raise HTTPException(status_code=500, detail="Could not allocate referral code")
-
-
-@api.get("/refer/me")
-async def refer_me(u: dict = Depends(current_user)):
-    """Return the current user's referral code, share link and tracking stats."""
-    code = await _ensure_referral_code(u)
-    refs = await db.referrals.find({"referrer_id": u["id"]}, {"_id": 0}).to_list(2000)
-    total = len(refs)
-    successful = sum(1 for r in refs if r.get("status") == "successful")
-    pending = sum(1 for r in refs if r.get("status") == "pending")
-    credits_earned = successful * REFERRAL_REWARD
-    return {
-        "code": code,
-        "link": referral_link_for(code),
-        "reward": REFERRAL_REWARD,
-        "total": total,
-        "successful": successful,
-        "pending": pending,
-        "credits_earned": credits_earned,
-    }
-
-
-@api.get("/refer/list")
-async def refer_list(u: dict = Depends(current_user)):
-    """Return the user's referrals (newest first). Emails are masked."""
-    refs = await db.referrals.find({"referrer_id": u["id"]}, {"_id": 0}).sort("created_at", -1).to_list(500)
-    # Hydrate referred user's name (masked email fallback)
-    referred_ids = [r.get("referred_id") for r in refs if r.get("referred_id")]
-    users = await db.users.find(
-        {"id": {"$in": referred_ids}}, {"_id": 0, "id": 1, "name": 1, "email": 1}
-    ).to_list(1000)
-    um = {x["id"]: x for x in users}
-    out = []
-    for r in refs:
-        ru = um.get(r.get("referred_id")) or {}
-        out.append({
-            "id": r["id"],
-            "status": r.get("status"),
-            "reward_credits": r.get("reward_credits", REFERRAL_REWARD),
-            "created_at": r.get("created_at"),
-            "completed_at": r.get("completed_at"),
-            "name": ru.get("name") or "Friend",
-            "email_masked": _mask_email(ru.get("email") or r.get("referred_email", "")),
-        })
-    return out
-
-
 # ------------------- Wallet & Subscription -------------------
 @api.get("/wallet")
 async def get_wallet(u: dict = Depends(current_user)):
@@ -2993,185 +2905,6 @@ async def my_student_ranks(u: dict = Depends(require_role(["student"]))):
         "primary_skill": primary_skill or None,
         "category_label": me_role or (str(me_year) if me_year else None),
         "resume_score": my_score,
-    }
-
-
-@api.get("/leaderboard/students/options")
-async def leaderboard_options(u: dict = Depends(current_user)):
-    """Return dynamic dropdown options for the leaderboard skill / location filters.
-
-    Skills = MASTER_SKILLS ∪ all profile.skills (students) ∪ jobs.required_skills.
-    Locations = distinct non-empty profile.current_location values.
-    """
-    # Skills from student profiles
-    skill_set: set[str] = set()
-    async for s in db.users.find({"role": "student"}, {"_id": 0, "profile.skills": 1}):
-        for sk in (s.get("profile", {}) or {}).get("skills", []) or []:
-            sk = (sk or "").strip()
-            if sk:
-                skill_set.add(sk)
-    # Skills from job postings
-    async for j in db.jobs.find({}, {"_id": 0, "required_skills": 1, "skills": 1}):
-        for key in ("required_skills", "skills"):
-            for sk in (j.get(key) or []):
-                sk = (sk or "").strip()
-                if sk:
-                    skill_set.add(sk)
-    # Merge with master list (canonical labels stay nicely cased)
-    skill_set.update(MASTER_SKILLS)
-
-    # De-duplicate case-insensitively while keeping the longest/canonical casing
-    canon: dict[str, str] = {}
-    for sk in skill_set:
-        key = sk.lower()
-        if key not in canon or len(sk) > len(canon[key]):
-            canon[key] = sk
-    skills_sorted = sorted(canon.values(), key=lambda x: x.lower())
-
-    # Locations from profiles
-    loc_set: set[str] = set()
-    async for s in db.users.find({"role": "student"}, {"_id": 0, "profile.current_location": 1}):
-        loc = ((s.get("profile") or {}).get("current_location") or "").strip()
-        if loc:
-            loc_set.add(loc)
-    locations_sorted = sorted(loc_set, key=lambda x: x.lower())
-
-    return {"skills": skills_sorted, "locations": locations_sorted}
-
-
-@api.get("/leaderboard/students")
-async def leaderboard_students(
-    u: dict = Depends(current_user),
-    category: Optional[str] = Query(None),
-    skill: Optional[str] = Query(None),
-    location: Optional[str] = Query(None),
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=500),
-):
-    """LeaderBoard — ranks Students by Talent Potential Score (TPS).
-
-    Ranking order (DESC):
-        1. tps
-        2. resume_score
-        3. avg_rating  (student_rating, 1-10)
-        4. interviews_attended
-    """
-    students = await db.users.find({"role": "student"}, {"_id": 0, "password_hash": 0}).to_list(5000)
-    out: list[dict] = []
-    for s in students:
-        sid = s["id"]
-        profile = s.get("profile", {}) or {}
-        skills = profile.get("skills", []) or []
-        cat = profile.get("preferred_role")
-        loc = profile.get("current_location")
-        score_val = int(profile.get("resume_score") or 0)
-        attended = int(s.get("interviews_attended", 0) or 0)
-        avg_rating = float(s.get("student_rating") or 0)
-
-        if category and cat != category:
-            continue
-        if skill and not any(skill.lower() == (sk or "").lower() for sk in skills):
-            continue
-        if location and location.lower() != (loc or "").lower():
-            continue
-
-        # Use stored TPS if present, otherwise compute on the fly for legacy rows
-        tps = profile.get("tps")
-        if tps is None:
-            tps = compute_tps(s)
-
-        primary_skill = (skills[0] if skills else "") or "—"
-        out.append({
-            "id": sid,
-            "name": s.get("name") or s["email"].split("@")[0],
-            "category": cat or "—",
-            "skills": skills,
-            "skill_set": primary_skill,
-            "current_location": loc or "—",
-            "tps": round(float(tps), 2),
-            "resume_score": score_val,
-            "interviews_attended": attended,
-            "avg_rating": round(avg_rating, 2),
-            # Legacy keys (kept for backward compatibility with other screens)
-            "rating": avg_rating,
-            "composite_score": round(float(tps), 2),
-            "is_me": sid == u["id"],
-        })
-    out.sort(key=lambda x: (-x["tps"], -x["resume_score"], -x["avg_rating"], -x["interviews_attended"]))
-    for i, e in enumerate(out):
-        e["rank"] = i + 1
-    total = len(out)
-    start = (page - 1) * page_size
-    end = start + page_size
-    return {"total": total, "page": page, "page_size": page_size, "items": out[start:end]}
-
-
-@api.get("/leaderboard/professionals")
-async def leaderboard_pros(u: dict = Depends(current_user)):
-    # Stream all pros via cursor (no 1000 row cap)
-    pros = await db.users.find({"role": "professional"}, {"_id": 0, "password_hash": 0}).to_list(None)
-    # Aggregate jobs_posted per professional (one query)
-    pro_ids = [p["id"] for p in pros]
-    counts = {}
-    if pro_ids:
-        async for row in db.jobs.aggregate([
-            {"$match": {"posted_by": {"$in": pro_ids}}},
-            {"$group": {"_id": "$posted_by", "n": {"$sum": 1}}},
-        ]):
-            counts[row["_id"]] = row.get("n", 0)
-    enriched = []
-    for p in pros:
-        ints = int(p.get("interviews_conducted", 0) or 0)
-        jobs = int(counts.get(p["id"], 0))
-        wps = compute_wps(ints, jobs)
-        enriched.append({
-            "id": p["id"],
-            "name": p.get("name") or p["email"].split("@")[0],
-            "interviews_conducted": ints,
-            "jobs_posted": jobs,
-            "referrals_made": int(p.get("referrals_made", 0) or 0),
-            "successful_referrals": int(p.get("successful_referrals", 0) or 0),
-            "rating": float(p.get("rating") or 0),
-            "ratings_count": int(p.get("ratings_count") or 0),
-            "wps": wps,
-            "is_me": p["id"] == u["id"],
-        })
-    enriched.sort(key=lambda x: (-x["wps"], -x["interviews_conducted"], -x["jobs_posted"]))
-    for i, e in enumerate(enriched):
-        e["rank"] = i + 1
-        # Backwards-compatible "score" alias (older clients consumed this key)
-        e["score"] = e["wps"]
-    return enriched[:200]
-
-
-@api.get("/leaderboard/professional/me/stats")
-async def my_pro_stats(u: dict = Depends(require_role(["professional"]))):
-    """Personal WPS + rank summary for the Working Professional menu screen."""
-    board = await leaderboard_pros(u)
-    me = next((b for b in board if b["is_me"]), None)
-    if not me:
-        # Fresh pro that's not in top-200 — compute solo
-        ints = int(u.get("interviews_conducted", 0) or 0)
-        jobs = int(await db.jobs.count_documents({"posted_by": u["id"]}))
-        wps = compute_wps(ints, jobs)
-        me = {
-            "rank": None,
-            "interviews_conducted": ints,
-            "jobs_posted": jobs,
-            "wps": wps,
-            "rating": float(u.get("rating") or 0),
-            "ratings_count": int(u.get("ratings_count") or 0),
-            "successful_referrals": int(u.get("successful_referrals") or 0),
-        }
-    return {
-        "rank": me.get("rank"),
-        "interviews_conducted": me["interviews_conducted"],
-        "jobs_posted": me["jobs_posted"],
-        "wps": me["wps"],
-        "rating": me.get("rating"),
-        "ratings_count": me.get("ratings_count"),
-        "successful_referrals": me.get("successful_referrals"),
-        "total_pros": len(board),
     }
 
 
@@ -4578,6 +4311,15 @@ async def my_resume_score(u: dict = Depends(require_role(["student"]))):
     return compute_resume_score_breakdown(u)
 
 
+
+# ------------------- Modular routers (Phase A refactor) -------------------
+# Imported at the bottom so all helper names (db, current_user, REFERRAL_REWARD,
+# compute_tps, compute_wps, MASTER_SKILLS, require_role, make_referral_code,
+# referral_link_for) are already defined in this module's namespace.
+from routers import referrals as _referrals_router  # noqa: E402
+from routers import leaderboard as _leaderboard_router  # noqa: E402
+api.include_router(_referrals_router.router)
+api.include_router(_leaderboard_router.router)
 app.include_router(api)
 
 app.add_middleware(
