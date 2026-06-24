@@ -52,30 +52,32 @@ export default function ProDashboard() {
         </TouchableOpacity>
       </View>
 
-      {/* Hero: stats + rating — NO credit balance here (Profile → Wallet only) */}
-      <LinearGradient colors={["#7C3AED", "#A855F7"]} start={{x:0,y:0}} end={{x:1,y:1}} style={styles.hero}>
+      {/* Hero: premium light card with strong contrast — NO credit balance (Profile → Wallet only) */}
+      <LinearGradient colors={["#F5F3FF", "#EDE9FE"]} start={{x:0,y:0}} end={{x:1,y:1}} style={[styles.hero, { borderWidth: 1, borderColor: "#DDD6FE" }]}>
         <View style={{ flex: 1 }}>
-          <Txt style={{ color: "#fff", opacity: 0.85 }} variant="label">Your impact</Txt>
-          <View style={{ flexDirection: "row", marginTop: 8, alignItems: "baseline" }}>
-            <Txt style={{ color: "#fff", fontSize: 36, fontWeight: "800" }}>{user?.interviews_conducted ?? 0}</Txt>
-            <Txt style={{ color: "#fff", fontSize: 14, opacity: 0.85, marginLeft: 6 }}>interviews</Txt>
-            <Txt style={{ color: "#fff", fontSize: 36, fontWeight: "800", marginLeft: 18 }}>{user?.referrals_made ?? 0}</Txt>
-            <Txt style={{ color: "#fff", fontSize: 14, opacity: 0.85, marginLeft: 6 }}>referrals</Txt>
+          <Txt style={{ color: "#6D28D9", fontWeight: "800", letterSpacing: 0.6 }} variant="label">YOUR IMPACT</Txt>
+          <View style={{ flexDirection: "row", marginTop: 10, alignItems: "baseline", flexWrap: "wrap" }}>
+            <Txt style={{ color: "#1F1147", fontSize: 36, fontWeight: "900" }}>{user?.interviews_conducted ?? 0}</Txt>
+            <Txt style={{ color: "#4C1D95", fontSize: 13, fontWeight: "700", marginLeft: 6 }}>interviews</Txt>
+            <Txt style={{ color: "#1F1147", fontSize: 36, fontWeight: "900", marginLeft: 18 }}>{user?.referrals_made ?? 0}</Txt>
+            <Txt style={{ color: "#4C1D95", fontSize: 13, fontWeight: "700", marginLeft: 6 }}>referrals</Txt>
           </View>
-          <View style={{ flexDirection: "row", marginTop: 10, alignItems: "center" }}>
-            <Ionicons name="star" size={18} color="#FFD566" />
-            <Txt style={{ color: "#fff", marginLeft: 6, fontWeight: "700" }}>
-              {rating.rating ? `${rating.rating.toFixed(1)}/10` : "No ratings yet"}
-            </Txt>
-            {rating.count > 0 ? (
-              <Txt style={{ color: "#fff", opacity: 0.8, marginLeft: 6 }} variant="small">
-                ({rating.count} review{rating.count > 1 ? "s" : ""})
+          {rating.rating ? (
+            <View style={{ flexDirection: "row", marginTop: 10, alignItems: "center", backgroundColor: "#fff", alignSelf: "flex-start", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10, borderWidth: 1, borderColor: "#E9D5FF" }}>
+              <Ionicons name="star" size={16} color="#F59E0B" />
+              <Txt style={{ color: "#1F1147", marginLeft: 6, fontWeight: "800" }}>
+                {rating.rating.toFixed(1)}/10
               </Txt>
-            ) : null}
-          </View>
+              {rating.count > 0 ? (
+                <Txt style={{ color: "#6B7280", marginLeft: 6 }} variant="small">
+                  ({rating.count} review{rating.count > 1 ? "s" : ""})
+                </Txt>
+              ) : null}
+            </View>
+          ) : null}
         </View>
         <View style={styles.heroIcon}>
-          <Ionicons name="ribbon" size={56} color="#fff" />
+          <Ionicons name="ribbon" size={56} color="#7C3AED" />
         </View>
       </LinearGradient>
 
