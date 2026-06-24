@@ -101,3 +101,38 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
+
+user_problem_statement: "Mock Interview & Referral App (ReferME). 3-sided marketplace (students, professionals, employers) with credits/leaderboards/payouts. Backend refactor in progress: extracting endpoints from server.py into routers/. Phase A done (referrals, leaderboard). Phase B (interviews) had a crash because _can_use_free helper was moved into routers/interviews.py and still referenced by server.py (referral apply path) → circular import."
+
+backend:
+  - task: "Phase B refactor: extract interview endpoints to routers/interviews.py + restore _can_use_free helper in server.py"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/server.py, /app/backend/routers/interviews.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: false
+          agent: "main"
+          comment: "Previous refactor moved _can_use_free to interviews.py and removed it from server.py, causing 'cannot import name _can_use_free from partially initialized module server' and full backend crash."
+        - working: "NA"
+          agent: "main"
+          comment: "Re-defined _can_use_free(u, kind) in server.py just above _credit_user. interviews.py still imports it from server (works once defined at module-level before routers are included). Backend now boots cleanly (audit_logs ready, startup complete, /api/interviews/slots returns 401 for anon as expected). Needs full endpoint regression test."
+
+metadata:
+  created_by: "main_agent"
+  version: "1.0"
+  test_sequence: 30
+  run_ui: false
+
+test_plan:
+  current_focus:
+    - "Phase B refactor: extract interview endpoints to routers/interviews.py + restore _can_use_free helper in server.py"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+  - agent: "main"
+    message: "P0 fix: backend crash from circular import of _can_use_free is resolved by re-adding the helper to server.py. Need testing_agent to validate that (a) backend boots, (b) /api/interviews/slots POST+GET work for pro+student, (c) /api/interviews/book uses free use OR ACTION_COST credits, (d) /api/interviews/{id}/complete still awards 35 credits with proof+rating, (e) /api/interviews/my-bookings returns role-correct list, (f) /api/jobs/{id}/apply (which uses _can_use_free in server.py) still works, (g) leaderboard + referral endpoints are intact (Phase A regression). Admin credentials: admin@referme.app / Admin@12345. Create fresh student+pro test users via OTP signup as needed. Do NOT test SendGrid/SMS — they are in mock fallback mode."

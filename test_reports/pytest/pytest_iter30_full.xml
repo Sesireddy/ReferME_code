@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="1" failures="0" skipped="0" tests="1" time="0.578" timestamp="2026-06-24T14:08:50.553004+00:00" hostname="agent-env-376034b0-5444-43e2-97fc-f8b3c10d6b69"><testcase classname="" name="tests.test_iteration17_filters" time="0.000"><error message="collection failure">tests/test_iteration17_filters.py:13: in &lt;module&gt;
+    assert BASE_URL, "EXPO_PUBLIC_BACKEND_URL must be set"
+E   AssertionError: EXPO_PUBLIC_BACKEND_URL must be set
+E   assert None</error></testcase></testsuite></testsuites>

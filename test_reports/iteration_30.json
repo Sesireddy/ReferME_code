@@ -1,0 +1,44 @@
+{
+  "summary": "Phase B (interviews) router refactor regression: all 6 /api/interviews/* endpoints (slots-create, slots-list, book, my-bookings, joined, complete) and the /api/jobs/apply path that still relies on server.py's _can_use_free are behaviour-neutral after the move into /app/backend/routers/interviews.py. Wrote a focused regression suite (22 tests, 100% pass) in /app/backend/tests/test_iter30_phaseb_regression.py. Confirmed: backend boots cleanly, /api/interviews/slots GET returns 401 (mounted) not 404 (missing), and the original P0 'NameError: _can_use_free' is gone — POST /api/jobs/apply consumes free uses (200, used_free=true) and decrements credits (200, -49) for a student. Phase A regression (iter25 complete-interview, iter22 refer-a-friend, iter23 refer/validate, iter20 leaderboard) — 45 of 45 still pass. Pre-existing failures in test_iter13_slot_mgmt.py (7) are unrelated stale-test rot from iteration 27's phone gate, not caused by the Phase B refactor — see action_items.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "tests/test_iter13_slot_mgmt.py + test_iteration{4,5,6,8,9}.py + test_referme_api.py", "issue": "Pre-existing test rot — the `professional`/`listed_pro` fixture doesn't set `profile.phone_verified=True`, so any test that POSTs /api/interviews/slots through HTTP hits the iter27 phone gate and gets 403. Not introduced by Phase B; was already broken before the refactor. Fix by extending conftest._gmail_verify_in_db (or adding a sibling _phone_verify_in_db) and calling it from the `professional` fixture."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter30_phaseb_regression.py",
+    "/app/test_reports/pytest/pytest_iter30_phaseb.xml",
+    "/app/test_reports/pytest/pytest_iter30_regression.xml"
+  ],
+  "action_items": [
+    "(Phase B refactor: nothing to fix — regression is clean.)",
+    "(Optional housekeeping, NOT caused by this refactor) Update /app/backend/tests/conftest.py — the `professional` fixture should also flip `profile.phone_verified=True` so the 6 older HTTP-slot-creation test files (iter4/5/6/8/9, iter13, test_referme_api) stop hitting the iter27 phone gate. Suggest adding `_phone_verify_in_db(user_id)` helper alongside `_gmail_verify_in_db`, then calling both from the fixture. This will recover ~7 pre-existing 403 failures.",
+    "(Optional follow-up from iter29) server.py still 3888 lines — continue extracting auth/jobs/wallet routers in Phase C.",
+    "(Optional follow-up from iter29) Migrate `@app.on_event('startup'/'shutdown')` to FastAPI lifespan (DeprecationWarnings at server.py:2961, 3315, 3885)."
+  ],
+  "critical_code_review_comments": [
+    "routers/interviews.py imports `_can_use_free` from server.py — same circular-init shape as routers/{referrals,leaderboard}.py. It works because include_router() is called at the bottom of server.py after every helper is defined (server.py:3872). If anyone later moves the include block higher, the original ImportError will re-appear. Suggest adding a one-line module docstring note OR (better) extracting the small set of shared helpers (_can_use_free, _credit_user, _build_candidate_summary, push_notification, current_user, require_role, db, JITSI_BASE, ACTION_COST, etc.) into /app/backend/deps.py so routers don't have to import from server.",
+    "routers/interviews.py:256 — `_can_use_free(u, 'interview')` is called AFTER the atomic find_one_and_update sets status=booked. If the user is out of free uses AND has <49 credits, the code rolls the slot back (line 259-262). Correct, but two DB writes when one would do — consider pre-checking credits/free-uses BEFORE claiming the slot to avoid the rollback path.",
+    "routers/interviews.py:339 — `.to_list(500)` cap on /interviews/my-bookings is reasonable for now but should be paginated once a pro has >500 historical bookings.",
+    "server.py:1551 `_can_use_free` ignores the `kind` argument entirely — both 'referral' and 'interview' use the same `free_uses_left` pool. Confirm this is intentional (it matches the old behaviour); if separate free pools are ever needed per action, this is the helper to extend."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter30_phaseb_regression.py (NEW — 22 regression tests, all passing)"
+  ],
+  "success_rate": {
+    "backend": "100% on Phase B refactor regression (22/22 new tests + 45/45 pre-existing Phase-A/iter25/iter22/iter20/iter23 tests). Pre-existing failures: 7/52 in iter13 slot-mgmt — not caused by this refactor (iter27 phone-gate test rot).",
+    "frontend": "N/A — backend-only review per request"
+  },
+  "seed_data_creation": "Each test creates throw-away TEST_* users via signup+verify-otp; slots & applications cleaned up in fixture teardown. Existing admin/redeem.pro seeds untouched.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Phase B router refactor verified green. /api/interviews/* endpoints now live in /app/backend/routers/interviews.py and are mounted via api.include_router(_interviews_router.router) at server.py:3873. URLs and response shapes unchanged. _can_use_free is back inside server.py at line 1551 and is also imported by routers/interviews.py at line 25. If you continue refactoring, follow the iter29/30 pattern: bottom-of-server include_router + `from server import ...` in router modules. Better mid-term: extract shared helpers into deps.py so routers stop depending on server.py.",
+  "rca_of_issue": "Original P0: deleting _can_use_free from server.py while routers/interviews.py imported it (line 25) created a circular-init crash because server.py's apply_job at line 2059 also called _can_use_free. Fix landed (server.py:1551 — `def _can_use_free(u, kind): return u.get('free_uses_left', 0) > 0`). Verified via TestApplyCanUseFree::test_apply_does_not_raise_nameerror — POST /api/jobs/apply now returns 200 with used_free=True for a student with free_uses_left>0, and 200 with -49 credits decrement when free_uses_left=0. No NameError/ImportError observed in backend stdout."
+}
