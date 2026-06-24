@@ -123,19 +123,34 @@ backend:
           agent: "testing"
           comment: "Iter30 regression: 22/22 new tests pass. /api/interviews/{slots,book,my-bookings,joined,complete} all behaviour-neutral vs pre-refactor. /api/jobs/apply path that calls _can_use_free now works (used_free=true for free-pool users, -49 credits otherwise). Phase A endpoints (referrals + leaderboard) still 200. Pre-existing iter13 phone-gate fixture failures are unrelated to this refactor."
 
+  - task: "Email provider migration: SendGrid → Resend"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/server.py, /app/backend/.env, /app/backend/requirements.txt"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: false
+          agent: "main"
+          comment: "Previous SendGrid API key returned 401 Unauthorized on every send, so all OTP/booking emails were silently mock-logged."
+        - working: "NA"
+          agent: "main"
+          comment: "Migrated to Resend. Added resend==2.32.2 to requirements.txt. Added RESEND_API_KEY + RESEND_FROM_EMAIL to backend/.env (key: re_gtari...). Rewrote send_html_email() in server.py to try Resend first (using asyncio.to_thread for non-blocking) and fall back to SendGrid then mock. MOCK_OTP_MODE now also considers RESEND_API_KEY. Live smoke test to delivered@resend.dev returned a Resend email id (d83b1acc-93b7-...), confirming the API key and from-address (noreply@referme.today) are valid + domain is verified. Backend reloads cleanly. Needs an end-to-end test of /api/auth/signup → /api/auth/verify-otp without the OTP being echoed in the response (since real email now sends)."
+
 metadata:
   created_by: "main_agent"
   version: "1.0"
-  test_sequence: 30
+  test_sequence: 31
   run_ui: false
 
 test_plan:
   current_focus:
-    - "Phase B refactor: extract interview endpoints to routers/interviews.py + restore _can_use_free helper in server.py"
+    - "Email provider migration: SendGrid → Resend"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
 
 agent_communication:
   - agent: "main"
-    message: "P0 fix: backend crash from circular import of _can_use_free is resolved by re-adding the helper to server.py. Need testing_agent to validate that (a) backend boots, (b) /api/interviews/slots POST+GET work for pro+student, (c) /api/interviews/book uses free use OR ACTION_COST credits, (d) /api/interviews/{id}/complete still awards 35 credits with proof+rating, (e) /api/interviews/my-bookings returns role-correct list, (f) /api/jobs/{id}/apply (which uses _can_use_free in server.py) still works, (g) leaderboard + referral endpoints are intact (Phase A regression). Admin credentials: admin@referme.app / Admin@12345. Create fresh student+pro test users via OTP signup as needed. Do NOT test SendGrid/SMS — they are in mock fallback mode."
+    message: "Iteration 31: Switched email provider from SendGrid to Resend. The new send_html_email() in server.py tries Resend first, then SendGrid, then logs in mock mode. Live smoke test to delivered@resend.dev succeeded (id=d83b1acc-...). Note: TEST_RETURN_OTP=1 is still set in .env, so signup/forgot endpoints still echo the OTP in the JSON response — please use that value to complete /api/auth/verify-otp tests rather than parsing an inbox. Validate: (a) /api/auth/signup returns OTP in response (TEST_RETURN_OTP mode); (b) backend logs show 'Resend OK to=... id=...' instead of any 'SendGrid send failed' warning; (c) /api/auth/verify-otp succeeds with that OTP; (d) /api/auth/forgot followed by /api/auth/reset-password works (also issues an OTP email via Resend); (e) Phase A + Phase B regression endpoints still pass."

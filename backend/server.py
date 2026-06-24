@@ -30,6 +30,8 @@ JWT_ALG = os.environ.get("JWT_ALGORITHM", "HS256")
 JWT_EXPIRES_MIN = int(os.environ.get("JWT_ACCESS_EXPIRES_MIN", "10080"))
 SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY", "")
 SENDGRID_FROM_EMAIL = os.environ.get("SENDGRID_FROM_EMAIL", "no-reply@referme.app")
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "").strip()
+RESEND_FROM_EMAIL = os.environ.get("RESEND_FROM_EMAIL", "ReferME <noreply@referme.today>").strip()
 RAZORPAY_KEY_ID = os.environ.get("RAZORPAY_KEY_ID", "")
 RAZORPAY_KEY_SECRET = os.environ.get("RAZORPAY_KEY_SECRET", "")
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@referme.app")
@@ -39,7 +41,7 @@ EMERGENT_AUTH_URL = os.environ.get(
     "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
 )
 
-MOCK_OTP_MODE = not bool(SENDGRID_API_KEY)
+MOCK_OTP_MODE = not (bool(RESEND_API_KEY) or bool(SENDGRID_API_KEY))
 MOCK_PAYMENTS_MODE = not (RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET)
 # When TEST_RETURN_OTP=1, expose the generated OTP in the signup/forgot response
 # so backend test suites can complete the verify-otp step without a real inbox.
@@ -257,37 +259,77 @@ async def send_html_email(
     fallback_text: str = "",
     attachments: Optional[list[dict]] = None,
 ) -> bool:
-    """Send HTML email via SendGrid; supports optional file attachments.
-    Each attachment dict: {filename, content_bytes (bytes), mime_type}.
-    Returns True on success."""
+    """Send HTML email. Provider order: Resend (preferred) → SendGrid (legacy fallback) → mock log.
+
+    `attachments`: list of dicts {filename, content_bytes (bytes), mime_type}.
+    Returns True if the email was successfully accepted by a provider.
+    """
+    # Full mock mode — no provider configured at all
     if MOCK_OTP_MODE:
         logger.info("[MOCK-EMAIL] to=%s purpose=%s subject=%s", to_email, mock_purpose, subject)
-        return False  # treated as not sent → caller may include OTP in response
-    try:
-        import base64 as _b64
-        from sendgrid import SendGridAPIClient  # type: ignore
-        from sendgrid.helpers.mail import Mail, Attachment, FileContent, FileName, FileType, Disposition  # type: ignore
+        return False  # caller may include OTP in response
 
-        msg = Mail(
-            from_email=SENDGRID_FROM_EMAIL,
-            to_emails=to_email,
-            subject=subject,
-            html_content=html or fallback_text,
-        )
-        if attachments:
-            for a in attachments:
-                encoded = _b64.b64encode(a["content_bytes"]).decode("ascii")
-                msg.attachment = Attachment(
-                    FileContent(encoded),
-                    FileName(a.get("filename", "attachment")),
-                    FileType(a.get("mime_type", "application/octet-stream")),
-                    Disposition("attachment"),
-                )
-        resp = SendGridAPIClient(SENDGRID_API_KEY).send(msg)
-        return 200 <= resp.status_code < 300
-    except Exception as e:
-        logger.warning("SendGrid send failed (%s): %s", subject, e)
-        return False
+    import base64 as _b64
+
+    # --- Provider 1: Resend (preferred) ---
+    if RESEND_API_KEY:
+        try:
+            import resend  # type: ignore
+
+            resend.api_key = RESEND_API_KEY
+            params: dict = {
+                "from": RESEND_FROM_EMAIL,
+                "to": [to_email],
+                "subject": subject,
+                "html": html or fallback_text,
+            }
+            if attachments:
+                params["attachments"] = [
+                    {
+                        "filename": a.get("filename", "attachment"),
+                        "content": _b64.b64encode(a["content_bytes"]).decode("ascii"),
+                        "content_type": a.get("mime_type", "application/octet-stream"),
+                    }
+                    for a in attachments
+                ]
+            # resend.Emails.send is sync; run in a thread so we don't block the event loop
+            import asyncio as _asyncio
+
+            resp = await _asyncio.to_thread(resend.Emails.send, params)
+            email_id = (resp or {}).get("id") if isinstance(resp, dict) else getattr(resp, "id", None)
+            logger.info("Resend OK to=%s subject=%s id=%s", to_email, subject, email_id)
+            return True
+        except Exception as e:
+            logger.warning("Resend send failed (%s): %s — falling back to SendGrid if configured", subject, e)
+
+    # --- Provider 2: SendGrid (legacy fallback) ---
+    if SENDGRID_API_KEY:
+        try:
+            from sendgrid import SendGridAPIClient  # type: ignore
+            from sendgrid.helpers.mail import Mail, Attachment, FileContent, FileName, FileType, Disposition  # type: ignore
+
+            msg = Mail(
+                from_email=SENDGRID_FROM_EMAIL,
+                to_emails=to_email,
+                subject=subject,
+                html_content=html or fallback_text,
+            )
+            if attachments:
+                for a in attachments:
+                    encoded = _b64.b64encode(a["content_bytes"]).decode("ascii")
+                    msg.attachment = Attachment(
+                        FileContent(encoded),
+                        FileName(a.get("filename", "attachment")),
+                        FileType(a.get("mime_type", "application/octet-stream")),
+                        Disposition("attachment"),
+                    )
+            resp = SendGridAPIClient(SENDGRID_API_KEY).send(msg)
+            return 200 <= resp.status_code < 300
+        except Exception as e:
+            logger.warning("SendGrid send failed (%s): %s", subject, e)
+            return False
+
+    return False
 
 
 def build_interview_ics(summary: str, description: str, location: str, start_iso: str, end_iso: str, uid: str) -> bytes:

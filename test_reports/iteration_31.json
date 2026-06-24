@@ -1,0 +1,57 @@
+{
+  "summary": "Resend email-provider migration verified end-to-end. Wrote /app/backend/tests/test_iter31_resend_migration.py (9 tests, 8 pass / 1 fail). Resend is now used for all transactional email — signup OTP, forgot-password OTP, and booking confirmations — and SendGrid is no longer touched on the happy path. Backend boots cleanly (no NameError/ImportError since last startup), /api/auth/me returns 401 (router mounted), admin login still works. ONE PRODUCTION-IMPACTING ISSUE FOUND: Resend free tier enforces 2 req/sec; routers/interviews.py:288-299 fires the student-confirmation and pro-confirmation emails back-to-back inside the same /api/interviews/book request, so the second send returns 429 'Too many requests. You can only make 2 requests per second.' Code then falls back to SendGrid, SendGrid 401s, and the professional NEVER receives their booking confirmation email (with the .ics invite). The student email always goes out fine. RCA + reproduction + fix proposal below in rca_of_issue.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/interviews/book",
+        "issue": "Pro-side booking confirmation email silently dropped due to Resend free-tier 2 req/sec rate limit. Two send_html_email() calls fire back-to-back in routers/interviews.py:288 (student) and :295 (pro); second one returns 429, falls back to SendGrid (401), and is lost. Booking itself succeeds (200) but pro never gets the .ics invite. Confirmed in backend.err.log: 'Resend send failed (ReferME · New Mock Interview booking): Too many requests. You can only make 2 requests per second.' followed by 'SendGrid send failed (...): HTTP Error 401: Unauthorized'. Fix: serialise the two sends with a small sleep (asyncio.sleep(0.6)) between them, OR use Resend Batch API (POST /emails/batch — single request up to 100 emails) which is rate-limit-friendly, OR move the pro email to a background task / queue.",
+        "priority": "CRITICAL"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "send_html_email() / server.py:303",
+        "issue": "On a Resend transient error (e.g., 429) the code always falls back to SendGrid which is known to 401 in this env — that's a wasted 0.3s extra latency on every rate-limited booking. Once Resend is the only configured provider, remove or feature-flag the SendGrid fallback to avoid this slowdown (and to avoid the misleading 'SendGrid send failed' WARN lines)."
+      },
+      {
+        "endpoint": "send_html_email() / server.py:298",
+        "issue": "Resend client is `resend.api_key = RESEND_API_KEY` set on every send. Harmless (module-level global) but not thread-safe if `asyncio.to_thread` ever runs two sends concurrently. Set once at startup instead."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter31_resend_migration.py",
+    "/app/test_reports/pytest/pytest_iter31_resend.xml"
+  ],
+  "action_items": [
+    "(P0) routers/interviews.py:288-299 — serialise the two booking emails so we stay under Resend's 2 req/sec free-tier cap. Minimal fix: insert `await asyncio.sleep(0.6)` between the student `await send_html_email(...)` and the pro `await send_html_email(...)`. Cleaner fix: switch the pair to Resend's Batch API (resend.Batch.send([student_params, pro_params])) — single HTTP call, both go through. Cleanest: enqueue both into a background task / asyncio.Queue + worker that paces at <2 req/sec globally so future fan-out (admin notifications, bulk mailers) is also safe.",
+    "(P1) Once the rate-limit fix lands, re-run /app/backend/tests/test_iter31_resend_migration.py — TestBookingEmailsViaResend::test_book_emits_two_resend_ok_lines must go from 1 fail → 0 fail.",
+    "(P2) Remove or feature-flag the SendGrid fallback in server.py:306 once you've confirmed Resend is the long-term provider — the 401 noise in backend.err.log is misleading.",
+    "(P3) Consider applying for a Resend production rate-limit bump (their support increases it on request) so the batch-of-2 booking emails never even need pacing once you scale."
+  ],
+  "critical_code_review_comments": [
+    "server.py:298 — `resend.api_key = RESEND_API_KEY` is reassigned on every send. Move to module init (right after `import resend`) to avoid the assignment on every call and to make the global thread-safety footprint zero.",
+    "server.py:268-270 — MOCK_OTP_MODE early-return uses `RESEND_API_KEY or SENDGRID_API_KEY` (line 44). That's correct; just noting that if RESEND_API_KEY becomes the empty string at runtime (e.g., user clears .env), MOCK_OTP_MODE won't auto-recompute because it's computed once at import. If you ever expose an admin 'rotate keys' endpoint, recompute MOCK_OTP_MODE there.",
+    "routers/interviews.py:295 — pro_sent return value is captured but never persisted to db.interview_bookings or audited. If the email silently fails (as it does today due to rate-limit), there is no visible signal in the booking record. Recommend storing {'student_email_sent': bool, 'pro_email_sent': bool, 'pro_email_error': str|None} on the booking doc so support can spot missing-invite issues without scraping logs.",
+    "server.py:303 — Resend 429 (rate limit) and Resend 5xx (server error) should arguably be retried with backoff before falling through to SendGrid. Right now ANY Resend exception triggers SendGrid fallback, including the recoverable 429.",
+    "server.py:44 — MOCK_OTP_MODE = not (bool(RESEND_API_KEY) or bool(SENDGRID_API_KEY)). With both keys in .env, this is False so OTPs are sent for real — good. But signup/forgot still return mock_otp in the body whenever `not sent` (server.py:788, 1018). If Resend succeeds AND SendGrid is dead, `sent` is True so mock_otp is correctly suppressed unless TEST_RETURN_OTP=1. Verified."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter31_resend_migration.py (NEW — 9 tests covering signup/verify/forgot/reset/login/booking via Resend, plus boot-clean & admin-login regression)"
+  ],
+  "success_rate": {
+    "backend": "88.9% (8/9). Failing test is TestBookingEmailsViaResend::test_book_emits_two_resend_ok_lines — reflects a real bug (Resend 429 on pro-side booking confirmation), NOT a test issue.",
+    "frontend": "N/A — backend-only per request"
+  },
+  "seed_data_creation": "Each test creates throw-away signup users (delivered+iter31_*@resend.dev for students, test_pro_iter31_*@acmecorp.io for pros) and a single future interview slot. All test data is cleaned up in the pro_and_slot fixture teardown (interview_slots, interview_bookings, users). Admin/redeem.pro/demo-employer seeds untouched.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "After main agent applies the rate-limit fix in routers/interviews.py:288-299 (asyncio.sleep(0.6) OR Resend Batch API), re-run: `pytest /app/backend/tests/test_iter31_resend_migration.py -v`. All 9 tests must pass. Booking test inspects /var/log/supervisor/backend.err.log for TWO 'Resend OK to=' lines AND zero 'SendGrid send failed' lines within the new-log window after POST /api/interviews/book. The test fixtures bypass the iter27 phone-gate by direct DB write of profile.phone_verified=True — see TestBookingEmailsViaResend.pro_and_slot fixture for the pattern; this is the same shortcut iter30 recommended for adoption in conftest.py.",
+  "rca_of_issue": "ROOT CAUSE — Resend free-tier rate limit (2 requests / second) is exceeded by the back-to-back student+pro confirmation emails fired inside POST /api/interviews/book.\n\nREPRODUCTION:\n  1. Signup pro (test_pro_iter31_*@acmecorp.io) + verify-otp + flip profile.phone_verified & gmail_verified in DB.\n  2. Pro POST /api/interviews/slots → creates one 30-min slot.\n  3. Signup student (delivered+iter31_*@resend.dev) + verify-otp.\n  4. Student POST /api/interviews/book {slot_id} → 200 OK.\n  5. Inspect /var/log/supervisor/backend.err.log: only ONE 'Resend OK to=<student_email>' line appears within ~150ms; the second send returns 'Resend send failed: Too many requests. You can only make 2 requests per second.' and the code falls through to SendGrid, which 401s.\n\nIMPACT: The professional never receives their booking confirmation email or the .ics calendar invite. They DO get an in-app push_notification (routers/interviews.py:273), so the booking is not invisible — but they have no calendar entry and no email record. The student is unaffected.\n\nWHY THE OTP FLOWS DON'T HIT THIS: Signup, forgot-password, and gmail-verify each fire only ONE send_html_email() per request — well under 2/sec on isolated requests.\n\nMITIGATION (in order of robustness):\n  (a) Quick fix — `await asyncio.sleep(0.6)` between the two await send_html_email() calls in routers/interviews.py.\n  (b) Better — replace the two calls with a single Resend Batch send: `resend.Batch.send([student_params, pro_params])` (per Resend docs, batch counts as one request).\n  (c) Best — introduce a tiny in-process async rate-limited queue (asyncio.Queue + token-bucket worker pacing at ≤1.8 req/sec) so future multi-recipient flows (admin alerts, bulk mailers) are safe by default. Also persist {'pro_email_sent': bool, 'pro_email_error': str|None} onto the booking doc for observability.\n\nVERIFICATION AFTER FIX: rerun /app/backend/tests/test_iter31_resend_migration.py. The booking test will pass once two 'Resend OK to=' lines appear in the log within the post-book window."
+}
