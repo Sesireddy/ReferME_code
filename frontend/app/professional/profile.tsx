@@ -125,7 +125,18 @@ export default function ProProfile() {
     });
     if (!res.canceled && res.assets?.[0]?.base64) {
       const mime = res.assets[0].mimeType || "image/jpeg";
-      setPhotoB64(`data:${mime};base64,${res.assets[0].base64}`);
+      const dataUrl = `data:${mime};base64,${res.assets[0].base64}`;
+      setPhotoB64(dataUrl);
+      // Photo is editable even in Read-Only Mode per spec.
+      // When the rest of the form is locked, persist immediately so the change isn't lost.
+      if (!editMode && hasEverSaved) {
+        try {
+          await api("/profile", { method: "PUT", body: { profile_photo_base64: dataUrl } });
+          successAlert.show({ title: "Profile photo updated", intent: "success", okLabel: "OK" });
+        } catch (e: any) {
+          Alert.alert("Could not update photo", e?.message || String(e));
+        }
+      }
     }
   }
 
@@ -264,17 +275,9 @@ export default function ProProfile() {
             icon="person-circle"
             color="#7C3AED"
             right={
-              <View style={{ flexDirection: "row", gap: 8 }}>
-                {hasEverSaved && !editMode ? (
-                  <TouchableOpacity testID="edit-profile-btn" onPress={enterEditMode} style={styles.editPill} hitSlop={10}>
-                    <Ionicons name="create-outline" size={14} color="#fff" />
-                    <Txt style={{ color: "#fff", fontWeight: "700", marginLeft: 4, fontSize: 12 }}>Edit Profile</Txt>
-                  </TouchableOpacity>
-                ) : null}
-                <TouchableOpacity testID="profile-logout-btn" onPress={logout} hitSlop={10}>
-                  <Ionicons name="log-out-outline" size={24} color={colors.textPrimary} />
-                </TouchableOpacity>
-              </View>
+              <TouchableOpacity testID="profile-logout-btn" onPress={logout} hitSlop={10}>
+                <Ionicons name="log-out-outline" size={24} color={colors.textPrimary} />
+              </TouchableOpacity>
             }
           />
         </View>
@@ -282,7 +285,7 @@ export default function ProProfile() {
       {/* Top profile card: photo + name + credits chip → wallet */}
       <Card>
         <View style={{ flexDirection: "row", alignItems: "center" }}>
-          <TouchableOpacity onPress={editMode ? pickPhoto : undefined} activeOpacity={editMode ? 0.7 : 1} style={styles.avatarWrap}>
+          <TouchableOpacity testID="avatar-tap" onPress={pickPhoto} activeOpacity={0.7} style={styles.avatarWrap}>
             {photoB64 ? (
               <Image source={{ uri: photoB64 }} style={styles.avatarImg} />
             ) : (
@@ -290,9 +293,7 @@ export default function ProProfile() {
                 <Ionicons name="person" size={32} color="#fff" />
               </View>
             )}
-            {editMode ? (
-              <View style={styles.cameraBadge}><Ionicons name="camera" size={12} color="#fff" /></View>
-            ) : null}
+            <View style={styles.cameraBadge}><Ionicons name="camera" size={12} color="#fff" /></View>
           </TouchableOpacity>
           <View style={{ flex: 1, marginLeft: 12 }}>
             <Txt variant="h2" numberOfLines={1}>{user?.name || (user?.email || "").split("@")[0]}</Txt>
@@ -480,12 +481,23 @@ export default function ProProfile() {
         onConfirm={() => setSavedOk(false)}
       />
 
+      {/* Edit Profile button — appears in Read-Only Mode, directly above Sign Out (per spec). */}
+      {hasEverSaved && !editMode ? (
+        <Button
+          testID="edit-profile-btn"
+          title="Edit Profile"
+          onPress={enterEditMode}
+          icon={<Ionicons name="create-outline" size={16} color="#fff" />}
+          style={{ marginTop: 14, backgroundColor: "#7C3AED" }}
+        />
+      ) : null}
+
       <Button
         testID="sign-out-btn"
         title="Sign Out"
         variant="outline"
         onPress={logout}
-        style={{ marginTop: 14, marginBottom: 24, borderColor: colors.error }}
+        style={{ marginTop: hasEverSaved && !editMode ? 10 : 14, marginBottom: 24, borderColor: colors.error }}
       />
 
       <ConfirmDialog
