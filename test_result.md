@@ -107,18 +107,21 @@ user_problem_statement: "Mock Interview & Referral App (ReferME). 3-sided market
 backend:
   - task: "Phase B refactor: extract interview endpoints to routers/interviews.py + restore _can_use_free helper in server.py"
     implemented: true
-    working: "NA"
+    working: true
     file: "/app/backend/server.py, /app/backend/routers/interviews.py"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
         - working: false
           agent: "main"
           comment: "Previous refactor moved _can_use_free to interviews.py and removed it from server.py, causing 'cannot import name _can_use_free from partially initialized module server' and full backend crash."
         - working: "NA"
           agent: "main"
-          comment: "Re-defined _can_use_free(u, kind) in server.py just above _credit_user. interviews.py still imports it from server (works once defined at module-level before routers are included). Backend now boots cleanly (audit_logs ready, startup complete, /api/interviews/slots returns 401 for anon as expected). Needs full endpoint regression test."
+          comment: "Re-defined _can_use_free(u, kind) in server.py just above _credit_user. interviews.py still imports it from server (works once defined at module-level before routers are included). Backend now boots cleanly."
+        - working: true
+          agent: "testing"
+          comment: "Iter30 regression: 22/22 new tests pass. /api/interviews/{slots,book,my-bookings,joined,complete} all behaviour-neutral vs pre-refactor. /api/jobs/apply path that calls _can_use_free now works (used_free=true for free-pool users, -49 credits otherwise). Phase A endpoints (referrals + leaderboard) still 200. Pre-existing iter13 phone-gate fixture failures are unrelated to this refactor."
 
 metadata:
   created_by: "main_agent"
