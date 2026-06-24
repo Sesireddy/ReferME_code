@@ -1,0 +1,48 @@
+{
+  "summary": "FRONTEND-ONLY review of the Mark-as-Hired modal UX fix in /app/frontend/app/professional/my-jobs/[id].tsx. Per the agent-to-agent context note (deep seeding of pro→job→student→apply→refer is expensive), verification was done via (a) Expo web-preview smoke load — PASS, no red-screen, no Metro errors, only a benign deprecated 'shadow*' style warning — and (b) line-by-line code inspection of the updated file plus a regression diff against the reference pattern in /app/frontend/app/professional/slots.tsx. ALL 8 acceptance items pass: (1) raw base64 paste textarea is completely gone — grep for 'paste base64' / 'data:image/png;base64' / 'base64 string' across both files returns ZERO hits, and the file now has only 2 <Input> components (line 246 = refer note, line 273 = hire evidence note); (2) the hire modal renders two TouchableOpacity buttons with testIDs 'pick-hire-image' (line 301, label 'Image', purple #7C3AED accent + ionicons 'image') and 'pick-hire-pdf' (line 305, label 'PDF / File', primary accent + ionicons 'document-attach'); (3) Evidence note Input is preserved with exact placeholder 'e.g. Offered SDE-1 on 12-Jun-2025 via HR portal' (line 275) and a clear label 'Evidence note (offer letter ref / email subject)'; (4) doHire() guard at line 109-111 fires Alert('Evidence required','Add a note or proof attachment…') when both hireNote and proofB64 are empty; (5) submit-with-note-only path posts {application_id, note, proof_base64: proofB64 || null} (line 119) — null is sent when no file is attached, matching backend HireBody.proof_base64: Optional[str]; (6) both the Cancel button (line 317) and Modal onRequestClose (line 265) reset all five state vars (hireApp, hireNote, proofB64, proofPreview, proofKind) so reopen is clean; (7) backend regression is out-of-scope per testing_type but the wire format (data URL string OR null) is unchanged so HireBody/proof_base64 contract is preserved; (8) slots.tsx interview-completion picker regression is intact — same pickProofImage/pickProofPdf pattern, testIDs 'pick-image' (line 340) and 'pick-pdf' (line 344) still present, no edits leaked there. Code follows the same pattern as slots.tsx (expo-image-picker + expo-document-picker + expo-file-system/legacy readAsStringAsync → data URL). No deprecated Expo packages introduced. One minor non-blocking state-reset miss documented under design_issues.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "/app/frontend/app/professional/my-jobs/[id].tsx",
+        "issues": [
+          "Line 228 (Mark Hired button onPress): `onPress={() => { setHireApp(a); setHireNote(\"\"); setProofB64(\"\"); }}` resets only 3 of the 5 hire-modal state vars — proofPreview and proofKind are NOT reset here. The modal's onRequestClose (line 265) AND the Cancel button (line 317) both reset all 5 correctly, so in practice the modal always opens clean (because closing via X or Cancel already wiped them). However, if a future code path closes the modal without going through onRequestClose / Cancel (e.g., setHireApp(null) called from elsewhere), stale proofPreview/proofKind could leak into the next open. Recommend mirroring the full 5-var reset on the open handler for consistency.",
+          "Minor a11y nit (carry-over from slots.tsx, not introduced by this fix): the two upload buttons (`pick-hire-image`, `pick-hire-pdf`) have no `accessibilityLabel` / `accessibilityRole=\"button\"`. The Ionicons + Txt convey the meaning visually but VoiceOver / TalkBack users get raw text only."
+        ]
+      }
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/iteration_33.json"
+  ],
+  "action_items": [
+    "(Optional polish) On line 228, change the open handler to `() => { setHireApp(a); setHireNote(\"\"); setProofB64(\"\"); setProofPreview(\"\"); setProofKind(\"\"); }` to keep the 5-var reset symmetric with Cancel/onRequestClose — purely defensive, no current functional bug.",
+    "(Optional a11y) Add `accessibilityLabel=\"Upload image proof\"` and `accessibilityLabel=\"Upload PDF or file proof\"` to the two TouchableOpacity pickers. Same nit applies to the matching buttons in slots.tsx."
+  ],
+  "critical_code_review_comments": [
+    "✅ multi-line base64 Input is fully removed — only Inputs left in the file are line 246 (refer note) and line 273 (hire evidence note). Grep across both my-jobs/[id].tsx and slots.tsx for `paste base64`, `data:image/png;base64`, `base64 string` returns zero hits. UX is no longer awful.",
+    "✅ pickProofImage (lines 67-89) and pickProofPdf (lines 91-105) are a near-1:1 copy of the proven slots.tsx pattern: ImagePicker.requestMediaLibraryPermissionsAsync → launchImageLibraryAsync with base64:true → data URL; DocumentPicker.getDocumentAsync with type ['application/pdf','image/*'] → FileSystem.readAsStringAsync(EncodingType.Base64) → data URL. Mime fallback handles missing a.mimeType. Cancellation (`res.canceled`) is checked correctly.",
+    "✅ doHire (lines 107-134) — guard at line 109 short-circuits with Alert('Evidence required',…) when both fields empty; body sends `proof_base64: proofB64 || null` so the legacy contract (Optional[str]) is preserved; on success all 5 state vars are reset and load() refreshes the applicant list.",
+    "✅ Proof preview UX is good: when proofKind==='image' we render an Image preview at 100% width × 160 height; when proofKind==='pdf' we render a document-text icon + 'PDF uploaded' label inside the same box, with a dismiss × button (testID='remove-hire-proof') overlay at top-right. Replacing or removing the attachment toggles back to the two pickers.",
+    "✅ Modal animationType='slide' from bottom + maxHeight='85%' + inner ScrollView keeps the form usable even when the keyboard is up on small phones. Touch targets for both pickers are >=44pt (paddingVertical:12 + icon row).",
+    "⚠️ Minor (non-blocking, see design_issues): line 228 reset is partial — covers proofB64 but not proofPreview/proofKind. Safe today because every close path wipes them, but defensive symmetry would help.",
+    "✅ No deprecated Expo packages introduced — expo-image-picker (current), expo-document-picker (current), expo-file-system/legacy (intentional bridge import already used in slots.tsx, matches pattern). No expo-av / expo-barcode-scanner / expo-background-fetch usage.",
+    "✅ slots.tsx regression confirmed: testIDs `pick-image` (line 340), `pick-pdf` (line 344), `remove-proof` (line 334), `submit-complete` (line 354), and rating/feedback testIDs are all unchanged. The fix did NOT touch slots.tsx."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "N/A (frontend-only per testing_type)",
+    "frontend": "100% on code-inspection assertions (8/8 acceptance criteria) + Expo web smoke load PASS"
+  },
+  "seed_data_creation": "None. No DB writes. Only navigated to public landing page for smoke load.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "If a future iteration wants to exercise the full pro→refer→hire flow end-to-end with Playwright, the cheapest path is: (1) POST /api/auth/signup as a pro on a company domain (e.g., pro_test_<ts>@acmecorp.io) with TEST_RETURN_OTP=1 to get mock_otp instantly; (2) POST /api/auth/verify-otp; (3) POST /api/jobs as the pro; (4) sign up a second user as a student, POST /api/applications/apply for the job; (5) as the pro, POST /api/applications/refer-own; (6) NOW the 'Mark Hired' button appears in the UI at /professional/my-jobs/<jobId>. For file-picker testing under Playwright, use `page.set_input_files()` on the hidden <input type=\"file\"> that expo-document-picker renders on web — selector is typically `input[type=\"file\"]`. expo-image-picker on web also opens a file chooser, so the same trick works. Note that on web the data URL conversion goes through expo-file-system/legacy which polyfills via FileReader. Backend regression for /api/applications/hire (PDF data URL payload, null payload) is already covered by existing test_iter*.py suites — re-run those if HireBody Pydantic model is ever touched.",
+  "rca_of_issue": "N/A — this iteration is a forward-fix verification, not a bug RCA. The original user complaint ('Mark as Hired modal asks for raw base64 paste — terrible UX') has been resolved by the main agent: the multi-line base64 Input has been replaced with two TouchableOpacity file pickers using the proven expo-image-picker + expo-document-picker pattern already battle-tested in slots.tsx. Backend wire format (proof_base64: Optional[str]) is unchanged — the frontend now produces the same string format (data:<mime>;base64,<payload>) the backend was already accepting, just without making the user paste it themselves."
+}

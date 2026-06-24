@@ -123,7 +123,37 @@ backend:
           agent: "testing"
           comment: "Iter30 regression: 22/22 new tests pass. /api/interviews/{slots,book,my-bookings,joined,complete} all behaviour-neutral vs pre-refactor. /api/jobs/apply path that calls _can_use_free now works (used_free=true for free-pool users, -49 credits otherwise). Phase A endpoints (referrals + leaderboard) still 200. Pre-existing iter13 phone-gate fixture failures are unrelated to this refactor."
 
-  - task: "Email provider migration: SendGrid → Resend"
+  - task: "Mark as Hired modal — replace base64 textarea with Image/PDF picker"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/professional/my-jobs/[id].tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: false
+          agent: "main"
+          comment: "User reported the 'Mark as Hired' modal still asked for a raw base64 paste — terrible UX. Required a proper file attachment chooser supporting Image (camera roll) AND PDF."
+        - working: "NA"
+          agent: "main"
+          comment: "Replaced base64 multi-line Input with two file-picker buttons (Image + PDF/File) using expo-image-picker + expo-document-picker — same pattern already used in /app/frontend/app/professional/slots.tsx (interview-completion proof). Selected file is converted to a data URL (data:image/jpeg;base64,... or data:application/pdf;base64,...) and POSTed unchanged to /api/applications/hire as proof_base64. Backend HireBody.proof_base64 is Optional[str], no backend changes needed. Image preview + 'PDF uploaded' card + 'remove' (X) overlay button are rendered after pick. Cancel/close also resets proofB64/proofPreview/proofKind so the modal opens clean next time. Lint clean."
+
+metadata:
+  created_by: "main_agent"
+  version: "1.0"
+  test_sequence: 33
+  run_ui: false
+
+test_plan:
+  current_focus:
+    - "Mark as Hired modal — replace base64 textarea with Image/PDF picker"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+  - agent: "main"
+    message: "Iter33: 'Mark as Hired' modal now offers Image + PDF picker buttons (no more raw base64 paste). Reused existing expo-image-picker / expo-document-picker pattern from slots.tsx. Need a quick FRONTEND test pass: (a) login as a professional who has at least one applicant in 'Referred' status on a posted job, (b) click 'Mark Hired' on that applicant → modal opens with title 'Mark as Hired' and shows two buttons 'Image' and 'PDF / File' (not a paste-base64 textarea), (c) verify both buttons render with their icons, (d) Submit is blocked if neither note nor proof attached (alert 'Evidence required'), (e) verify Cancel/X close resets state. NOTE: actually picking a file inside Playwright is hard — focus on UI rendering + behaviour, not the actual file-system attach. Also verify NO regression on the existing interview-completion proof picker on /app/professional/slots.tsx (same file-picker code reused)."
     implemented: true
     working: true
     file: "/app/backend/server.py, /app/backend/.env, /app/backend/requirements.txt"
