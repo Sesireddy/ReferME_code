@@ -123,6 +123,18 @@ backend:
           agent: "testing"
           comment: "Iter30 regression: 22/22 new tests pass. /api/interviews/{slots,book,my-bookings,joined,complete} all behaviour-neutral vs pre-refactor. /api/jobs/apply path that calls _can_use_free now works (used_free=true for free-pool users, -49 credits otherwise). Phase A endpoints (referrals + leaderboard) still 200. Pre-existing iter13 phone-gate fixture failures are unrelated to this refactor."
 
+  - task: "Credit redemption rate change: 2 credits = ₹1 → 1 credit = ₹1"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/server.py, /app/frontend/app/professional/wallet.tsx, /app/frontend/app/professional/redeem.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "User asked to make redemption 1:1 (1 credit = ₹1). Changed: backend REDEMPTION_INR_PER_CREDIT from 0.5 → 1.0 (server.py:3114); frontend INR_PER_CREDIT 0.5 → 1 in wallet.tsx + redeem.tsx; user-facing messages updated ('2 credits = ₹1' → '1 credit = ₹1', 'Rate: 2 credits = ₹1' → 'Rate: 1 credit = ₹1'). MIN credits to redeem (500) and topup rate (1 INR = 1 credit) unchanged. `/api/redemption/my` already returns inr_per_credit field, so the response will reflect the new 1.0 ratio. Lint clean."
+
   - task: "Pro 'Your slots' list — hide expired-unbooked + completed slots"
     implemented: true
     working: true

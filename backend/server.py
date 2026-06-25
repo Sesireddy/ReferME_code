@@ -3111,7 +3111,7 @@ async def admin_list_interview_bookings(u: dict = Depends(require_role(["admin"]
 # CREDIT REDEMPTION (Working Professional → INR Payout)
 # ============================================================
 REDEMPTION_MIN_CREDITS = 500
-REDEMPTION_INR_PER_CREDIT = 0.5  # 2 credits = ₹1
+REDEMPTION_INR_PER_CREDIT = 1.0  # 1 credit = ₹1
 
 
 def _upi_valid(upi: str) -> bool:

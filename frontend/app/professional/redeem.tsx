@@ -11,7 +11,7 @@ import { colors, radius } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
 
 const MIN_CREDITS = 500;
-const INR_PER_CREDIT = 0.5;
+const INR_PER_CREDIT = 1;
 
 function validUpi(upi: string): boolean {
   return /^[\w.\-_]{2,256}@[a-zA-Z]{2,64}$/.test((upi || "").trim());
@@ -118,7 +118,7 @@ export default function RedeemCredits() {
           </View>
         </View>
         <Txt style={{ color: "#fff", marginTop: 6, opacity: 0.95 }}>
-          ₹{Math.floor(avail * INR_PER_CREDIT)} payout value · 2 credits = ₹1
+          ₹{Math.floor(avail * INR_PER_CREDIT)} payout value · 1 credit = ₹1
         </Txt>
       </Card>
 

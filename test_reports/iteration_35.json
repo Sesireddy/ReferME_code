@@ -1,0 +1,35 @@
+{
+  "summary": "Verified credit redemption rate change from 0.5 INR/credit to 1.0 INR/credit (1 credit = ₹1). All 8 new redemption-rate tests pass + 54 regression tests (Phase A/B + Resend + iter34) pass. Backend correctly returns inr_per_credit=1.0 in /api/redemption/my; /api/redemption/submit returns amount_inr=credits at 1:1 (verified at 500 and 1234); admin approve and mark-paid notifications reference correct ₹ amount (₹500, not ₹250); topup rate string 'subsequent_rate'='1 INR = 1 credit' and 1:1 subsequent deposit unchanged; first-deposit ₹199 → 398 credits bonus unchanged; ACTION_COST=49 unchanged on /jobs/apply. No legacy credits/2 hardcodes were found in test_iteration5/6.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration35_redemption_rate_1to1.py",
+    "/app/test_reports/pytest/iter35_results.xml",
+    "/app/test_reports/pytest/iter35_regression.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py L3114 REDEMPTION_INR_PER_CREDIT=1.0 and L3139 _redemption_inr() correctly compute amount_inr = credits * 1.0. Notifications at L3207 (submit) and L3311 (mark-paid) format ₹{amount_inr:.2f}, which now reads ₹500.00 instead of ₹250.00 — both verified in notifications collection.",
+    "No legacy /api/wallet/plans endpoint exists — topup rate string is exposed at /api/subscription/plans (paid_tier.subsequent_rate). Request statement referenced '/api/wallet/plans' which doesn't exist; tested at /api/subscription/plans (the actual endpoint that exposes 'subsequent_rate': '1 INR = 1 credit')."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration35_redemption_rate_1to1.py (new file, 8 tests)"
+  ],
+  "success_rate": {
+    "backend": "100% (8/8 new + 54/54 regression)",
+    "frontend": "skipped (testing_type=backend only)"
+  },
+  "seed_data_creation": "Used existing professional fixture (auto-creates pro via OTP signup with mock_otp), then verified phone via /profile/phone/send-otp + verify-otp (mock OTP returned), then added 1500 credits directly via MongoDB users collection $inc. Cleanup is per-test via fresh fixtures.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 35 confirmed redemption rate is now 1:1 (1 credit = ₹1). All redemption flow assertions live in /app/backend/tests/test_iteration35_redemption_rate_1to1.py and use _give_credits() helper that hits db.users.$inc directly. The topup rate string is at /api/subscription/plans paid_tier.subsequent_rate (NOT /api/wallet/plans). First-deposit at exactly ₹199 still grants 398 credits (bonus path); subsequent deposits use 1 INR = 1 credit. ACTION_COST=49 unchanged. No backend changes were made by the testing agent.",
+  "rca_of_issue": "N/A — this iteration was a forward-test of a rate-constant change, not a bug fix. All target behaviors verified green."
+}

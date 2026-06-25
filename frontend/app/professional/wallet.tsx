@@ -13,7 +13,7 @@ import { api } from "@/src/lib/api";
 const COIN = "https://static.prod-images.emergentagent.com/jobs/d2f455eb-160b-40ff-9a4e-1d583c1869b0/images/9e5ea04b28cbe7d19560f639172fa32c7ea2e010c38001356192231f7835193d.png";
 
 const MIN_REDEEM = 500;
-const INR_PER_CREDIT = 0.5;
+const INR_PER_CREDIT = 1;
 
 type RedemptionItem = {
   id: string;
@@ -152,7 +152,7 @@ export default function ProWallet() {
           <View style={{ flex: 1, marginLeft: 10 }}>
             <Txt variant="h3">Redeem Credits</Txt>
             <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 2 }} numberOfLines={2}>
-              Convert your credits to INR. Minimum {MIN_REDEEM} credits required. Rate: 2 credits = ₹1.
+              Convert your credits to INR. Minimum {MIN_REDEEM} credits required. Rate: 1 credit = ₹1.
             </Txt>
           </View>
         </View>
