@@ -123,6 +123,21 @@ backend:
           agent: "testing"
           comment: "Iter30 regression: 22/22 new tests pass. /api/interviews/{slots,book,my-bookings,joined,complete} all behaviour-neutral vs pre-refactor. /api/jobs/apply path that calls _can_use_free now works (used_free=true for free-pool users, -49 credits otherwise). Phase A endpoints (referrals + leaderboard) still 200. Pre-existing iter13 phone-gate fixture failures are unrelated to this refactor."
 
+  - task: "Pro 'Your slots' list — hide expired-unbooked + completed slots"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/routers/interviews.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: false
+          agent: "main"
+          comment: "User reported that on the Pro 'Interviews' tab → 'Your slots' list, expired Awaiting-booking slots (end_at already passed) were still showing as 'available' — clutter. Also completed slots were still appearing there even though Profile → My Mock Interviews → Completed already shows them."
+        - working: "NA"
+          agent: "main"
+          comment: "Updated GET /api/interviews/slots (routers/interviews.py): for professional role (no pro_id query param, i.e. their own 'Your slots' fetch), now hides slots with status in {completed, cancelled} AND hides available slots whose end_at <= now. Booked slots remain regardless of time, until pro marks Done. Student-side filters unchanged. Backend reloaded, lint clean."
+
   - task: "Mark as Hired modal — replace base64 textarea with Image/PDF picker"
     implemented: true
     working: true

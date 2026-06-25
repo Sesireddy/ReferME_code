@@ -1,0 +1,38 @@
+{
+  "summary": "Backend-only verification of the Working-Professional's 'Your slots' filter in GET /api/interviews/slots (lines ~157-222 of /app/backend/routers/interviews.py). Wrote a fresh pytest suite (test_iter34_your_slots_filter.py) covering all 7 acceptance items from the review request. 7/7 NEW tests PASS. Regression suites re-run on top: 41/41 PASS (test_iter30_phaseb_regression.py 22, test_iter31_resend_migration.py 9, test_iter32_booking_email_status.py 1, test_iteration25_complete_interview.py 9). The pro-side filter behaves exactly to spec: (a) status='available' AND end_at<=now are HIDDEN, (b) status in {'completed','cancelled'} are HIDDEN, (c) status='booked' is KEPT regardless of time, (d) status='available' AND end_at>now is KEPT. After /interviews/{slot_id}/complete the slot transitions out of 'Your slots' and the same slot still appears in /interviews/my-bookings?upcoming_only=false with status='completed' and proof_screenshot exposed to the pro. Student-facing flows are UNCHANGED: listing (no pro_id) still returns only future + available slots; drill-down (?pro_id=) still returns the full available+booked grid for that pro while hiding expired/cancelled, with student_id/student_name redacted on booked rows. No code changes were required.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter34_your_slots_filter.py",
+    "/app/test_reports/pytest/pytest_iter34.xml",
+    "/app/test_reports/pytest/pytest_iter34_regression.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "list_slots (interviews.py L199-209) — the new professional-side branch is clean: only runs when role=='professional' AND no pro_id was supplied, so existing admin/student drill-downs are untouched. Edge case: malformed end_at (parse failure) treats `ed` as None which means the slot is NOT hidden — acceptable fail-open since the data is corrupt anyway and the booking machinery would also error out earlier; consider logging a warning so corrupt rows surface in observability.",
+    "Status precedence is correct — 'completed' and 'cancelled' are filtered BEFORE the end_at check, so a row that is both expired AND completed only goes through one branch (the status branch). No duplicate work, no ordering bug.",
+    "Student-side filters (L187-193) remain bit-for-bit identical to the previous iteration — confirmed by re-running test_iter30 TestListSlots::test_student_sees_pro_slot (PASS) and the new TestStudentSideUntouched suite (2 PASS). The pro-side branch is correctly gated by `u['role'] == 'professional' and not pro_id`, so admin & student callers are unaffected.",
+    "/interviews/my-bookings logic (L341-385) is unchanged — completed slots still appear with upcoming_only=false, and the upcoming_only=true gate continues to hide rows whose end_at is >2h in the past. proof_screenshot continues to be popped for students and exposed for pros, matching the iteration 25 contract.",
+    "Minor (non-blocking): both branches do isoformat parsing inline; could be hoisted into a tiny helper to dedupe (DRY). Not worth a refactor — total LOC saved <5."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter34_your_slots_filter.py (NEW — 7 tests across 4 test classes)"
+  ],
+  "success_rate": {
+    "backend": "100% (7/7 new + 41/41 regression = 48/48)",
+    "frontend": "N/A — backend-only per testing_type"
+  },
+  "seed_data_creation": "Per-test ephemeral. Each test creates a fresh pro (with gmail_verified + phone_verified flipped directly in MongoDB to bypass OTP) and student, plus 1-3 interview slots prefixed/tagged with _test_marker='iter34'. All slots and the helper-created bookings are deleted in fixture teardown. No persistent test data left behind. Slot B (expired-available) is inserted directly via pymongo because the POST /interviews/slots endpoint correctly rejects past start_at timestamps.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "The filter logic lives in /app/backend/routers/interviews.py list_slots() lines 194-209. Pattern for seeding an expired-available slot for any future test: insert directly into db.interview_slots with status='available', start_at/end_at both in the past — POST /interviews/slots refuses past timestamps. To make a booked slot completable, push start_at into the past via db.interview_slots.update_one (the /complete endpoint only checks `now < start_at`, not end_at). require_phone_verified gate must be bypassed by flipping profile.phone+profile.phone_verified directly in MongoDB (see _mark_phone_verified helper in test_iter34_your_slots_filter.py — same pattern as test_iter30/test_iter31).",
+  "rca_of_issue": "N/A — this is a forward-fix verification, not a bug RCA. The original user complaint ('expired Awaiting-booking slot from 16-Jun still shows in Your slots') is now correctly resolved by the new filter at interviews.py L199-209. The filter inspects status + end_at on every row and skips expired-available, completed, and cancelled rows for the professional view. Booked rows are intentionally retained regardless of time so the pro can still mark them as Done. Completed rows continue to live in /interviews/my-bookings?upcoming_only=false, surfaced by Profile → My Mock Interviews → Completed."
+}

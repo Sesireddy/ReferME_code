@@ -191,6 +191,22 @@ async def list_slots(
                 continue
             if pro_id and s.get("status") == "cancelled":
                 continue
+        # Professionals: keep "Your slots" actionable only.
+        #   - Hide `available` slots whose end_at has already passed (expired without a booking).
+        #   - Hide `completed` slots (they live in Profile → My Mock Interviews → Completed).
+        #   - Hide `cancelled` slots from this view too.
+        #   - All `booked` slots stay until the pro marks them as Done.
+        if u["role"] == "professional" and not pro_id:
+            status_now = s.get("status")
+            if status_now in ("completed", "cancelled"):
+                continue
+            if status_now == "available":
+                try:
+                    ed = datetime.fromisoformat((s.get("end_at") or "").replace("Z", "+00:00"))
+                except Exception:
+                    ed = None
+                if ed and ed <= now_dt:
+                    continue
         if date and sd:
             if sd.strftime("%Y-%m-%d") != date:
                 continue
