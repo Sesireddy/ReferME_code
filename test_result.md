@@ -125,11 +125,11 @@ backend:
 
   - task: "Pro 'Your slots' list — hide expired-unbooked + completed slots"
     implemented: true
-    working: "NA"
+    working: true
     file: "/app/backend/routers/interviews.py"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
         - working: false
           agent: "main"
@@ -137,6 +137,9 @@ backend:
         - working: "NA"
           agent: "main"
           comment: "Updated GET /api/interviews/slots (routers/interviews.py): for professional role (no pro_id query param, i.e. their own 'Your slots' fetch), now hides slots with status in {completed, cancelled} AND hides available slots whose end_at <= now. Booked slots remain regardless of time, until pro marks Done. Student-side filters unchanged. Backend reloaded, lint clean."
+        - working: true
+          agent: "testing"
+          comment: "Iter34: 7/7 new tests + 41/41 regression PASS (48/48 total). Expired available slots hidden, completed/cancelled hidden, booked kept regardless of time, future-available kept, /complete moves slot out of Your-slots into /my-bookings completed list. Student-facing endpoints unaffected."
 
   - task: "Mark as Hired modal — replace base64 textarea with Image/PDF picker"
     implemented: true
