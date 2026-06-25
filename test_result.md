@@ -125,15 +125,18 @@ backend:
 
   - task: "Credit redemption rate change: 2 credits = ₹1 → 1 credit = ₹1"
     implemented: true
-    working: "NA"
+    working: true
     file: "/app/backend/server.py, /app/frontend/app/professional/wallet.tsx, /app/frontend/app/professional/redeem.tsx"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
         - working: "NA"
           agent: "main"
-          comment: "User asked to make redemption 1:1 (1 credit = ₹1). Changed: backend REDEMPTION_INR_PER_CREDIT from 0.5 → 1.0 (server.py:3114); frontend INR_PER_CREDIT 0.5 → 1 in wallet.tsx + redeem.tsx; user-facing messages updated ('2 credits = ₹1' → '1 credit = ₹1', 'Rate: 2 credits = ₹1' → 'Rate: 1 credit = ₹1'). MIN credits to redeem (500) and topup rate (1 INR = 1 credit) unchanged. `/api/redemption/my` already returns inr_per_credit field, so the response will reflect the new 1.0 ratio. Lint clean."
+          comment: "User asked to make redemption 1:1 (1 credit = ₹1). Changed: backend REDEMPTION_INR_PER_CREDIT from 0.5 → 1.0; frontend INR_PER_CREDIT 0.5 → 1 in wallet.tsx + redeem.tsx; user-facing messages updated. Topup (1 INR = 1 credit) and minimum 500 to redeem unchanged."
+        - working: true
+          agent: "testing"
+          comment: "Iter35: 8/8 new tests + 54/54 regression PASS. /redemption/my returns inr_per_credit=1.0; 500 credits → ₹500.0 (no longer 250.0); 1234 → ₹1234.0; admin approve + mark-paid notifications correctly reference ₹500; topup rate string ('1 INR = 1 credit') + ACTION_COST=49 + first-deposit bonus path all unchanged."
 
   - task: "Pro 'Your slots' list — hide expired-unbooked + completed slots"
     implemented: true
