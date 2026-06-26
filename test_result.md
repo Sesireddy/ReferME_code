@@ -125,18 +125,21 @@ backend:
 
   - task: "Admin Jobs · Reject button — replace iOS-only Alert.prompt with cross-platform modal"
     implemented: true
-    working: "NA"
+    working: true
     file: "/app/frontend/app/admin/jobs.tsx"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
         - working: false
           agent: "main"
-          comment: "User reported that on Admin → Jobs → Pending Approvals tab, the 'Reject' button does nothing while 'Verify' works. Root cause: verifyJob() used Alert.prompt — iOS-only API. On web (react-native-web) and Android, Alert.prompt is a no-op stub that returns truthy synchronously (since it's defined as a stub function), so the ternary takes the iOS branch but the callback never fires; on Android Alert.prompt is undefined → fell through to a hardcoded 'Rejected by admin' but the user is testing on web where the no-op path silently swallows everything. Backend logs confirm: zero /admin/jobs/*/verify POSTs with decision=rejected, only the verify ones."
+          comment: "User reported Reject button on Admin → Jobs → Pending Approvals did nothing. Root cause: Alert.prompt is iOS-only; on react-native-web/Android it's a no-op stub so the callback never fired."
         - working: "NA"
           agent: "main"
-          comment: "Replaced Alert.prompt with an inline cross-platform Modal containing an Input for the reason. Clicking 'Reject' now opens the modal (job title + company shown), admin types ≥2 char reason, clicks 'Reject Job' → POST /admin/jobs/{id}/verify with decision=rejected and the typed note. Cancel resets state. testIDs: reject-reason-input, reject-cancel, reject-submit. Same /admin/jobs/{id}/verify endpoint, no backend changes. Lint clean (only a pre-existing exhaustive-deps warning untouched)."
+          comment: "Replaced with cross-platform Modal containing reject-reason-input + reject-cancel + reject-submit buttons. Uses same POST /admin/jobs/{id}/verify endpoint."
+        - working: true
+          agent: "testing"
+          comment: "Iter36: 8/8 PASS. Modal opens, empty submit blocked, valid reason → POST decision=rejected & note saved to Mongo (verification_status=rejected, verification_note, verified_by), Rejected tab refreshes, Verify path unchanged. Backend untouched."
 
   - task: "Credit redemption rate change: 2 credits = ₹1 → 1 credit = ₹1"
     implemented: true
