@@ -123,6 +123,21 @@ backend:
           agent: "testing"
           comment: "Iter30 regression: 22/22 new tests pass. /api/interviews/{slots,book,my-bookings,joined,complete} all behaviour-neutral vs pre-refactor. /api/jobs/apply path that calls _can_use_free now works (used_free=true for free-pool users, -49 credits otherwise). Phase A endpoints (referrals + leaderboard) still 200. Pre-existing iter13 phone-gate fixture failures are unrelated to this refactor."
 
+  - task: "Admin Jobs · Reject button — replace iOS-only Alert.prompt with cross-platform modal"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/admin/jobs.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: false
+          agent: "main"
+          comment: "User reported that on Admin → Jobs → Pending Approvals tab, the 'Reject' button does nothing while 'Verify' works. Root cause: verifyJob() used Alert.prompt — iOS-only API. On web (react-native-web) and Android, Alert.prompt is a no-op stub that returns truthy synchronously (since it's defined as a stub function), so the ternary takes the iOS branch but the callback never fires; on Android Alert.prompt is undefined → fell through to a hardcoded 'Rejected by admin' but the user is testing on web where the no-op path silently swallows everything. Backend logs confirm: zero /admin/jobs/*/verify POSTs with decision=rejected, only the verify ones."
+        - working: "NA"
+          agent: "main"
+          comment: "Replaced Alert.prompt with an inline cross-platform Modal containing an Input for the reason. Clicking 'Reject' now opens the modal (job title + company shown), admin types ≥2 char reason, clicks 'Reject Job' → POST /admin/jobs/{id}/verify with decision=rejected and the typed note. Cancel resets state. testIDs: reject-reason-input, reject-cancel, reject-submit. Same /admin/jobs/{id}/verify endpoint, no backend changes. Lint clean (only a pre-existing exhaustive-deps warning untouched)."
+
   - task: "Credit redemption rate change: 2 credits = ₹1 → 1 credit = ₹1"
     implemented: true
     working: true

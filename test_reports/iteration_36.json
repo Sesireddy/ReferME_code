@@ -1,0 +1,34 @@
+{
+  "summary": "Verified frontend-only fix for Admin → Jobs → Pending Approvals 'Reject' button on web (Alert.prompt replaced with cross-platform Modal). All 8 acceptance criteria pass end-to-end on mobile viewport (414x896) against the public preview URL. Login admin@referme.app → /admin/dashboard, navigate /admin/jobs?tab=pending, click vf-pending chip, click reject-{job_id}: modal opens with title 'Reject job', shows job title·company, contains reject-reason-input (placeholder mentions 'Salary range looks suspicious'), reject-cancel, reject-submit. Empty submit → 0 network calls and modal stays open (validation works). Filled reason 'Test rejection by automation' → POST /api/admin/jobs/{id}/verify body={\"decision\":\"rejected\",\"note\":\"Test rejection by automation\"} returns 200, modal closes, SuccessAlert 'Job Rejected — Reason saved & poster notified.' appears, list refreshes, job appears under Rejected tab. DB confirms verification_status='rejected', verification_note persisted, verified_by='admin@referme.app'. Verify button on a different pending job (ce2d4c08) still triggers an immediate POST decision='verified' with no modal — regression intact. Backend untouched as expected (testing_type=frontend only).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/admin/jobs (Rejected tab card)", "issues": ["Rejected card displays only the 'Rejected' status pill but does not surface the verification_note/reason inline on the card. Reason is persisted server-side and used in poster notification, but admin cannot see it without opening the job. Minor UX nit — not blocking."]}
+    ],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/iteration_36.json"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "/app/frontend/app/admin/jobs.tsx L42-65: verifyJob/submitReject branching is correct — 'verified' path bypasses modal (immediate doVerify), 'rejected' path opens Modal, validates note.length >= 2 client-side, then calls doVerify with note. Matches backend contract at /app/backend/server.py POST /admin/jobs/{id}/verify which requires note when decision='rejected'.",
+    "Modal uses transparent + animationType='fade' with onRequestClose wired to setRejectJob(null) — good Android hardware-back handling. autoFocus on the TextInput is set so keyboard appears immediately on iOS/Android.",
+    "Alert.alert('Reason required', …) on the empty-submit path: react-native-web renders this as an in-page overlay (no window.dialog event), so Playwright cannot capture it via page.on('dialog'). The on-screen validation still behaves correctly — modal stays open and no network request is sent. Consider replacing with inline error text under the TextInput for better web UX (purely optional)."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "skipped (testing_type=frontend only)",
+    "frontend": "100% (8/8 acceptance criteria pass)"
+  },
+  "seed_data_creation": "Inserted 2 seed jobs via Mongo (TEST_Pending Reject UI Job 0/1, posted_by_role='professional', verification_status='pending') against an existing professional employer_id. After the test, one was rejected via UI (now Rejected) and one was verified via UI (now Verified). Both seed docs were deleted post-test (db.jobs.delete_many({title: /^TEST_Pending Reject UI Job/}) → cleaned: 2). Pre-existing 'Java developer · Infosys' pending job left untouched.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Reject flow is fully working on react-native-web. Modal testIDs: reject-reason-input, reject-cancel, reject-submit. Per-job buttons: verify-{job_id}, reject-{job_id}. Filter chips: vf-all, vf-pending, vf-verified, vf-rejected. To repro, seed a pending job via Mongo (employer_id can be any existing pro user; posted_by_role='professional'; verification_status='pending'; status='open'; created_at=now-iso). Login admin@referme.app / Admin@12345. Backend endpoint POST /api/admin/jobs/{id}/verify accepts {decision, note} — 200 with persistence verified.",
+  "rca_of_issue": "Original bug: Alert.prompt() (iOS-only, returns no value on Android/web) was used to collect the rejection reason → on web the prompt never fired → 0 POSTs with decision='rejected' ever reached the backend. Fix verified in /app/frontend/app/admin/jobs.tsx L42-65 + L260-297: replaced Alert.prompt with a stateful <Modal> + <Input testID='reject-reason-input'> + submit/cancel buttons. submitReject() validates note length client-side and then calls the same doVerify() helper as the verify path. End-to-end POST observed on the wire and persisted in MongoDB (verification_status='rejected', verification_note='Test rejection by automation', verified_by='admin@referme.app')."
+}

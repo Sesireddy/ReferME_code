@@ -36,21 +36,32 @@ export default function AdminJobs() {
   const [previewUri, setPreviewUri] = useState<string | null>(null);
   const [previewMime, setPreviewMime] = useState<string>("");
   const [verifyBusy, setVerifyBusy] = useState(false);
+  const [rejectJob, setRejectJob] = useState<any | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
 
   async function verifyJob(j: any, decision: "verified" | "rejected") {
     if (verifyBusy) return;
     if (decision === "rejected") {
-      // ask for reason
-      // Use prompt-like flow via Alert
-      Alert.prompt
-        ? Alert.prompt("Reject reason", "Please provide a reason", async (note: string) => {
-            if (!note || note.trim().length < 2) return Alert.alert("Reason required");
-            await doVerify(j.id, decision, note.trim());
-          })
-        : await doVerify(j.id, decision, "Rejected by admin");
+      // Cross-platform prompt: Alert.prompt is iOS-only and unreliable on Android/web.
+      // Open an inline modal so the admin can type the reason on every platform.
+      setRejectReason("");
+      setRejectJob(j);
       return;
     }
     await doVerify(j.id, decision, "");
+  }
+
+  async function submitReject() {
+    if (!rejectJob) return;
+    const note = rejectReason.trim();
+    if (note.length < 2) {
+      Alert.alert("Reason required", "Please enter at least 2 characters explaining why this job is being rejected.");
+      return;
+    }
+    const job = rejectJob;
+    setRejectJob(null);
+    await doVerify(job.id, "rejected", note);
+    setRejectReason("");
   }
 
   async function doVerify(jobId: string, decision: "verified" | "rejected", note: string) {
@@ -244,6 +255,45 @@ export default function AdminJobs() {
           ) : null}
           <Txt variant="small" style={{ color: "#fff", marginTop: 16 }}>Tap anywhere to close</Txt>
         </TouchableOpacity>
+      </Modal>
+      {/* Reject job modal — cross-platform replacement for Alert.prompt */}
+      <Modal visible={!!rejectJob} transparent animationType="fade" onRequestClose={() => setRejectJob(null)}>
+        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", padding: 24 }}>
+          <View style={{ backgroundColor: colors.surface, borderRadius: 16, padding: 20 }}>
+            <Txt variant="h2">Reject job</Txt>
+            <Txt variant="muted" style={{ marginTop: 4 }} numberOfLines={2}>
+              {rejectJob?.title || ""} · {rejectJob?.company || ""}
+            </Txt>
+            <Input
+              testID="reject-reason-input"
+              label="Reason (required)"
+              placeholder="e.g. Salary range looks suspicious, please re-post with proof."
+              value={rejectReason}
+              onChangeText={setRejectReason}
+              multiline
+              numberOfLines={3}
+              style={{ marginTop: 12 }}
+              autoFocus
+            />
+            <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
+              <Button
+                testID="reject-cancel"
+                title="Cancel"
+                variant="secondary"
+                onPress={() => { setRejectJob(null); setRejectReason(""); }}
+                style={{ flex: 1 }}
+              />
+              <Button
+                testID="reject-submit"
+                title="Reject Job"
+                variant="danger"
+                onPress={submitReject}
+                loading={verifyBusy}
+                style={{ flex: 1 }}
+              />
+            </View>
+          </View>
+        </View>
       </Modal>
     </Screen>
   );
