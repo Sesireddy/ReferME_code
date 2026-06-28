@@ -125,18 +125,21 @@ backend:
 
   - task: "Student My Mock Interviews — smart CTAs for past slots (View feedback / disabled Completed)"
     implemented: true
-    working: "NA"
+    working: true
     file: "/app/frontend/app/student/my-mock-interviews.tsx"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
         - working: false
           agent: "main"
-          comment: "Student Profile → My Mock Interviews → Upcoming tab was still showing 'Join interview' even on bookings whose date+time had passed. Past-but-not-completed bookings were stuck on Upcoming with a useless CTA and never showed on Completed."
+          comment: "Past bookings still showed 'Join interview' on Upcoming; past-but-not-completed bookings never moved to Completed."
         - working: "NA"
           agent: "main"
-          comment: "Upcoming filter now requires !slot_ended (so past bookings drop out of Upcoming). Completed filter now includes status==='completed' OR (status==='booked'/'upcoming' && slot_ended) so past-but-not-completed bookings roll into Completed automatically. Inside CompletedRow: if status==='completed' AND both_joined → enabled green 'View feedback' button (testID view-feedback-{id}) that toggles the existing ratings + feedback panel; otherwise → disabled grey 'Completed' element (testID completed-disabled-{id}). Status pill colour adapts (Reviewed=success, No-show/Completed=textSecondary). UpcomingRow gained a defensive !slot_ended guard so even if a stale ended-slot leaks in, Join wouldn't render. Lint clean."
+          comment: "Upcoming filter requires !slot_ended; Completed filter rolls in (status==='booked'/'upcoming' && slot_ended). CompletedRow branches into enabled 'View feedback' toggle (completed + both_joined + has feedback) vs disabled 'Completed' element. Pill colour adapts (Reviewed / No-show / Completed)."
+        - working: true
+          agent: "testing"
+          comment: "Iter38: backend 5/5 new + 6/6 iter37 regression = 11/11 PASS. Frontend 4/4 scenarios PASS at 414x896 (A: Join button only on future, B: green View-feedback toggle expands rating + feedback, C+D: disabled Completed/No-show). Tab counters correct; no leakage between tabs."
     implemented: true
     working: true
     file: "/app/backend/routers/interviews.py, /app/frontend/app/professional/my-mock-interviews.tsx"
