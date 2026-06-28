@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react";
-import { View, StyleSheet, TouchableOpacity, Linking, Alert } from "react-native";
+import { View, StyleSheet, TouchableOpacity, Linking } from "react-native";
+import { webSafeAlert } from "@/src/lib/webSafeAlert";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -84,7 +85,7 @@ export default function ProMyMockInterviews() {
                 // Spec: Join is allowed only within 30 min before start until slot end.
                 // Backend's `join_enabled` already encodes that window.
                 if (!b.join_enabled) {
-                  Alert.alert(
+                  webSafeAlert(
                     "Not yet available",
                     "You can join the interview only within 30 minutes of the scheduled interview time.",
                   );

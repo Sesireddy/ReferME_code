@@ -1,0 +1,29 @@
+{
+  "summary": "Iter40 frontend-only retest of the 30-min Join window popup via the new webSafeAlert wrapper (/app/frontend/src/lib/webSafeAlert.ts). Verified on the web preview at 414x896 for BOTH /student/my-mock-interviews and /professional/my-mock-interviews. Seeded via /app/test_reports/seed_iter39_ui.py (far slot = now+2h..+2h30m, near slot = now+10..+40min). Result: 4/4 PASS. (1) Student FAR-tap surfaces a browser dialog with the exact spec text 'You can join the interview only within 30 minutes of the scheduled interview time.'; (2) Student NEAR-tap surfaces NO premature popup; (3) Pro FAR-tap same spec popup; (4) Pro NEAR-tap surfaces NO premature popup. Backend skipped per request (no backend code change since iter39 — boundary suite was 100% green there). Visual gating ('Ready' green pill on Near, 'Booked' purple pill + opacity-0.65 Join on Far) renders correctly for both roles. webSafeAlert correctly routes through window.alert on Platform.OS==='web' (rnw 0.21).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/seed_iter39_ui.py",
+    "/tmp/iter40_student_list.png",
+    "/tmp/iter40_professional_list.png"
+  ],
+  "action_items": [
+    "Optional sweep: audit other Alert.alert call sites across /app/frontend/app (e.g. payment/booking error toasts) and migrate them to webSafeAlert so they surface on the web preview too. The iter39 RCA noted react-native-web 0.21 stubs Alert.alert globally."
+  ],
+  "critical_code_review_comments": [
+    "webSafeAlert helper is a clean, minimal abstraction (Platform.OS check + try/catch + native fallback). No further hardening needed.",
+    "Both /student/my-mock-interviews.tsx and /professional/my-mock-interviews.tsx now correctly call webSafeAlert from inside the !b.join_enabled branch before returning, preserving the gate."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "skipped (no backend code changed since iter39 — 17/17 green there)", "frontend": "100% (4/4: student FAR popup, student NEAR no-popup, pro FAR popup, pro NEAR no-popup)"},
+  "seed_data_creation": "Re-used /app/test_reports/seed_iter39_ui.py — fresh student + pro signup with far (now+2h..+2h30m) and near (now+10..+40min) booked interview_slots, tagged _test_marker='iter39_ui'. Output at /tmp/iter39_seed.json.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "webSafeAlert wrapper is working end-to-end on web. To repro: (1) python /app/test_reports/seed_iter39_ui.py; (2) playwright: set localStorage 'referme_token' = JSON.stringify(token) and 'referme_user' = JSON.stringify(JSON.stringify(user)) (note the DOUBLE stringify — storage layer stringifies, api.ts also stringifies the user object). AsyncStorage web shim reads them directly. (3) Goto /student/my-mock-interviews or /professional/my-mock-interviews, attach page.on('dialog', handler) BEFORE the click, tap testID=join-{far_id}, expect dialog.message to contain the spec text. NEAR tap should NOT trigger any dialog with the spec text — Linking.openURL on web opens a new tab/blank but no popup.",
+  "rca_of_issue": "Iter39 root cause (react-native-web 0.21 Alert.alert no-op) was confirmed fixed. The new webSafeAlert helper short-circuits to window.alert on web, which Playwright surfaces as a Dialog event (type='alert'). Both screens import @/src/lib/webSafeAlert and invoke it from the same join_enabled gate the backend already returns. No regression to NEAR (in-window) flow — the gate's else-branch (Linking.openURL || router.push) executes unchanged."
+}

@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react";
-import { View, StyleSheet, TouchableOpacity, Linking, Alert } from "react-native";
+import { View, StyleSheet, TouchableOpacity, Linking } from "react-native";
+import { webSafeAlert } from "@/src/lib/webSafeAlert";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -113,7 +114,7 @@ export default function MyMockInterviews() {
                 // Backend computes `join_enabled` against that window — we just respect it here
                 // and show the exact popup wording for premature taps.
                 if (!b.join_enabled) {
-                  Alert.alert(
+                  webSafeAlert(
                     "Not yet available",
                     "You can join the interview only within 30 minutes of the scheduled interview time.",
                   );

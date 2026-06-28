@@ -578,7 +578,7 @@ class JobPostBody(BaseModel):
     location: str  # canonical city string OR "__OTHER__"
     location_other: Optional[str] = None  # used only when location == "__OTHER__"
     salary_range: Optional[str] = ""  # legacy/free-text fallback
-    salary_range_label: Optional[Literal["0-3", "3-5", "5-10", "10-20", "20-50", "50+"]] = None
+    salary_range_label: Optional[Literal["Not disclosed","0-3", "3-5", "5-10", "10-20", "20-50", "50+"]] = "Not disclosed"
     industry_type: Optional[str] = None  # one of INDUSTRY_OPTIONS values incl. "__OTHER__"
     industry_other: Optional[str] = None  # required when industry_type == "__OTHER__"
     skills_required: Optional[list[str]] = None
