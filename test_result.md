@@ -123,7 +123,17 @@ backend:
           agent: "testing"
           comment: "Iter30 regression: 22/22 new tests pass. /api/interviews/{slots,book,my-bookings,joined,complete} all behaviour-neutral vs pre-refactor. /api/jobs/apply path that calls _can_use_free now works (used_free=true for free-pool users, -49 credits otherwise). Phase A endpoints (referrals + leaderboard) still 200. Pre-existing iter13 phone-gate fixture failures are unrelated to this refactor."
 
-  - task: "Student My Mock Interviews — smart CTAs for past slots (View feedback / disabled Completed)"
+  - task: "Join Interview window — 30 min before start until slot end + premature-tap popup"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/routers/interviews.py, /app/frontend/app/student/my-mock-interviews.tsx, /app/frontend/app/professional/my-mock-interviews.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Spec: Join Interview button must (1) be visible/tappable on every active booking; (2) only actually open the call when current time is within [start_at - 30min, end_at]; (3) before that window, tapping shows the alert 'You can join the interview only within 30 minutes of the scheduled interview time.'; (4) outside the window the button is visually dimmed (opacity 0.65). Backend updated routers/interviews.py: join_enabled now = (start - 30min) <= now <= end (was start - 10min .. end + 2h). Frontend updated both student/my-mock-interviews.tsx and professional/my-mock-interviews.tsx: Join button always rendered on Upcoming cards but onJoin handler checks b.join_enabled — if false, Alert.alert with the exact spec wording; if true, opens meeting_url via Linking.openURL (fallback to /video/{id}). Dim style applied via opacity 0.65 when !join_enabled. Backend reloaded + lint clean on both files."
     implemented: true
     working: true
     file: "/app/frontend/app/student/my-mock-interviews.tsx"

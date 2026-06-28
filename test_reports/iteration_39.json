@@ -1,0 +1,60 @@
+{
+  "summary": "Backend join-window expansion to [start-30min, end] is correct and fully covered: 6/6 new boundary tests (T-35, T-30, at-start, at-end, T+1, recently-ended) pass on /api/interviews/my-bookings for both student and pro POV; 11/11 iter37+iter38 regression tests still pass. Frontend: layout, opacity dim, pill colour ('Ready' green / 'Booked' purple) and join button rendering all behave per spec on both /student/my-mock-interviews and /professional/my-mock-interviews at 414x896. HOWEVER, the spec-mandated popup ('You can join the interview only within 30 minutes of the scheduled interview time.') NEVER fires on the web preview because react-native-web 0.21.0 ships Alert as a stub (static alert() {}). On native iOS/Android the code is correct, but on the web preview the tap on a >30-min-away Join button is silently swallowed — no popup, no nav, no console log. NEAR (within-window) tap is consumed correctly (no premature popup). Both Student and Pro web flows exhibit the same Alert no-op bug.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "student/my-mock-interviews.tsx (UpcomingRow onJoin)",
+        "issue": "Alert.alert('Not yet available', '...within 30 minutes...') is a complete no-op on react-native-web@0.21.0 (see node_modules/react-native-web/dist/exports/Alert/index.js — `static alert() {}`). Tapping Join >30min before the slot on the web preview shows nothing, navigates nowhere, prints nothing. Spec requires the exact wording to appear. Needs a Platform.OS==='web' branch that calls window.alert(msg) (or a custom in-app Modal) so the message surfaces on web. testID='join-{id}' on the FAR card was clicked, click landed (dim opacity 0.65 visible), but onPress handler's Alert produced no UI. Reference: /app/frontend/app/student/my-mock-interviews.tsx:115-120",
+        "testID": "join-{id}",
+        "priority": "HIGH"
+      },
+      {
+        "component": "professional/my-mock-interviews.tsx (UpcomingRow onJoin)",
+        "issue": "Same Alert.alert no-op as student side — pro tapping Join on a >30-min-away booking sees nothing on the web preview. Reference: /app/frontend/app/professional/my-mock-interviews.tsx:86-92",
+        "testID": "join-{id}",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "/student/my-mock-interviews & /professional/my-mock-interviews",
+        "issues": [
+          "Visual gating works as intended: 'Ready' green pill + full-opacity Join for within-window slot; 'Booked' purple pill + opacity 0.65 Join for >30min-away slot (verified at 414x896 — screenshots /tmp/iter39_student_list.png, /tmp/iter39_pro_list.png).",
+          "No premature-popup regression on the within-window slot for either role."
+        ]
+      }
+    ],
+    "react_native_issues": [
+      {
+        "component": "react-native Alert.alert (web preview)",
+        "issue": "react-native-web 0.21.0 stubs Alert.alert to a no-op, so any Alert.alert(...) call across the app is silently dropped on the web preview. The Join-window popup, plus any other Alert-based confirmation in the codebase, will not appear on web. Recommendation: introduce a shared `notify(title, message)` helper using Platform.select({ web: () => window.alert(`${title}\\n\\n${message}`), default: () => Alert.alert(title, message) }). Reference: /app/frontend/node_modules/react-native-web/dist/exports/Alert/index.js"
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter39_join_window.py",
+    "/app/test_reports/pytest/pytest_iter39.xml",
+    "/app/test_reports/pytest/pytest_iter39_regression.xml",
+    "/app/test_reports/seed_iter39_ui.py",
+    "/tmp/iter39_student_list.png",
+    "/tmp/iter39_pro_list.png",
+    "/tmp/iter39_alert_probe.png"
+  ],
+  "action_items": [
+    "Replace Alert.alert in /app/frontend/app/student/my-mock-interviews.tsx (line 116) and /app/frontend/app/professional/my-mock-interviews.tsx (line 87) with a Platform-aware notify helper that falls back to window.alert on web, so the exact spec message surfaces on the web preview. Without this, the popup acceptance criterion fails on web.",
+    "Optional sweep: audit other Alert.alert call sites in /app/frontend/app for the same web no-op (e.g. payment errors, booking errors)."
+  ],
+  "critical_code_review_comments": [
+    "Backend /api/interviews/my-bookings join_enabled computation is correct and aligned with the spec (window_start = start - 30min, window_end = end_at, inclusive).",
+    "Backend response correctly strips internal joined_by + exposes slot_ended/both_joined/join_enabled — iter37/iter38 contracts preserved."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (17/17 — 6 new + 11 regression)", "frontend": "50% (visual + within-window OK on both roles; >30min-away popup BROKEN on web for both roles due to RNW Alert no-op)"},
+  "seed_data_creation": "Created /app/test_reports/seed_iter39_ui.py which signs up a fresh student + pro and seeds 2 booked interview_slots (`far` = now+2h..+2h30m, `near` = now+10..+40m). Slots tagged _test_marker='iter39_ui' for future cleanup. Output: /tmp/iter39_seed.json.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend logic verified correct — DO NOT re-test boundaries unless interviews.py changes. The remaining open item is purely frontend: Alert.alert on web. After main agent fixes the popup to use window.alert/Platform.select on web, re-run /app/test_reports/seed_iter39_ui.py and use page.on('dialog', ...) — once the fix lands the FAR-slot tap will surface a window.alert dialog containing exactly 'You can join the interview only within 30 minutes of the scheduled interview time.'",
+  "rca_of_issue": "Root cause: react-native-web@0.21.0 implements Alert as `class Alert { static alert() {} }` (literal empty function — verified by reading /app/frontend/node_modules/react-native-web/dist/exports/Alert/index.js). Therefore every Alert.alert(...) call from app code is a no-op on the web preview. Reproduction: (1) `python /app/test_reports/seed_iter39_ui.py` to provision users + far/near slots; (2) login as the seeded student at http://localhost:3000/login; (3) navigate to /student/my-mock-interviews; (4) tap testID=join-{far_id} — observe no dialog, no native window.confirm/alert, no console log, URL unchanged. Backend GET /api/interviews/my-bookings already returns join_enabled=false for that booking so the gating decision is right; the gap is purely the UI feedback. Mitigation: route the user-facing message through a platform-aware helper (Platform.OS==='web' ? window.alert(...) : Alert.alert(...)) or a Modal."
+}

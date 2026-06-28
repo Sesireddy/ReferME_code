@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react";
-import { View, StyleSheet, TouchableOpacity, Linking } from "react-native";
+import { View, StyleSheet, TouchableOpacity, Linking, Alert } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -109,8 +109,18 @@ export default function MyMockInterviews() {
           {data.map((b) =>
             tab === "upcoming" ? (
               <UpcomingRow key={b.id} b={b} onJoin={() => {
-                if (b.join_enabled) router.push(`/video/${b.id}`);
-                else if (b.meeting_url) Linking.openURL(b.meeting_url).catch(() => {});
+                // Spec: Join is allowed only within 30 min before start and until slot ends.
+                // Backend computes `join_enabled` against that window — we just respect it here
+                // and show the exact popup wording for premature taps.
+                if (!b.join_enabled) {
+                  Alert.alert(
+                    "Not yet available",
+                    "You can join the interview only within 30 minutes of the scheduled interview time.",
+                  );
+                  return;
+                }
+                if (b.meeting_url) Linking.openURL(b.meeting_url).catch(() => router.push(`/video/${b.id}`));
+                else router.push(`/video/${b.id}`);
               }} />
             ) : (
               <CompletedRow key={b.id} b={b} />
@@ -131,9 +141,11 @@ function Tab({ active, label, onPress, testID }: { active: boolean; label: strin
 }
 
 function UpcomingRow({ b, onJoin }: { b: Booking; onJoin: () => void }) {
-  // Upcoming list now only contains non-ended slots, so Join can be safely shown
-  // when within the join window. Guard against slot_ended just in case.
-  const canJoin = !b.slot_ended && (b.join_enabled || !!b.meeting_url);
+  // Show the Join button on every active (non-ended) booking so users can tap it
+  // and see the "available only within 30 minutes" message early. The tap-handler
+  // upstream gates by `join_enabled` and shows the popup when too early.
+  const showJoin = !b.slot_ended;
+  const isReady = !!b.join_enabled;
   return (
     <Card>
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -162,8 +174,8 @@ function UpcomingRow({ b, onJoin }: { b: Booking; onJoin: () => void }) {
           </Txt>
         </View>
       </View>
-      {canJoin ? (
-        <TouchableOpacity testID={`join-${b.id}`} onPress={onJoin} style={styles.joinBtn}>
+      {showJoin ? (
+        <TouchableOpacity testID={`join-${b.id}`} onPress={onJoin} style={[styles.joinBtn, !isReady && { opacity: 0.65 }]}>
           <Ionicons name="videocam" size={16} color="#fff" />
           <Txt style={{ color: "#fff", fontWeight: "700", marginLeft: 6 }}>Join interview</Txt>
         </TouchableOpacity>

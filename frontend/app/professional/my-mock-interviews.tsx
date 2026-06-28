@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react";
-import { View, StyleSheet, TouchableOpacity, Linking } from "react-native";
+import { View, StyleSheet, TouchableOpacity, Linking, Alert } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -81,8 +81,17 @@ export default function ProMyMockInterviews() {
               key={b.id}
               b={b}
               onJoin={() => {
-                if (b.join_enabled) router.push(`/video/${b.id}`);
-                else if (b.meeting_url) Linking.openURL(b.meeting_url).catch(() => {});
+                // Spec: Join is allowed only within 30 min before start until slot end.
+                // Backend's `join_enabled` already encodes that window.
+                if (!b.join_enabled) {
+                  Alert.alert(
+                    "Not yet available",
+                    "You can join the interview only within 30 minutes of the scheduled interview time.",
+                  );
+                  return;
+                }
+                if (b.meeting_url) Linking.openURL(b.meeting_url).catch(() => router.push(`/video/${b.id}`));
+                else router.push(`/video/${b.id}`);
               }}
               onProvideFeedback={() => router.push("/professional/slots")}
             />
@@ -153,7 +162,7 @@ function UpcomingRow({ b, onJoin, onProvideFeedback }: { b: Booking; onJoin: () 
         </View>
       </View>
       {cta === "join" ? (
-        <TouchableOpacity testID={`join-${b.id}`} onPress={onJoin} style={styles.joinBtn}>
+        <TouchableOpacity testID={`join-${b.id}`} onPress={onJoin} style={[styles.joinBtn, !b.join_enabled && { opacity: 0.65 }]}>
           <Ionicons name="videocam" size={16} color="#fff" />
           <Txt style={{ color: "#fff", fontWeight: "700", marginLeft: 6 }}>Join interview</Txt>
         </TouchableOpacity>

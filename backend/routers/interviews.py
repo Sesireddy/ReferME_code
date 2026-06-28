@@ -375,11 +375,11 @@ async def my_bookings(
             s["counterparty_name"] = s.get("pro_name")
         else:
             s["counterparty_name"] = s.get("student_name")
-        # Join window: enabled 10 min before start until 2h after end
+        # Join window: enabled 30 min before start until slot end_at
         s["join_enabled"] = False
         if sd and ed:
-            window_start = sd - timedelta(minutes=10)
-            window_end = ed + timedelta(hours=2)
+            window_start = sd - timedelta(minutes=30)
+            window_end = ed
             s["join_enabled"] = window_start <= now_dt <= window_end
         # Has the scheduled session ended (used by Pro 'My Mock Interviews' to swap CTAs)?
         s["slot_ended"] = bool(ed and ed <= now_dt)
