@@ -1,0 +1,36 @@
+{
+  "summary": "Verified the Pro 'My Mock Interviews → Upcoming' CTA decision tree end-to-end (backend + web frontend). Backend GET /api/interviews/my-bookings now correctly returns the two new derived booleans slot_ended and both_joined for every record, and strips the internal joined_by array from the response. 6 new tests in /app/backend/tests/test_iter37_my_bookings_derived.py + 56 regression tests (iter25/30/31/32/34/35) all PASS. Frontend: logged in as a freshly seeded pro on mobile viewport (414x896), navigated to /professional/my-mock-interviews?tab=upcoming, and confirmed all 3 spec scenarios: (A) Future slot → 'Ready' pill (green) + testID join-{id} purple 'Join interview' button, no feedback/completed buttons. (B) Past slot with joined_by=[pro,student] → 'Awaiting Review' pill (orange) + testID feedback-{id} orange 'Provide feedback' button; tapping it navigates to /professional/slots as expected. (C) Past slot with joined_by=[pro] only → 'Completed' pill (grey) + testID completed-disabled-{id} disabled 'Completed' element, no join/feedback button. Card body text, pill colors, button order match the design spec. No console errors during the run.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter37_my_bookings_derived.py",
+    "/app/test_reports/pytest/pytest_iter37.xml",
+    "/app/test_reports/pytest/pytest_iter37_regression.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "/app/backend/routers/interviews.py L385-391 (my_bookings): slot_ended uses end_at<=now (inclusive), both_joined requires student_id set AND pro_id+student_id both in joined_by, joined_by is popped from the response before return — matches spec exactly.",
+    "/app/frontend/app/professional/my-mock-interviews.tsx UpcomingRow L106-170: CTA selector branches on slot_ended/both_joined/join_enabled in the correct precedence (ended overrides join), pill label + color mirror the CTA, disabled state uses View (not TouchableOpacity) so it is intentionally non-tappable. testIDs join-{id}, feedback-{id}, completed-disabled-{id} are all stable.",
+    "Backwards-compat: response objects still include join_enabled, status, counterparty_name etc. for older clients — derived booleans are purely additive."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter37_my_bookings_derived.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (6/6 new + 56/56 regression)",
+    "frontend": "100% (3/3 scenarios + feedback→/professional/slots navigation)"
+  },
+  "seed_data_creation": "Created one pro (iter37ui_pro_*@acmecorp.io) + one student (iter37ui_stu_*@example.com) via OTP signup; inserted 3 interview_slots tagged _test_marker='iter37_ui' (scenarios A/B/C) directly into Mongo with proper start_at/end_at and joined_by arrays. All seed data was deleted post-test (3 slots + 2 users removed). No production data touched.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Pro CTA decision tree is fully working. Key testIDs on /professional/my-mock-interviews?tab=upcoming: tab-upcoming, tab-completed, back-btn, join-{slot_id}, feedback-{slot_id}, completed-disabled-{slot_id}. To re-seed: create pro+student via OTP signup, insert booked interview_slot rows directly in Mongo and set joined_by manually — POST /api/interviews/{slot_id}/joined also works but requires the slot to still exist/be addressable. Login via UI selectors is flaky (the 'Login' text matches multiple elements) — prefer POSTing /api/auth/login and injecting referme_token (JSON.stringify(token)) and referme_user (JSON.stringify(JSON.stringify(userObj))) into localStorage on origin before navigating. Backend derivation lives in /app/backend/routers/interviews.py L385-391.",
+  "rca_of_issue": "Original user bug: an expired booked slot kept showing the purple 'Join interview' button on the Pro Upcoming tab because the row had no signal that the slot's end_at had already passed (frontend only had join_enabled, which itself is true for the full window incl. 2h post-end). Fix verified: backend now exposes slot_ended (end_at<=now) and both_joined (joined_by superset of {pro_id, student_id}); the UpcomingRow decision tree consumes those flags and renders Join → Provide feedback → disabled Completed accordingly. End-to-end confirmed across the 3 spec scenarios; the previously misleading purple button no longer appears once a slot has ended."
+}

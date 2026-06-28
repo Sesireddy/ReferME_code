@@ -123,7 +123,20 @@ backend:
           agent: "testing"
           comment: "Iter30 regression: 22/22 new tests pass. /api/interviews/{slots,book,my-bookings,joined,complete} all behaviour-neutral vs pre-refactor. /api/jobs/apply path that calls _can_use_free now works (used_free=true for free-pool users, -49 credits otherwise). Phase A endpoints (referrals + leaderboard) still 200. Pre-existing iter13 phone-gate fixture failures are unrelated to this refactor."
 
-  - task: "Admin Jobs · Reject button — replace iOS-only Alert.prompt with cross-platform modal"
+  - task: "Pro My Mock Interviews — replace 'Join interview' on past slots with feedback/completed CTAs"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/routers/interviews.py, /app/frontend/app/professional/my-mock-interviews.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: false
+          agent: "main"
+          comment: "User reported that on Pro Profile → My Mock Interviews → Upcoming tab, expired slots still showed a misleading 'Join interview' button (purple). Desired: (a) hide Join after slot end_at passes; (b) if BOTH parties joined during the window → show 'Provide feedback' CTA (routes to slots page to open completion modal with rating/feedback/proof); (c) if either party didn't join → show 'Completed' disabled button."
+        - working: "NA"
+          agent: "main"
+          comment: "Backend: /api/interviews/my-bookings now exposes two derived fields: slot_ended (now > end_at) and both_joined (pro_id ∈ joined_by AND student_id ∈ joined_by, derived from existing /interviews/{id}/joined POST tracking). Stripped joined_by from response. Frontend: UpcomingRow now picks CTA via decision tree — slot_ended+both_joined → orange 'Provide feedback' button (routes to /professional/slots so existing completion modal handles rating/feedback/proof); slot_ended+!both_joined → disabled 'Completed' grey pill button; !slot_ended+join_enabled → original 'Join interview'; !slot_ended+!join_enabled → no button. Status pill text + colour updated accordingly (Awaiting Review / Completed / Ready / Booked). Lint clean."
     implemented: true
     working: true
     file: "/app/frontend/app/admin/jobs.tsx"

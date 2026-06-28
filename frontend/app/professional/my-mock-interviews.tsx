@@ -21,6 +21,8 @@ type Booking = {
   candidate_rating?: number;
   feedback?: string;
   join_enabled?: boolean;
+  slot_ended?: boolean;
+  both_joined?: boolean;
 };
 
 function fmtDate(d: string) {
@@ -75,10 +77,15 @@ export default function ProMyMockInterviews() {
             </Card>
           ) : null}
           {data.map((b) => tab === "upcoming" ? (
-            <UpcomingRow key={b.id} b={b} onJoin={() => {
-              if (b.join_enabled) router.push(`/video/${b.id}`);
-              else if (b.meeting_url) Linking.openURL(b.meeting_url).catch(() => {});
-            }} />
+            <UpcomingRow
+              key={b.id}
+              b={b}
+              onJoin={() => {
+                if (b.join_enabled) router.push(`/video/${b.id}`);
+                else if (b.meeting_url) Linking.openURL(b.meeting_url).catch(() => {});
+              }}
+              onProvideFeedback={() => router.push("/professional/slots")}
+            />
           ) : (
             <CompletedRow key={b.id} b={b} />
           ))}
@@ -96,8 +103,31 @@ function Tab({ active, label, onPress, testID }: { active: boolean; label: strin
   );
 }
 
-function UpcomingRow({ b, onJoin }: { b: Booking; onJoin: () => void }) {
+function UpcomingRow({ b, onJoin, onProvideFeedback }: { b: Booking; onJoin: () => void; onProvideFeedback: () => void }) {
   const candidateName = b.candidate_name || b.student_name || "Candidate";
+  const slotEnded = !!b.slot_ended;
+  const bothJoined = !!b.both_joined;
+
+  // CTA decision tree:
+  //   1. Slot still active + join window open      → Join interview (purple)
+  //   2. Slot still active + window not open yet   → no button (just Scheduled pill)
+  //   3. Slot has ended + both parties joined      → Provide feedback (orange)
+  //   4. Slot has ended + at least one no-show     → Completed (disabled grey)
+  let cta: "join" | "feedback" | "completed" | "none" = "none";
+  if (slotEnded) {
+    cta = bothJoined ? "feedback" : "completed";
+  } else if (b.join_enabled || !!b.meeting_url) {
+    cta = "join";
+  }
+
+  // Status pill text mirrors the CTA state.
+  const pillLabel = slotEnded
+    ? (bothJoined ? "Awaiting Review" : "Completed")
+    : (b.join_enabled ? "Ready" : (b.status === "booked" ? "Booked" : (b.status || "Scheduled")));
+  const pillColor = slotEnded
+    ? (bothJoined ? "#F59E0B" : colors.textSecondary)
+    : (b.join_enabled ? colors.success : "#7C3AED");
+
   return (
     <Card>
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -118,17 +148,25 @@ function UpcomingRow({ b, onJoin }: { b: Booking; onJoin: () => void }) {
             <Txt variant="small" style={styles.metaText}>{fmtTime(b.start_at)} – {fmtTime(b.end_at)}</Txt>
           </View>
         </View>
-        <View style={[styles.statusPill, { backgroundColor: b.join_enabled ? colors.success : "#7C3AED" }]}>
-          <Txt variant="small" style={{ color: "#fff", fontWeight: "700", textTransform: "capitalize" }}>
-            {b.join_enabled ? "Ready" : (b.status || "Scheduled")}
-          </Txt>
+        <View style={[styles.statusPill, { backgroundColor: pillColor }]}>
+          <Txt variant="small" style={{ color: "#fff", fontWeight: "700", textTransform: "capitalize" }}>{pillLabel}</Txt>
         </View>
       </View>
-      {b.meeting_url || b.join_enabled ? (
+      {cta === "join" ? (
         <TouchableOpacity testID={`join-${b.id}`} onPress={onJoin} style={styles.joinBtn}>
           <Ionicons name="videocam" size={16} color="#fff" />
           <Txt style={{ color: "#fff", fontWeight: "700", marginLeft: 6 }}>Join interview</Txt>
         </TouchableOpacity>
+      ) : cta === "feedback" ? (
+        <TouchableOpacity testID={`feedback-${b.id}`} onPress={onProvideFeedback} style={[styles.joinBtn, { backgroundColor: "#F59E0B" }]}>
+          <Ionicons name="create" size={16} color="#fff" />
+          <Txt style={{ color: "#fff", fontWeight: "700", marginLeft: 6 }}>Provide feedback</Txt>
+        </TouchableOpacity>
+      ) : cta === "completed" ? (
+        <View testID={`completed-disabled-${b.id}`} style={[styles.joinBtn, styles.disabledBtn]}>
+          <Ionicons name="checkmark-circle" size={16} color={colors.textSecondary} />
+          <Txt style={{ color: colors.textSecondary, fontWeight: "700", marginLeft: 6 }}>Completed</Txt>
+        </View>
       ) : null}
     </Card>
   );
@@ -197,6 +235,7 @@ const styles = StyleSheet.create({
   metaText: { color: colors.textSecondary, flexShrink: 1 },
   statusPill: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 },
   joinBtn: { marginTop: 10, flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: "#7C3AED", paddingVertical: 10, borderRadius: radius.lg },
+  disabledBtn: { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
   feedbackBox: { marginTop: 12, padding: 12, borderRadius: radius.lg, backgroundColor: colors.surfaceAlt },
   ratingsRow: { flexDirection: "row", gap: 6 },
   ratingChip: { flex: 1, flexDirection: "row", alignItems: "center", padding: 8, borderRadius: 10 },

@@ -381,6 +381,14 @@ async def my_bookings(
             window_start = sd - timedelta(minutes=10)
             window_end = ed + timedelta(hours=2)
             s["join_enabled"] = window_start <= now_dt <= window_end
+        # Has the scheduled session ended (used by Pro 'My Mock Interviews' to swap CTAs)?
+        s["slot_ended"] = bool(ed and ed <= now_dt)
+        # Did BOTH the pro and the student actually click 'Join' during the window?
+        joined_by = set(s.get("joined_by") or [])
+        student_id = s.get("student_id")
+        s["both_joined"] = bool(student_id) and (s["pro_id"] in joined_by) and (student_id in joined_by)
+        # Strip the internal joined_by list from the response (not needed by clients)
+        s.pop("joined_by", None)
         out.append(s)
     return out
 
