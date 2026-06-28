@@ -125,17 +125,24 @@ backend:
 
   - task: "Join Interview window — 30 min before start until slot end + premature-tap popup"
     implemented: true
-    working: "NA"
-    file: "/app/backend/routers/interviews.py, /app/frontend/app/student/my-mock-interviews.tsx, /app/frontend/app/professional/my-mock-interviews.tsx"
+    working: true
+    file: "/app/backend/routers/interviews.py, /app/frontend/app/student/my-mock-interviews.tsx, /app/frontend/app/professional/my-mock-interviews.tsx, /app/frontend/src/lib/webSafeAlert.ts"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
         - working: "NA"
           agent: "main"
-          comment: "Spec: Join Interview button must (1) be visible/tappable on every active booking; (2) only actually open the call when current time is within [start_at - 30min, end_at]; (3) before that window, tapping shows the alert 'You can join the interview only within 30 minutes of the scheduled interview time.'; (4) outside the window the button is visually dimmed (opacity 0.65). Backend updated routers/interviews.py: join_enabled now = (start - 30min) <= now <= end (was start - 10min .. end + 2h). Frontend updated both student/my-mock-interviews.tsx and professional/my-mock-interviews.tsx: Join button always rendered on Upcoming cards but onJoin handler checks b.join_enabled — if false, Alert.alert with the exact spec wording; if true, opens meeting_url via Linking.openURL (fallback to /video/{id}). Dim style applied via opacity 0.65 when !join_enabled. Backend reloaded + lint clean on both files."
-    implemented: true
-    working: true
+          comment: "Spec: Join window = (start - 30 min) → end_at. Premature tap shows exact popup. Implemented backend window change + frontend Alert.alert gate."
+        - working: false
+          agent: "testing"
+          comment: "Iter39: backend 6/6 PASS but FRONTEND web Alert.alert is a no-op stub on react-native-web 0.21 → popup never surfaced on web preview."
+        - working: "NA"
+          agent: "main"
+          comment: "Added /app/frontend/src/lib/webSafeAlert.ts wrapper: Platform.OS==='web' → window.alert; else native Alert.alert. Both files now use webSafeAlert in the onJoin gate."
+        - working: true
+          agent: "testing"
+          comment: "Iter40 frontend 4/4 PASS. Student + Pro FAR-tap both surface browser dialog with exact spec text. NEAR-tap consumed normally. Visual opacity gating confirmed."
     file: "/app/frontend/app/student/my-mock-interviews.tsx"
     stuck_count: 0
     priority: "high"
