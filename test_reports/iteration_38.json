@@ -1,0 +1,40 @@
+{
+  "summary": "Verified iter38 student-side counterpart of iter37 fix end-to-end. Backend: GET /api/interviews/my-bookings still emits slot_ended + both_joined and strips joined_by — 5 new student-scenario tests in test_iter38_student_my_bookings.py PASS, plus 6/6 iter37 regression PASS (total 11 backend tests green). Frontend (mobile 414x896): logged in as a freshly seeded student via localStorage injection, hit /student/my-mock-interviews and confirmed all 4 spec scenarios: (A) future booked slot → Upcoming tab, 'Booked' pill, purple testID join-{id} 'Join interview' button, NO completed/feedback button; (B) past status=completed + both_joined + feedback → Completed tab, green 'Reviewed' pill, enabled green testID view-feedback-{id} 'View feedback' button — tapping it expands the rating + feedback panel (Overall 8/10 chip + 'Solid DSA fundamentals…' professional feedback text visible) and toggling again hides it (button label flips View↔Hide); (C) past status=booked + both_joined=true (pro forgot) → Completed tab, grey 'Completed' pill, DISABLED testID completed-disabled-{id} 'Completed' element, NO Join/Feedback button; (D) past status=booked + both_joined=false (no-show) → Completed tab, grey 'No-show' pill, DISABLED testID completed-disabled-{id} element, NO Join button. Tab counters: Upcoming(1) only counts non-ended bookings, Completed(3) sums status=completed plus status=booked && slot_ended — both labels rendered exactly as 'Upcoming (1)' / 'Completed (3)'. No console errors; only pre-existing shadow*/pointerEvents deprecation warnings. The previously-misleading 'Join interview' button no longer leaks onto past slots on the student side.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter38_student_my_bookings.py",
+    "/app/test_reports/pytest/pytest_iter38.xml",
+    "/app/test_reports/pytest/pytest_iter38_regression.xml",
+    "/app/test_reports/seed_iter38_ui.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "/app/frontend/app/student/my-mock-interviews.tsx L56-68: useMemo filters correctly route past booked slots into Completed (via slot_ended) and only keep non-ended booked/upcoming on Upcoming — matches spec exactly. Tab counters reflect filtered lengths (L86, L92).",
+    "/app/frontend/app/student/my-mock-interviews.tsx L136 (UpcomingRow): canJoin guard requires !b.slot_ended, so even if backend regressed and forgot to filter, the UI is defensive.",
+    "/app/frontend/app/student/my-mock-interviews.tsx L179-191 (CompletedRow): canViewFeedback = status==='completed' && both_joined && (feedback||rating). Disabled pathway uses a View (not TouchableOpacity), which is correct — non-tappable. Pill colors: green for Reviewed, grey for Completed/No-show.",
+    "/app/frontend/app/student/my-mock-interviews.tsx L188: 'No-show' branch triggers when both_joined===false AND status!=='completed'; covers scenario D. Note: defaults to 'Completed' grey pill if both_joined is undefined/missing — acceptable fallback.",
+    "Backend (/app/backend/routers/interviews.py L340-385): unchanged this iter as expected; slot_ended/both_joined still emitted and joined_by stripped (verified by all 11 backend tests)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter38_student_my_bookings.py (new, 5 tests)",
+    "/app/test_reports/seed_iter38_ui.py (new, ad-hoc seed helper)"
+  ],
+  "success_rate": {
+    "backend": "100% (5/5 new + 6/6 iter37 regression = 11/11)",
+    "frontend": "100% (4/4 scenarios + feedback panel open/close + tab counters)"
+  },
+  "seed_data_creation": "Created 1 student (iter38ui_stu_*@example.com) + 1 pro (iter38ui_pro_*@acmecorp.io) via OTP signup, plus 4 interview_slots tagged _test_marker='iter38_ui' covering scenarios A/B/C/D, all mutated directly in Mongo for start_at/end_at/status/joined_by/feedback/candidate_rating. Cleanup confirmed post-run: 4 slots + 2 users deleted. No production data touched.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Student-side My Mock Interviews CTA decision tree is fully working. Key testIDs on /student/my-mock-interviews: tab-upcoming, tab-completed, back-btn, join-{slot_id} (purple, Upcoming), view-feedback-{slot_id} (green, Completed tab when status=completed && both_joined && feedback), completed-disabled-{slot_id} (grey View, otherwise). To re-seed: use /app/test_reports/seed_iter38_ui.py — it signs up a fresh student+pro, inserts 4 slots tagged _test_marker='iter38_ui' and writes credentials+slot ids to /tmp/iter38_seed.json. Login via UI is flaky (multiple 'Login' labels); prefer POSTing /api/auth/login and injecting localStorage: referme_token=JSON.stringify(token), referme_user=JSON.stringify(JSON.stringify(userObj)). The AsyncStorage-on-web wrapper double-stringifies the user blob; do not skip the inner stringify or the app will crash on parse.",
+  "rca_of_issue": "iter37 fixed the pro-side leak where the purple 'Join interview' button stayed visible on already-ended slots because the UI only had join_enabled (true for the full window incl. ~2h post-end). This iter38 applies the symmetric fix on the student side: the new useMemo filters in /app/frontend/app/student/my-mock-interviews.tsx use the backend-derived slot_ended boolean to (a) keep only non-ended booked/upcoming slots in the Upcoming tab and (b) auto-roll past booked slots into the Completed tab. The Completed tab branches on (status==='completed' && both_joined && feedback) for the enabled green 'View feedback' button; everything else (no-show OR pro forgot to mark done) renders a non-tappable grey 'Completed' element. Verified across all 4 spec scenarios on a 414x896 mobile viewport with no regressions to the backend contract (joined_by still stripped, slot_ended/both_joined still emitted)."
+}

@@ -21,6 +21,8 @@ type Booking = {
   candidate_rating?: number;
   feedback?: string;
   join_enabled?: boolean;
+  slot_ended?: boolean;
+  both_joined?: boolean;
 };
 
 function fmtDate(d: string) {
@@ -52,11 +54,16 @@ export default function MyMockInterviews() {
   useEffect(() => { load(); }, [load]);
 
   const upcoming = useMemo(
-    () => items.filter((b) => b.status === "booked" || b.status === "upcoming"),
+    // Only active bookings (not ended yet) belong on the Upcoming tab.
+    // Past booked-but-not-completed slots get rolled into Completed below.
+    () => items.filter((b) => (b.status === "booked" || b.status === "upcoming") && !b.slot_ended),
     [items],
   );
   const completed = useMemo(
-    () => items.filter((b) => b.status === "completed"),
+    // Completed tab includes:
+    //   (a) slots the pro has marked as completed (with feedback)
+    //   (b) ended booked slots that were never completed (no-show OR pro forgot to mark done)
+    () => items.filter((b) => b.status === "completed" || ((b.status === "booked" || b.status === "upcoming") && b.slot_ended)),
     [items],
   );
 
@@ -124,6 +131,9 @@ function Tab({ active, label, onPress, testID }: { active: boolean; label: strin
 }
 
 function UpcomingRow({ b, onJoin }: { b: Booking; onJoin: () => void }) {
+  // Upcoming list now only contains non-ended slots, so Join can be safely shown
+  // when within the join window. Guard against slot_ended just in case.
+  const canJoin = !b.slot_ended && (b.join_enabled || !!b.meeting_url);
   return (
     <Card>
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -152,7 +162,7 @@ function UpcomingRow({ b, onJoin }: { b: Booking; onJoin: () => void }) {
           </Txt>
         </View>
       </View>
-      {b.meeting_url || b.join_enabled ? (
+      {canJoin ? (
         <TouchableOpacity testID={`join-${b.id}`} onPress={onJoin} style={styles.joinBtn}>
           <Ionicons name="videocam" size={16} color="#fff" />
           <Txt style={{ color: "#fff", fontWeight: "700", marginLeft: 6 }}>Join interview</Txt>
@@ -163,6 +173,23 @@ function UpcomingRow({ b, onJoin }: { b: Booking; onJoin: () => void }) {
 }
 
 function CompletedRow({ b }: { b: Booking }) {
+  // Spec: enabled "View feedback" only when (a) the slot was actually completed by the pro
+  // (status === 'completed') — which implies feedback exists — AND (b) both parties joined.
+  // For everything else (no-show, or pro never marked completed), show disabled "Completed".
+  const hasFeedback = b.status === "completed" && !!(b.feedback || b.candidate_rating != null);
+  const canViewFeedback = hasFeedback && !!b.both_joined;
+  const [open, setOpen] = useState(false);
+
+  let badgeText = "Completed";
+  let badgeColor: string = colors.textSecondary;
+  if (canViewFeedback) {
+    badgeText = "Reviewed";
+    badgeColor = colors.success;
+  } else if (b.both_joined === false && b.status !== "completed") {
+    badgeText = "No-show";
+    badgeColor = colors.textSecondary;
+  }
+
   return (
     <Card>
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -179,32 +206,49 @@ function CompletedRow({ b }: { b: Booking }) {
             <Txt variant="small" style={styles.metaText}>{fmtDate(b.start_at)}</Txt>
           </View>
         </View>
-        <View style={[styles.statusPill, { backgroundColor: colors.success }]}>
-          <Txt variant="small" style={{ color: "#fff", fontWeight: "700" }}>Completed</Txt>
+        <View style={[styles.statusPill, { backgroundColor: badgeColor }]}>
+          <Txt variant="small" style={{ color: "#fff", fontWeight: "700" }}>{badgeText}</Txt>
         </View>
       </View>
 
-      {/* Ratings + Feedback */}
-      <View style={styles.feedbackBox}>
-        <View style={styles.ratingsRow}>
-          <RatingChip label="Overall" value={b.candidate_rating} icon="star" color="#F59E0B" />
-          <RatingChip label="Technical" value={null} icon="construct" color="#2563EB" placeholder="—" />
-          <RatingChip label="Communication" value={null} icon="chatbubble-ellipses" color="#7C3AED" placeholder="—" />
+      {canViewFeedback ? (
+        <>
+          <TouchableOpacity
+            testID={`view-feedback-${b.id}`}
+            onPress={() => setOpen((v) => !v)}
+            style={styles.feedbackBtn}
+          >
+            <Ionicons name={open ? "chevron-up" : "document-text"} size={16} color="#fff" />
+            <Txt style={{ color: "#fff", fontWeight: "700", marginLeft: 6 }}>
+              {open ? "Hide feedback" : "View feedback"}
+            </Txt>
+          </TouchableOpacity>
+          {open ? (
+            <View style={styles.feedbackBox}>
+              <View style={styles.ratingsRow}>
+                <RatingChip label="Overall" value={b.candidate_rating} icon="star" color="#F59E0B" />
+                <RatingChip label="Technical" value={null} icon="construct" color="#2563EB" placeholder="—" />
+                <RatingChip label="Communication" value={null} icon="chatbubble-ellipses" color="#7C3AED" placeholder="—" />
+              </View>
+              {b.feedback ? (
+                <View style={{ marginTop: 10 }}>
+                  <Txt variant="label" style={{ color: colors.textSecondary, marginBottom: 4 }}>Professional Feedback</Txt>
+                  <Txt style={{ color: colors.textPrimary, lineHeight: 20 }}>{b.feedback}</Txt>
+                </View>
+              ) : (
+                <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 8, fontStyle: "italic" }}>
+                  No written feedback was provided.
+                </Txt>
+              )}
+            </View>
+          ) : null}
+        </>
+      ) : (
+        <View testID={`completed-disabled-${b.id}`} style={[styles.feedbackBtn, styles.feedbackBtnDisabled]}>
+          <Ionicons name="checkmark-circle" size={16} color={colors.textSecondary} />
+          <Txt style={{ color: colors.textSecondary, fontWeight: "700", marginLeft: 6 }}>Completed</Txt>
         </View>
-        {b.feedback ? (
-          <View style={{ marginTop: 10 }}>
-            <Txt variant="label" style={{ color: colors.textSecondary, marginBottom: 4 }}>Professional Feedback</Txt>
-            <Txt style={{ color: colors.textPrimary, lineHeight: 20 }}>{b.feedback}</Txt>
-          </View>
-        ) : (
-          <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 8, fontStyle: "italic" }}>
-            No written feedback was provided.
-          </Txt>
-        )}
-        <Txt variant="small" style={styles.improvementsHint}>
-          💡 Detailed improvement areas will appear here in a future update.
-        </Txt>
-      </View>
+      )}
     </Card>
   );
 }
@@ -231,6 +275,8 @@ const styles = StyleSheet.create({
   metaText: { color: colors.textSecondary, flexShrink: 1 },
   statusPill: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 },
   joinBtn: { marginTop: 10, flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: colors.primary, paddingVertical: 10, borderRadius: radius.lg },
+  feedbackBtn: { marginTop: 10, flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: colors.success, paddingVertical: 10, borderRadius: radius.lg },
+  feedbackBtnDisabled: { backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
   feedbackBox: { marginTop: 12, padding: 12, borderRadius: radius.lg, backgroundColor: colors.surfaceAlt },
   ratingsRow: { flexDirection: "row", gap: 6 },
   ratingChip: { flex: 1, flexDirection: "row", alignItems: "center", padding: 8, borderRadius: 10 },

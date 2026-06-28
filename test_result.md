@@ -123,7 +123,20 @@ backend:
           agent: "testing"
           comment: "Iter30 regression: 22/22 new tests pass. /api/interviews/{slots,book,my-bookings,joined,complete} all behaviour-neutral vs pre-refactor. /api/jobs/apply path that calls _can_use_free now works (used_free=true for free-pool users, -49 credits otherwise). Phase A endpoints (referrals + leaderboard) still 200. Pre-existing iter13 phone-gate fixture failures are unrelated to this refactor."
 
-  - task: "Pro My Mock Interviews — replace 'Join interview' on past slots with feedback/completed CTAs"
+  - task: "Student My Mock Interviews — smart CTAs for past slots (View feedback / disabled Completed)"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/student/my-mock-interviews.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: false
+          agent: "main"
+          comment: "Student Profile → My Mock Interviews → Upcoming tab was still showing 'Join interview' even on bookings whose date+time had passed. Past-but-not-completed bookings were stuck on Upcoming with a useless CTA and never showed on Completed."
+        - working: "NA"
+          agent: "main"
+          comment: "Upcoming filter now requires !slot_ended (so past bookings drop out of Upcoming). Completed filter now includes status==='completed' OR (status==='booked'/'upcoming' && slot_ended) so past-but-not-completed bookings roll into Completed automatically. Inside CompletedRow: if status==='completed' AND both_joined → enabled green 'View feedback' button (testID view-feedback-{id}) that toggles the existing ratings + feedback panel; otherwise → disabled grey 'Completed' element (testID completed-disabled-{id}). Status pill colour adapts (Reviewed=success, No-show/Completed=textSecondary). UpcomingRow gained a defensive !slot_ended guard so even if a stale ended-slot leaks in, Join wouldn't render. Lint clean."
     implemented: true
     working: true
     file: "/app/backend/routers/interviews.py, /app/frontend/app/professional/my-mock-interviews.tsx"
