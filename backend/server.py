@@ -602,7 +602,7 @@ class JobPatchBody(BaseModel):
     location: Optional[str] = None
     location_other: Optional[str] = None
     salary_range: Optional[str] = None
-    salary_range_label: Optional[Literal["0-3", "3-5", "5-10", "10-20", "20-50", "50+"]] = None
+    salary_range_label: Optional[Literal["Not disclosed", "0-3", "3-5", "5-10", "10-20", "20-50", "50+"]] = "Not disclosed"
     industry_type: Optional[str] = None
     industry_other: Optional[str] = None
     skills_required: Optional[list[str]] = None
