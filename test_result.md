@@ -125,18 +125,21 @@ backend:
 
   - task: "Pro My Mock Interviews — replace 'Join interview' on past slots with feedback/completed CTAs"
     implemented: true
-    working: "NA"
+    working: true
     file: "/app/backend/routers/interviews.py, /app/frontend/app/professional/my-mock-interviews.tsx"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
         - working: false
           agent: "main"
-          comment: "User reported that on Pro Profile → My Mock Interviews → Upcoming tab, expired slots still showed a misleading 'Join interview' button (purple). Desired: (a) hide Join after slot end_at passes; (b) if BOTH parties joined during the window → show 'Provide feedback' CTA (routes to slots page to open completion modal with rating/feedback/proof); (c) if either party didn't join → show 'Completed' disabled button."
+          comment: "Expired booked slots still showed misleading 'Join interview' CTA on the Pro My Mock Interviews → Upcoming list."
         - working: "NA"
           agent: "main"
-          comment: "Backend: /api/interviews/my-bookings now exposes two derived fields: slot_ended (now > end_at) and both_joined (pro_id ∈ joined_by AND student_id ∈ joined_by, derived from existing /interviews/{id}/joined POST tracking). Stripped joined_by from response. Frontend: UpcomingRow now picks CTA via decision tree — slot_ended+both_joined → orange 'Provide feedback' button (routes to /professional/slots so existing completion modal handles rating/feedback/proof); slot_ended+!both_joined → disabled 'Completed' grey pill button; !slot_ended+join_enabled → original 'Join interview'; !slot_ended+!join_enabled → no button. Status pill text + colour updated accordingly (Awaiting Review / Completed / Ready / Booked). Lint clean."
+          comment: "Backend now returns slot_ended + both_joined booleans (derived from existing joined_by tracking, stripped from response). Frontend UpcomingRow picks CTA via decision tree (Join / Provide feedback / Completed-disabled / none) with matching status-pill colour."
+        - working: true
+          agent: "testing"
+          comment: "Iter37: backend 6/6 new + 56/56 regression PASS; frontend 3/3 scenarios PASS on mobile viewport. Future booked → Join; past + both joined → orange Provide feedback (routes to /professional/slots); past + no-show → disabled Completed."
     implemented: true
     working: true
     file: "/app/frontend/app/admin/jobs.tsx"
