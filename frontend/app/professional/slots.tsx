@@ -292,8 +292,14 @@ export default function ProSlots() {
             <Txt variant="small" style={{ color: colors.textSecondary, marginBottom: 12 }}>
               {completingSlot?.student_name} · {fmtRange(completingSlot || {})}
             </Txt>
+            <ScrollView
+              style={{ flexGrow: 0 }}
+              contentContainerStyle={{ paddingBottom: 8 }}
+              showsVerticalScrollIndicator={true}
+              keyboardShouldPersistTaps="handled"
+            >
             <Txt variant="label" style={{ marginBottom: 6 }}>Score (1–10)</Txt>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }} contentContainerStyle={{ paddingVertical: 2 }}>
               {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
                 <TouchableOpacity
                   key={n}
@@ -347,6 +353,7 @@ export default function ProSlots() {
                 </TouchableOpacity>
               </View>
             )}
+            </ScrollView>
 
             <View style={{ height: 8 }} />
             <View style={{ flexDirection: "row", gap: 8 }}>
@@ -385,9 +392,9 @@ export default function ProSlots() {
 const styles = StyleSheet.create({
   pill: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
   modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "flex-end" },
-  modalSheet: { backgroundColor: colors.bg, padding: 20, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: "85%" },
-  rateBtn: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceAlt, marginRight: 8 },
-  rateBtnActive: { backgroundColor: "#7C3AED" },
+  modalSheet: { backgroundColor: colors.bg, padding: 20, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: "90%" },
+  rateBtn: { minWidth: 44, height: 44, paddingHorizontal: 10, borderRadius: 22, alignItems: "center", justifyContent: "center", backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.border, marginRight: 8 },
+  rateBtnActive: { backgroundColor: "#7C3AED", borderColor: "#7C3AED" },
   uploadBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 12, borderRadius: radius.lg, borderWidth: 1 },
   proofBox: { position: "relative", marginBottom: 8 },
   proofImg: { width: "100%", height: 160, borderRadius: radius.lg, backgroundColor: colors.surfaceAlt },

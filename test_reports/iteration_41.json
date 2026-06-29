@@ -1,0 +1,33 @@
+{
+  "summary": "Iter41 frontend-only verification of the two 'Rate the candidate' modal bug fixes on /professional/slots. Seeded a pro+student pair with a booked slot back-dated to (now-2h .. now-1h) via /app/test_reports/seed_iter41_ui.py. Logged into the web preview at 414x896, navigated to /professional/slots, tapped complete-{slot_id} and validated the modal. BUG 1 (invisible score row) FIXED — all 10 round buttons rating-1 … rating-10 render at 44x44 with bg=rgb(255,255,255) and grey border rgb(229,231,235); inactive contrast against cream modal bg (#FDFBF7) is clear. ratingValue defaults to 8 → rating-8 is purple bg=rgb(124,58,237). Tapping rating-7 correctly transitions it to purple. BUG 2 (action row pushed off-screen after proof attach) FIXED — submit-complete bounding box remained at y=798 (height=52) within viewport_h=896 BOTH before AND after attaching a PNG via pick-image; ScrollView wrapper + outer pinned action row works as designed. End-to-end submit flow also green: Mark Done · +35 → ConfirmDialog 'Submit Interview Feedback?' → Submit → backend POST /api/interviews/{id}/complete 200 → slot removed from list → success popup 'Interview Completed Successfully. 35 Credits have been added to your wallet.' Result: 3/3 PASS. Backend smoke skipped per request — no backend code change since iter37/iter38 regression suites (both 100% green there).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/seed_iter41_ui.py",
+    "/tmp/iter41_seed.json",
+    "/tmp/iter41_slots_list.png",
+    "/tmp/iter41_modal_open.png",
+    "/tmp/iter41_after_proof.png",
+    "/tmp/iter41_confirm.png",
+    "/tmp/iter41_after_submit.png"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "styles.rateBtn now uses colors.surface (#FFFFFF) + 1.5px colors.border which gives clear contrast against the cream modalSheet bg (colors.bg #FDFBF7) — root cause of BUG 1 addressed.",
+    "Modal body is wrapped in ScrollView with flexGrow:0 + paddingBottom:8 + keyboardShouldPersistTaps='handled'. Cancel + Mark Done row + caption sit OUTSIDE the ScrollView, pinned below — confirmed by submit-complete box staying at y=798 regardless of proof preview height.",
+    "modalSheet maxHeight bumped 85%→90% provides extra breathing room for the proof preview.",
+    "Minor (non-blocking): Txt inside rateBtn uses inline color but the TouchableOpacity's computed color via getComputedStyle reports rgb(0,0,0) because color cascades from the child Text node — visual is correct (white on purple for active, dark on white for inactive). No code change needed."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "skipped (no backend code changed since iter38 — regression remained 100% green)", "frontend": "100% (3/3: BUG 1 score row visible/tappable+color toggle, BUG 2 action row stays in viewport pre+post proof, end-to-end submit awards 35 credits + slot removed)"},
+  "seed_data_creation": "/app/test_reports/seed_iter41_ui.py creates a pro+student via /auth/signup+/auth/verify-otp, then inserts a booked interview_slots doc with start_at=now-2h and end_at=now-1h tagged _test_marker='iter41_ui'. Output: /tmp/iter41_seed.json (pro token + slot_id).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "To repro: (1) python /app/test_reports/seed_iter41_ui.py; (2) inject localStorage referme_token=JSON.stringify(token) and referme_user=JSON.stringify(JSON.stringify(user)) (double stringify because api.ts stringifies before AsyncStorage which also stringifies); (3) goto /professional/slots; (4) click [data-testid=\"complete-{slot_id}\"]; (5) for proof upload use page.expect_file_chooser() + fc.set_files(png_path) on click of [data-testid=\"pick-image\"]. The 10 rating buttons live inside a horizontal ScrollView so 1-7 are visible at 414px wide and 8-10 reachable by horizontal swipe — that is by design, not a bug. submit-complete stays pinned at y≈798 in a 896px viewport.",
+  "rca_of_issue": "BUG 1 RCA: rateBtn previously used backgroundColor:colors.surfaceAlt (#F3F4F6) which is near-identical to colors.bg (#FDFBF7) on the modal sheet, making the 1-10 row visually disappear. Fix switched to colors.surface (#FFFFFF) + 1.5px colors.border. BUG 2 RCA: modalSheet had maxHeight:85% with no inner scroll, so once the 160px proof image preview rendered the Cancel/Mark Done row was clipped past the bottom edge. Fix wraps only the body content in a ScrollView (flexGrow:0 keeps it from filling the sheet) and keeps the action row + helper caption OUTSIDE the ScrollView as a fixed footer, plus bumps maxHeight to 90%."
+}
