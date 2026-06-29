@@ -125,18 +125,21 @@ backend:
 
   - task: "Unified read-only field appearance across profile screens (Input + Picker)"
     implemented: true
-    working: "NA"
+    working: true
     file: "/app/frontend/src/components/Input.tsx, /app/frontend/src/components/Picker.tsx"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
         - working: false
           agent: "main"
-          comment: "User reported (with screenshot) that on Pro + Student profile screens after Save, Input fields (Company Name, Designation, etc.) and Picker fields (Gender, Education, Location) render differently in read-only mode. Specifically: 'Company Name' Input field rendered with white background + red border (focus+error styling) while 'Designation' was a flat grey pill; Picker values were grey/secondary while Input values were dark — inconsistent premium feel."
+          comment: "Pro+Student profile read-only mode rendered Input (Company Name) with white-bg + red border (focus+error styling leaking), Picker values in light textSecondary — inconsistent vs flat grey pill of other fields."
         - working: "NA"
           agent: "main"
-          comment: "Root cause: Input component had no read-only style branch — when editable=false, focus state could still trigger white-bg + primary-border, and error state painted red. Picker showed value text in textSecondary even when a saved value existed (and chevron hidden when disabled was working but the colour mismatch broke parity). Fix: (a) Input now detects editable===false → forces flat surfaceAlt pill, transparent border, skips focus/error styling, hides the eye-toggle on secure read-only fields, hides the inline error caption — matches Picker.boxDisabled exactly. (b) Picker renders the selected value in textPrimary when disabled (so saved values look identical to Input values); falls back to '—' instead of placeholder when disabled with no value, since placeholders only make sense in edit mode. Both files lint-clean. No backend changes."
+          comment: "Input: editable===false now forces flat surfaceAlt pill, skips focus/error styles, hides eye-toggle + error caption. Picker: disabled state renders value in textPrimary (dark) and uses '—' instead of placeholder when empty."
+        - working: true
+          agent: "testing"
+          comment: "Iter42: Pro /profile in read-only — all 8 fields render identical flat pill (bg=rgb(243,244,246), transparent border). Tap on read-only Company Name no longer triggers focus styling. Edit mode re-enables focus/active behaviour. Picker chevron hidden when disabled, eye-toggle hidden on secure read-only. Student /profile uses the same shared components, smoke-confirmed identical. No backend impact."
     implemented: true
     working: true
     file: "/app/frontend/app/professional/slots.tsx"
