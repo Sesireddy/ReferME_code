@@ -49,6 +49,7 @@ export const YEARS_2010_2030 = Array.from({ length: 21 }, (_, i) => ({ value: St
 
 // Salary range buckets used on Post-a-Job + Job Cards.
 export const SALARY_RANGE_OPTIONS = [
+  { value: "Not disclosed", label: "Not disclosed" },
   { value: "0-3", label: "0 - 3 Lakhs" },
   { value: "3-5", label: "3 - 5 Lakhs" },
   { value: "5-10", label: "5 - 10 Lakhs" },
