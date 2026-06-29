@@ -41,8 +41,8 @@ export function Picker<T extends string | number>({
         onPress={() => !disabled && setOpen(true)}
         style={[styles.box, disabled ? styles.boxDisabled : null]}
       >
-        <Txt style={{ flex: 1, color: current ? colors.textPrimary : colors.textSecondary, fontSize: 16 }}>
-          {current ? current.label : placeholder}
+        <Txt style={{ flex: 1, color: current ? colors.textPrimary : (disabled ? colors.textPrimary : colors.textSecondary), fontSize: 16 }}>
+          {current ? current.label : (disabled ? "—" : placeholder)}
         </Txt>
         {!disabled ? <Ionicons name="chevron-down" size={20} color={colors.textSecondary} /> : null}
       </TouchableOpacity>

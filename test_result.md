@@ -123,7 +123,20 @@ backend:
           agent: "testing"
           comment: "Iter30 regression: 22/22 new tests pass. /api/interviews/{slots,book,my-bookings,joined,complete} all behaviour-neutral vs pre-refactor. /api/jobs/apply path that calls _can_use_free now works (used_free=true for free-pool users, -49 credits otherwise). Phase A endpoints (referrals + leaderboard) still 200. Pre-existing iter13 phone-gate fixture failures are unrelated to this refactor."
 
-  - task: "Pro Rate-Candidate modal — visible 1-10 score buttons + Mark Done reachable after proof upload"
+  - task: "Unified read-only field appearance across profile screens (Input + Picker)"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/src/components/Input.tsx, /app/frontend/src/components/Picker.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: false
+          agent: "main"
+          comment: "User reported (with screenshot) that on Pro + Student profile screens after Save, Input fields (Company Name, Designation, etc.) and Picker fields (Gender, Education, Location) render differently in read-only mode. Specifically: 'Company Name' Input field rendered with white background + red border (focus+error styling) while 'Designation' was a flat grey pill; Picker values were grey/secondary while Input values were dark — inconsistent premium feel."
+        - working: "NA"
+          agent: "main"
+          comment: "Root cause: Input component had no read-only style branch — when editable=false, focus state could still trigger white-bg + primary-border, and error state painted red. Picker showed value text in textSecondary even when a saved value existed (and chevron hidden when disabled was working but the colour mismatch broke parity). Fix: (a) Input now detects editable===false → forces flat surfaceAlt pill, transparent border, skips focus/error styling, hides the eye-toggle on secure read-only fields, hides the inline error caption — matches Picker.boxDisabled exactly. (b) Picker renders the selected value in textPrimary when disabled (so saved values look identical to Input values); falls back to '—' instead of placeholder when disabled with no value, since placeholders only make sense in edit mode. Both files lint-clean. No backend changes."
     implemented: true
     working: true
     file: "/app/frontend/app/professional/slots.tsx"

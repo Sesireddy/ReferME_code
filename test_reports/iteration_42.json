@@ -1,0 +1,32 @@
+{
+  "summary": "Iter42 frontend-only verification of the uniform read-only field appearance fix on /professional/profile and smoke /student/profile. Seeded a saved professional (and student) via /app/test_reports/seed_iter42_ui.py, injected localStorage auth, navigated to /professional/profile at 414x896. All 8 read-only fields rendered as IDENTICAL flat pills: backgroundColor=rgb(243,244,246) (=colors.surfaceAlt #F3F4F6), borderTopColor=rgba(0,0,0,0) (transparent), borderWidth=2px (transparent => invisible). NO field had a white background. NO field had a red/purple visible border. Picker values (Gender='Male', Education=\"Bachelor's\", Years='5 Years') rendered with dark textPrimary colour and chevron HIDDEN (hasChevron=False) and ariaDisabled='true' + pointerEvents='none' when disabled. Empty Picker (Current Location — Bengaluru not in METRO_CITIES list, fell to __OTHER__/empty) correctly displayed '—' em-dash NOT the 'Select city' placeholder. Clicking the Company Name Input while in read-only DID NOT trigger focus styling — bg stayed rgb(243,244,246), border stayed transparent. After tapping the 'Edit Profile' button (testID=edit-profile-btn), all fields re-enabled: Pickers became tappable (opacity 0.55 → 1, ariaDisabled removed, chevron returned), Inputs gained focus capability — and focusing Company Name correctly switched to bg=rgb(255,255,255) + borderColor=rgb(255,90,95) (=colors.primary #FF5A5F). Eye-toggle hidden branch verified by code review (secure && !isReadOnly). Student page: visual smoke OK — the same shared Input/Picker components render identically (bg=rgb(243,244,246), transparent border, value text dark). Could not test student's read-only TRANSITION because the seeded student's profile_complete remained false (student schema needs resume too) so page opened in Edit Mode — not a fix-related issue. Backend smoke implicit: /auth/me + /profile responses 200 throughout (see backend logs in supervisor — last 4 requests all 200).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/seed_iter42_ui.py",
+    "/tmp/iter42_seed.json",
+    "/tmp/iter42_pro_readonly.png",
+    "/tmp/iter42_pro_editmode.png",
+    "/tmp/iter42_pro_edit_focused.png",
+    "/tmp/iter42_stu_readonly.png"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Input.tsx — readOnly branch (lines 25, 32-34, 77-80) correctly short-circuits both focus and error styling when editable===false. Wrapper computed style confirmed: bg=#F3F4F6, borderColor=transparent. ✓",
+    "Picker.tsx — disabled branch renders chevron-down only when !disabled (line 47) ✓; value Txt color uses textPrimary when disabled (line 44) ✓; falls back to '—' em-dash instead of placeholder when current is null and disabled (line 45) ✓. boxDisabled opacity=0.55 gives a subtle disabled cue without breaking the flat-pill look.",
+    "Input.tsx — eye-toggle hidden when isReadOnly (line 52: `secure && !isReadOnly`) ✓ — covers secure read-only edge case even though no such field exists on profile screens.",
+    "Note: colors.primary is #FF5A5F (red) — the request description called the focus border 'purple', but the codebase has red as the global primary and purple (#7C3AED) reserved as the professional role accent. Focus uses colors.primary so the focused border is RED not purple. This is consistent with the rest of the app and is not a defect."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "skipped (no backend code touched)", "frontend": "100% on Professional (8/8 fields uniform grey pill in read-only, focus correctly suppressed on click, edit-mode re-enables + focus styling returns). Student smoke OK (shared components verified identical visual)."},
+  "seed_data_creation": "/app/test_reports/seed_iter42_ui.py — signup+verify-otp a professional (acmecorp.io) and a student, then PUT /api/profile with literal-compliant payloads (gender lowercase, preferred_role='experienced', currently_working='no', notice_period='1m', annual_salary='5-10'). Output: /tmp/iter42_seed.json.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "To repro on Pro side: python /app/test_reports/seed_iter42_ui.py → load preview URL once → inject localStorage referme_token=JSON.stringify(token) and referme_user=JSON.stringify(JSON.stringify(user)) (double-stringify; first by api.ts on save, second by web AsyncStorage adapter) → goto /professional/profile → assert computed bg of each field wrapper === 'rgb(243, 244, 246)' and borderTopColor === 'rgba(0, 0, 0, 0)'. Use the Input testIDs (name,company,designation,skills) which sit on the inner TextInput so walk parentElement chain until a non-transparent bg is found. Picker testIDs (gender,education,years,location) sit on the outer TouchableOpacity so getComputedStyle directly applies. For student read-only: must satisfy ALL backend student schema (including resume_url) for profile_complete=true — current seed leaves it at false so student lands in Edit Mode.",
+  "rca_of_issue": "Original defect: Input.tsx's wrap style stack used to apply focus (purple/red border + white bg) and error (red border) styles unconditionally — even when editable={false}. Concurrently, Picker disabled state coloured the value with textSecondary (light grey) and still displayed the original placeholder when value was empty, so Pickers visually disagreed with Inputs in read-only mode (grey-with-light-text vs grey-with-dark-text or, worse, red-bordered if focus+error stuck). Fix in Input.tsx: derive isReadOnly = props.editable===false and gate focus/error style application; add readOnly style block that explicitly resets to surfaceAlt+transparent border. Fix in Picker.tsx: use textPrimary for value when disabled, em-dash for missing value, and hide chevron when disabled. Verified visually + computationally — all 8 fields now render identical flat pills in read-only and correctly switch styling on Edit toggle."
+}

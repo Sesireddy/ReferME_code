@@ -19,14 +19,19 @@ export function Input({
 }: TextInputProps & { label?: string; error?: string; secure?: boolean; testID?: string }) {
   const [focus, setFocus] = useState(false);
   const [hide, setHide] = useState(!!secure);
+  // Read-only inputs should never adopt focus styling — they should look like
+  // a flat pill identical to a disabled Picker so the saved profile reads as
+  // a single premium read-only surface across all field types.
+  const isReadOnly = props.editable === false;
   return (
     <View style={{ marginBottom: 14 }}>
       {label ? <Txt variant="label" style={{ marginBottom: 6 }}>{label}</Txt> : null}
       <View
         style={[
           styles.wrap,
-          focus ? styles.focus : null,
-          error ? styles.error : null,
+          !isReadOnly && focus ? styles.focus : null,
+          !isReadOnly && error ? styles.error : null,
+          isReadOnly ? styles.readOnly : null,
         ]}
       >
         <TextInput
@@ -44,13 +49,13 @@ export function Input({
           }}
           style={[styles.input, props.style]}
         />
-        {secure ? (
+        {secure && !isReadOnly ? (
           <TouchableOpacity onPress={() => setHide((p) => !p)} hitSlop={10}>
             <Ionicons name={hide ? "eye-off" : "eye"} size={20} color={colors.textSecondary} />
           </TouchableOpacity>
         ) : null}
       </View>
-      {error ? <Txt variant="small" style={{ color: colors.error, marginTop: 4 }}>{error}</Txt> : null}
+      {error && !isReadOnly ? <Txt variant="small" style={{ color: colors.error, marginTop: 4 }}>{error}</Txt> : null}
     </View>
   );
 }
@@ -68,6 +73,11 @@ const styles = StyleSheet.create({
   },
   focus: { borderColor: colors.primary, backgroundColor: colors.surface },
   error: { borderColor: colors.error },
+  // Identical surface to Picker.boxDisabled — flat pill, no border, primary text.
+  readOnly: {
+    borderColor: "transparent",
+    backgroundColor: colors.surfaceAlt,
+  },
   input: {
     flex: 1,
     color: colors.textPrimary,
