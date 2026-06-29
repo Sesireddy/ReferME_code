@@ -125,18 +125,21 @@ backend:
 
   - task: "Pro Rate-Candidate modal — visible 1-10 score buttons + Mark Done reachable after proof upload"
     implemented: true
-    working: "NA"
+    working: true
     file: "/app/frontend/app/professional/slots.tsx"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
         - working: false
           agent: "main"
-          comment: "User reported (with screenshots) that on Pro Interviews → Mark Done → 'Rate the candidate' modal: (1) score 1-10 buttons not visible (just empty space below 'Score (1-10)' label); (2) after attaching the interview proof screenshot, Mark Done button gets pushed below the viewport because modal sheet has maxHeight 85% with NO inner scroll."
+          comment: "User reported (with screenshots): (1) 1-10 score buttons invisible in 'Rate the candidate' modal; (2) Mark Done · +35 button pushed below viewport after attaching the interview proof screenshot."
         - working: "NA"
           agent: "main"
-          comment: "Root causes identified by inspection: (1) score buttons used colors.surfaceAlt (#F3F4F6) against modal bg colors.bg (#FDFBF7) — near-zero contrast, buttons effectively invisible against the cream sheet; (2) modalSheet was a static View with no ScrollView wrapper, so a 160px proof image pushed the Cancel/Mark Done row beyond the 85% sheet height with no way to scroll. FIX: (a) rateBtn now uses colors.surface (white) + 1.5px colors.border outline so digits pop against the cream bg; rateBtnActive keeps purple + matching purple border (clear active state); minWidth: 44 + paddingHorizontal: 10 so '10' fits without ellipsis. (b) wrapped the scrollable body (score + feedback + proof picker/preview) inside a ScrollView with flexGrow:0 + paddingBottom:8 + keyboardShouldPersistTaps='handled'; Cancel/Mark Done action row + helper text remain pinned BELOW the ScrollView so they are always visible regardless of proof size. modalSheet maxHeight bumped 85% → 90% for a bit more breathing room. Lint clean."
+          comment: "Root causes: (1) buttons used colors.surfaceAlt (#F3F4F6) → near-zero contrast on cream modal (#FDFBF7); (2) modal sheet had maxHeight 85% with no inner ScrollView. Fix: rateBtn now white + 1.5px border; modal body wrapped in inner ScrollView while Cancel/Mark Done row stays pinned outside; maxHeight bumped 85%→90%."
+        - working: true
+          agent: "testing"
+          comment: "Iter41 frontend 3/3 PASS @ 414x896. Score row renders 10 visible buttons; active turns purple; submit-complete stays at y=798 (height=52) within viewport_h=896 both before and after PNG proof attach; end-to-end Mark Done → ConfirmDialog → POST /api/interviews/{id}/complete 200 → slot disappears → '35 Credits added' success popup. No regressions."
     implemented: true
     working: true
     file: "/app/backend/routers/interviews.py, /app/frontend/app/student/my-mock-interviews.tsx, /app/frontend/app/professional/my-mock-interviews.tsx, /app/frontend/src/lib/webSafeAlert.ts"
