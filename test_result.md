@@ -125,11 +125,11 @@ backend:
 
   - task: "Student My Mock Interviews — show View feedback whenever pro submitted feedback (legacy slot fix) + send Resend feedback email to candidate"
     implemented: true
-    working: "NA"
+    working: true
     file: "/app/backend/routers/interviews.py, /app/frontend/app/student/my-mock-interviews.tsx"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
         - working: false
           agent: "main"
@@ -137,8 +137,15 @@ backend:
         - working: "NA"
           agent: "main"
           comment: "Two changes shipped. (1) FRONTEND: relaxed CompletedRow gating — canViewFeedback now equals hasFeedback only (status==='completed' AND rating/feedback present). Removed the both_joined requirement. So every completed booking with feedback now exposes the green 'View feedback' button + expandable rating/feedback panel. badgeText stays 'Reviewed' (green). The No-show branch still triggers only when status!=='completed' AND both_joined===false. (2) BACKEND: inside POST /api/interviews/{slot_id}/complete (after the student push-notification, before the pro aggregate), we now send the candidate a Resend email via send_html_email — premium HTML with score chip (Rating/10 + Resume score), interviewer name, formatted slot date, and the interviewer feedback safely HTML-escaped. Email subject: 'ReferME · Your mock interview feedback ({rating}/10)'. mock_purpose='mock_interview_feedback' so it logs cleanly when Resend is in mock mode. Wrapped in try/except so an email failure NEVER fails the /complete request. Added logger import to interviews.py (was missing). Lint clean on both files."
-    implemented: true
-    working: true
+        - working: false
+          agent: "testing"
+          comment: "Iter43: BE 2/3 + Resend OK log confirmed; FE shows View feedback button. BUT field-name mismatch — BE writes `candidate_feedback`, FE reads `b.feedback`. Panel rendered 'No written feedback was provided.' italic fallback instead of the real text. Suggested 1-line backend alias."
+        - working: "NA"
+          agent: "main"
+          comment: "Added one-line alias inside list_my_bookings: if s.get('candidate_feedback') and not s.get('feedback'): s['feedback'] = s['candidate_feedback']. Backwards-compatible (both keys exposed). Backend reloaded cleanly."
+        - working: true
+          agent: "testing"
+          comment: "Iter43 retest 15/15 PASS. BE: my-bookings now exposes feedback alias; test_iter43_feedback_email 3/3; iter32+37+38 regression 12/12. FE: View feedback panel renders the real paragraph + 8/10 rating chip on completed bookings; italic fallback only when feedback genuinely empty. Resend OK log confirmed."
     file: "/app/frontend/src/components/Input.tsx, /app/frontend/src/components/Picker.tsx"
     stuck_count: 0
     priority: "high"
