@@ -392,6 +392,11 @@ async def my_bookings(
         s["both_joined"] = bool(student_id) and (s["pro_id"] in joined_by) and (student_id in joined_by)
         # Strip the internal joined_by list from the response (not needed by clients)
         s.pop("joined_by", None)
+        # Alias the candidate_feedback field to `feedback` so existing student/pro
+        # clients (which read b.feedback) display the written feedback in their
+        # "View feedback" panels. Backwards-compatible: we keep the original key too.
+        if s.get("candidate_feedback") and not s.get("feedback"):
+            s["feedback"] = s["candidate_feedback"]
         out.append(s)
     return out
 

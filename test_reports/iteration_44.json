@@ -1,0 +1,49 @@
+{
+  "summary": "Iter43 retest after the one-line BE alias inside list_my_bookings (routers/interviews.py L395-399). All checks PASS. (1) Backend test_iter43_feedback_email.py is now 3/3 PASS (previously 2/3 — the 3rd test asserted `'feedback' in row` which is now satisfied via the alias). (2) Regression suites iter32 + iter37 + iter38 = 12/12 PASS unchanged. (3) Direct curl of GET /api/interviews/my-bookings?upcoming_only=false for a student with a slot containing ONLY `candidate_feedback` (no `feedback` key) returns BOTH fields populated identically — alias is correct and backwards-compat is preserved. (4) FE web @ 414x896: logged in as seeded student, /student/my-mock-interviews → Completed tab. Tapping testID=view-feedback-<slotA> opens the panel and renders: Overall 8/10 chip + 'PROFESSIONAL FEEDBACK' label + the full 'Solid SQL fundamentals…' paragraph — NOT the italic fallback. (5) For Scenario B (status=completed, candidate_rating=8, both feedback/candidate_feedback null), the panel correctly shows the rating chip + the italic 'No written feedback was provided.' fallback. (6) Resend OK log line 'Resend OK to=...@referme.io subject=ReferME · Your mock interview feedback (8/10) id=...' verified in /var/log/supervisor/backend.err.log during the pytest run. The iter43 user-reported defect ('View feedback' panel showing italic fallback even when pro wrote feedback) is FULLY FIXED. No new latent field-name mismatches spotted in my-bookings hydration.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "View (style.pointerEvents)", "issue": "Console still warns: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Pre-existing, carried over from iter42/iter43 — not introduced by the alias fix."},
+      {"component": "shadow* style props", "issue": "Console warns 'shadow* style props are deprecated. Use boxShadow'. Pre-existing, not iter43-specific."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter43_feedback_email.py",
+    "/app/test_reports/pytest/pytest_iter43_retest.xml",
+    "/app/test_reports/pytest/pytest_iter43_regression_retest.xml",
+    "/app/test_reports/seed_iter43b_ui.py",
+    "/tmp/iter43b_seed.json",
+    "/tmp/iter43b_completed_tab.png",
+    "/tmp/iter43b_panel_A_open.png",
+    "/tmp/iter43b_panel_B_open.png"
+  ],
+  "action_items": [
+    "No new action items for the alias fix itself — it's working as intended end-to-end.",
+    "Carry-over from iter43 (still open, low priority): bump testID=view-feedback-{id} touchable minHeight from 42px to 44px to meet the 44pt mobile touch-target guideline.",
+    "Carry-over (low): migrate 'props.pointerEvents' (likely in shared Picker/Input) to style.pointerEvents to clear the RN console warning.",
+    "Optional: consider also exposing `proof_screenshot` ONLY to the pro role (currently /interviews/my-bookings already withholds it from students — iter25 contract still satisfied, verified in test_iter43_feedback_email.py L181)."
+  ],
+  "critical_code_review_comments": [
+    "routers/interviews.py L395-399 alias is correctly placed AFTER joined_by is popped and is gated by `if s.get('candidate_feedback') and not s.get('feedback')` — so it (a) only triggers when source data exists, (b) never overwrites a legitimately distinct `feedback` field, (c) keeps `candidate_feedback` on the wire too for backwards compat. Clean, minimal, and correctly applied uniformly to BOTH the student-role and the pro-role response branches because it's after the role split. Verified by direct curl: scenario-A row contained both keys with identical text.",
+    "No symmetric mismatch found for `candidate_rating` — FE my-mock-interviews.tsx reads b.candidate_rating directly, and BE stores it under that exact key. ✓",
+    "No symmetric mismatch found for `proof_screenshot` either — already only present on the pro-side response (intentional per iter25). ✓"
+  ],
+  "updated_files": [
+    "/app/test_reports/seed_iter43b_ui.py (new — retest seed that drops `feedback=` to truly exercise the alias)"
+  ],
+  "success_rate": {
+    "backend": "iter43 own: 3/3 (100%). Regression iter32+iter37+iter38: 12/12 (100%).",
+    "frontend": "2/2 retest scenarios PASS. Scenario A: Overall 8/10 chip + Professional Feedback label + full paragraph rendered. Scenario B: rating chip + italic fallback rendered (expected)."
+  },
+  "seed_data_creation": "/app/test_reports/seed_iter43b_ui.py — creates a fresh pro + student and 2 slots: (A) status=completed, joined_by=[], candidate_rating=8, candidate_feedback set, feedback NOT set (this is the key shape /complete actually persists). (B) status=completed, candidate_rating=8, both feedback fields null. Writes /tmp/iter43b_seed.json with tokens. Cleanup of '_test_marker':'iter43b_ui' slots performed after the run.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter43 is fully closed. The /api/interviews/my-bookings response now reliably exposes `feedback` regardless of whether the source doc has the legacy `feedback` key or only the canonical `candidate_feedback` key written by /complete. If a future iteration adds Technical/Communication sub-ratings, watch out for the same pattern — FE currently hardcodes those chips to null placeholders. No regressions detected in iter32/37/38 suites.",
+  "rca_of_issue": "Original defect (1-line summary): the FE my-mock-interviews CompletedRow read `b.feedback` while the BE /complete persisted the written feedback under `candidate_feedback`, so the View feedback panel showed the italic 'No written feedback was provided.' fallback even when feedback existed. Fix: alias `candidate_feedback → feedback` inside list_my_bookings hydration (routers/interviews.py L395-399). Verified: (a) direct curl returns both keys populated; (b) FE panel now renders the full paragraph; (c) backwards-compat preserved (candidate_feedback still on the wire); (d) no regression in 15 existing tests."
+}
