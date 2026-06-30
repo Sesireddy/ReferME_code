@@ -123,7 +123,20 @@ backend:
           agent: "testing"
           comment: "Iter30 regression: 22/22 new tests pass. /api/interviews/{slots,book,my-bookings,joined,complete} all behaviour-neutral vs pre-refactor. /api/jobs/apply path that calls _can_use_free now works (used_free=true for free-pool users, -49 credits otherwise). Phase A endpoints (referrals + leaderboard) still 200. Pre-existing iter13 phone-gate fixture failures are unrelated to this refactor."
 
-  - task: "Unified read-only field appearance across profile screens (Input + Picker)"
+  - task: "Student My Mock Interviews — show View feedback whenever pro submitted feedback (legacy slot fix) + send Resend feedback email to candidate"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/routers/interviews.py, /app/frontend/app/student/my-mock-interviews.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: false
+          agent: "main"
+          comment: "User reported (with screenshot of a 'Sesi · sql, plsql · 16 Jun 2026' booking on Student → My Mock Interviews → Completed tab) that even though the slot's status='completed' (badge shows 'Completed', NOT 'No-show') and the pro had clearly submitted feedback, the card only shows a disabled 'Completed' button — no way to View the rating/feedback. Root cause: iter38 added a `both_joined` requirement which the joined_by array on older completed bookings does not satisfy (join tracking was added in iter37 after these bookings were completed). User also wants a Resend email to the candidate with the rating + feedback whenever the pro marks an interview complete."
+        - working: "NA"
+          agent: "main"
+          comment: "Two changes shipped. (1) FRONTEND: relaxed CompletedRow gating — canViewFeedback now equals hasFeedback only (status==='completed' AND rating/feedback present). Removed the both_joined requirement. So every completed booking with feedback now exposes the green 'View feedback' button + expandable rating/feedback panel. badgeText stays 'Reviewed' (green). The No-show branch still triggers only when status!=='completed' AND both_joined===false. (2) BACKEND: inside POST /api/interviews/{slot_id}/complete (after the student push-notification, before the pro aggregate), we now send the candidate a Resend email via send_html_email — premium HTML with score chip (Rating/10 + Resume score), interviewer name, formatted slot date, and the interviewer feedback safely HTML-escaped. Email subject: 'ReferME · Your mock interview feedback ({rating}/10)'. mock_purpose='mock_interview_feedback' so it logs cleanly when Resend is in mock mode. Wrapped in try/except so an email failure NEVER fails the /complete request. Added logger import to interviews.py (was missing). Lint clean on both files."
     implemented: true
     working: true
     file: "/app/frontend/src/components/Input.tsx, /app/frontend/src/components/Picker.tsx"

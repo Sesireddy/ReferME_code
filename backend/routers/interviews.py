@@ -2,7 +2,10 @@
 
 URLs and behaviour preserved. Imports shared helpers + Pydantic models from server.
 """
+import logging
 from datetime import datetime, timedelta, timezone
+
+logger = logging.getLogger(__name__)
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -474,6 +477,45 @@ async def complete_interview(
             f"Your interviewer rated you {body.rating}/10. Resume score: {new_score}/100.",
             "success",
         )
+        # Send the candidate an email with the rating + written feedback so they
+        # can review it asynchronously. Resend handles throttling globally.
+        try:
+            student_email = student.get("email")
+            if student_email:
+                pro_name = (pro.get("name") if (pro := await db.users.find_one({"id": u["id"]}, {"_id": 0, "name": 1, "profile": 1})) else None) or "Your interviewer"
+                _slot_when = ""
+                try:
+                    _slot_when = datetime.fromisoformat((slot.get("start_at") or "").replace("Z", "+00:00")).strftime("%a, %d %b %Y · %H:%M UTC")
+                except Exception:
+                    _slot_when = slot.get("start_at", "")
+                _safe_feedback = (body.feedback or "").strip().replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>")
+                _feedback_subject = f"ReferME · Your mock interview feedback ({body.rating}/10)"
+                _feedback_html = f"""
+<div style=\"font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; color: #111\">
+  <h2 style=\"margin: 0 0 4px; color: #7C3AED\">Your mock interview feedback is in 🎓</h2>
+  <p style=\"margin: 0 0 16px; color: #555\">Interview on <b>{_slot_when}</b> with <b>{pro_name}</b>.</p>
+  <div style=\"background: linear-gradient(135deg, #7C3AED 0%, #F59E0B 100%); padding: 1px; border-radius: 16px; margin-bottom: 16px\">
+    <div style=\"background: #fff; border-radius: 15px; padding: 18px; text-align: center\">
+      <div style=\"font-size: 14px; color: #6b7280; letter-spacing: 1px\">SCORE</div>
+      <div style=\"font-size: 48px; font-weight: 800; color: #7C3AED; line-height: 1\">{body.rating}<span style=\"font-size: 22px; color: #6b7280\">/10</span></div>
+      <div style=\"font-size: 14px; color: #10B981; margin-top: 6px\">Resume score updated to {new_score}/100</div>
+    </div>
+  </div>
+  <h3 style=\"margin: 16px 0 6px\">Interviewer Feedback</h3>
+  <div style=\"background: #F3F4F6; border-radius: 12px; padding: 14px; line-height: 1.55; color: #111\">{_safe_feedback}</div>
+  <p style=\"margin: 18px 0 0; color: #6b7280; font-size: 13px\">Open the ReferME app → Profile → My Mock Interviews → Completed to view this anytime. Keep practising — every mock raises your Talent Potential Score.</p>
+  <p style=\"margin: 18px 0 0; color: #9ca3af; font-size: 12px\">— Team ReferME</p>
+</div>
+"""
+                await send_html_email(
+                    student_email,
+                    _feedback_subject,
+                    _feedback_html,
+                    mock_purpose="mock_interview_feedback",
+                    fallback_text=f"Your mock interview rating: {body.rating}/10. Feedback: {body.feedback.strip()}",
+                )
+        except Exception as _e:
+            logger.warning("Mock interview feedback email failed: %s", _e)
     # Aggregate pro rating: store running average and total ratings count
     pro = await db.users.find_one({"id": u["id"]}, {"_id": 0})
     prev_count = int(pro.get("ratings_count") or 0)

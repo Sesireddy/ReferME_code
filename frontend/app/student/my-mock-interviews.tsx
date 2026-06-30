@@ -186,11 +186,12 @@ function UpcomingRow({ b, onJoin }: { b: Booking; onJoin: () => void }) {
 }
 
 function CompletedRow({ b }: { b: Booking }) {
-  // Spec: enabled "View feedback" only when (a) the slot was actually completed by the pro
-  // (status === 'completed') — which implies feedback exists — AND (b) both parties joined.
-  // For everything else (no-show, or pro never marked completed), show disabled "Completed".
+  // Spec: as soon as the pro has submitted real feedback (status='completed' and a
+  // rating/feedback field is present) the student should be able to view it. We no
+  // longer require `both_joined` here because join-tracking was added later and old
+  // completed bookings legitimately lack that data even though feedback exists.
   const hasFeedback = b.status === "completed" && !!(b.feedback || b.candidate_rating != null);
-  const canViewFeedback = hasFeedback && !!b.both_joined;
+  const canViewFeedback = hasFeedback;
   const [open, setOpen] = useState(false);
 
   let badgeText = "Completed";

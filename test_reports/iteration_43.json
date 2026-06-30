@@ -1,0 +1,68 @@
+{
+  "summary": "Iter43 backend+frontend verification of (1) /interviews/{slot_id}/complete still returns 200 with all side effects, (2) candidate feedback email is dispatched via Resend after /complete, (3) the FE my-mock-interviews Completed tab simplified canViewFeedback=hasFeedback now correctly shows green Reviewed pill + View feedback button + expandable panel WITHOUT requiring both_joined. 12/12 regression tests (iter32+iter37+iter38) PASS. iter43 own suite: 2/3 PASS — the 3rd test deliberately surfaces a NEW critical bug: GET /api/interviews/my-bookings returns slot doc as-is, but the slot doc stores written feedback under the key `candidate_feedback` (see routers/interviews.py L437), while the student FE my-mock-interviews.tsx (L193, L247) reads `b.feedback`. So for any slot completed via the live /complete endpoint, the View feedback panel WILL show the rating chip (uses candidate_rating, which IS preserved) but the body of the panel will read 'No written feedback was provided.' — the exact end-user complaint that triggered this iteration. The FE-BE field-name mismatch was pre-existing; iter43's FE change uncovers it by finally surfacing the View feedback button. RESEND OK log line confirmed: 'Resend OK to=test_student_2d905a4d@referme.io subject=ReferME · Your mock interview feedback (8/10) id=4231f7e4-...' (see backend.err.log 13:46:22). Try/except guard also confirmed: with a malformed student email Resend raises ProviderError, /complete still returned 200 and slot still transitioned to completed.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "GET /api/interviews/my-bookings",
+        "issue": "Field-name mismatch with student FE. /complete writes slot doc field `candidate_feedback` (routers/interviews.py L437) but the my-bookings endpoint returns the doc as-is without aliasing to `feedback`. Student FE my-mock-interviews.tsx reads `b.feedback` (L193, L247) — so the View-feedback panel will show 'No written feedback was provided.' even when the pro DID submit feedback. Fix EITHER: (a) backend my-bookings: when role=student, copy `candidate_feedback` → `feedback` on the response (or alias it for both roles), OR (b) FE: read `b.candidate_feedback ?? b.feedback`. Backend-side aliasing is recommended because the iter43 PR description and the existing iter38 tests already assume `feedback` is the canonical wire-key.",
+        "priority": "CRITICAL"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Student → Completed tab → View feedback panel",
+        "issue": "Panel opens (canViewFeedback=true via b.candidate_rating!=null) and rating chip renders, but the written-feedback paragraph reads from b.feedback which the backend never returns under that key — so the user sees 'No written feedback was provided.' even when the pro wrote feedback. Same root cause as the backend critical issue above.",
+        "affected_testIDs": ["view-feedback-{slot_id}"]
+      }
+    ],
+    "design_issues": [
+      {
+        "screen": "/student/my-mock-interviews — Completed tab",
+        "issues": [
+          "View feedback button measured 340x42 — height is 42px (2px under the 44px minimum touch target). Card row itself provides tap-area context so usability is acceptable but bump button minHeight to 44 to be strict."
+        ]
+      }
+    ],
+    "react_native_issues": [
+      {"component": "View (style.pointerEvents)", "issue": "Console warned: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Likely from a shared component (Picker?) since iter42 also reported similar — not iter43-specific but worth migrating."},
+      {"component": "shadow* style props", "issue": "Console warned: '\"shadow*\" style props are deprecated. Use \"boxShadow\"'. Pre-existing, not iter43-introduced."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter43_feedback_email.py",
+    "/app/test_reports/pytest/pytest_iter43.xml",
+    "/app/test_reports/pytest/pytest_iter43_regression.xml",
+    "/app/test_reports/seed_iter43_ui.py",
+    "/tmp/iter43_seed.json",
+    "/tmp/iter43_completed_tab.png",
+    "/tmp/iter43_panel_open.png"
+  ],
+  "action_items": [
+    "CRITICAL: alias candidate_feedback → feedback in GET /api/interviews/my-bookings response (or read both keys in the FE). Without this, the iter43 FE change SURFACES the View feedback button but the panel body still says 'No written feedback was provided.' — i.e. the user-reported defect is NOT fully fixed.",
+    "Consider also aliasing in the Pro side response for consistency (pro UI currently doesn't render this field but symmetric naming reduces future drift).",
+    "Bump testID=view-feedback-{id} touchable minHeight to 44px (currently 42px) to satisfy the 44pt mobile touch-target guideline.",
+    "Track down which shared component emits 'props.pointerEvents is deprecated' (likely Picker.tsx disabled branch) and migrate to style.pointerEvents.",
+    "iter38 tests seed `feedback=` directly in Mongo and assert `item.get('feedback')` — those tests will keep PASSING even after this bug is fixed, but they should be updated to assert the field as it would be present after a real /complete call (candidate_feedback) to guard against this kind of drift."
+  ],
+  "critical_code_review_comments": [
+    "routers/interviews.py L431-440: /complete writes both `candidate_rating` (snake-case) AND `candidate_feedback`. The mismatch with the FE-expected key `feedback` is the root cause of the unfixed-feedback-body bug. A simple alias in my_bookings hydration would close the loop.",
+    "routers/interviews.py L482-518: feedback-email block is correctly wrapped in try/except, references `body.rating`, `body.feedback`, `new_score`, `_slot_when` — all defined in scope. HTML-escapes <,> and \\n→<br>. The `pro := await db.users.find_one(...)` walrus is fine inside the f-string scope. Subject line matches the spec verbatim ('ReferME · Your mock interview feedback ({rating}/10)'). No defects.",
+    "routers/interviews.py L519-538: pro aggregation block ALWAYS runs after the email try/except, but is OUTSIDE the `if student:` block. That means if the student lookup fails (shouldn't, but if find_one_and_update returns None — e.g. concurrent delete), the pro rating still gets bumped AND a pro push_notification is sent. Pre-existing, low risk.",
+    "frontend/app/student/my-mock-interviews.tsx L193: simplified canViewFeedback=hasFeedback now correctly accommodates legacy completed slots with empty joined_by — verified visually with the seeded scenario A (joined_by=[]). ✓",
+    "frontend/app/student/my-mock-interviews.tsx L202: the no-show branch is now only reachable when status!='completed' which is correct — a status='completed' slot can never display the 'No-show' badge. ✓"
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "iter43 own: 2/3 (66.7%) — the 1 fail is a real defect, not a test bug. Regression: 12/12 (100%) across iter32+iter37+iter38.",
+    "frontend": "3/3 scenarios visually verified (A=Reviewed+View feedback+open panel, B=disabled Completed for completed-no-feedback, C=No-show badge+disabled Completed). 100% UI behaviour matches the spec for THIS iteration's FE change. But the integration with backend feedback text is broken (see critical issue)."
+  },
+  "seed_data_creation": "/app/test_reports/seed_iter43_ui.py — creates a pro + student, then seeds 3 interview_slots directly in Mongo: (a) completed_with_feedback (status=completed, joined_by=[], BOTH `feedback` AND `candidate_feedback` populated, candidate_rating=8), (b) completed_no_feedback (status=completed, no feedback/rating), (c) no_show (status=booked, past, joined_by=[pro_only]). Outputs tokens + slot IDs to /tmp/iter43_seed.json. NOTE: scenario (a) deliberately writes BOTH key variants so the FE panel renders the text — to repro the FE-BE mismatch bug, drop the `feedback=` arg and only pass `candidate_feedback`.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "After the BE alias fix lands, re-run `pytest test_iter43_feedback_email.py` — the 3rd test asserts `'feedback' in row` so it will go green once the alias is added. Then re-run the FE seed without the `feedback=` field in seed scenario (a) and confirm the View feedback panel STILL shows the body text (will fail today, pass after fix). All other regression suites already green.",
+  "rca_of_issue": "Root cause of original user-reported defect (16-Jun-2026 'sql, plsql' Completed-tab card showing disabled Completed instead of View feedback): TWO layers. Layer 1 (which iter43 fixes) — FE gated canViewFeedback on `both_joined` which was empty for legacy slots predating join-tracking. Layer 2 (still UNFIXED) — even after iter43, the FE reads `b.feedback` while the backend persists+returns `candidate_feedback`, so the panel body still says 'No written feedback was provided.' This iter43 FE change correctly restores the View feedback BUTTON visibility, but a user opening that button on a legacy slot will see only the rating chip without the written feedback text. Reproduction: run /app/test_reports/seed_iter43_ui.py with the `feedback=` line removed from scenario (a); login as the seeded student, /student/my-mock-interviews?tab=completed, click 'View feedback' — the 'PROFESSIONAL FEEDBACK' section will not appear and a 'No written feedback was provided.' italic line will show in its place even though `candidate_feedback` exists in Mongo. Mitigation: in routers/interviews.py my_bookings, after popping joined_by, do `if not s.get('feedback') and s.get('candidate_feedback'): s['feedback'] = s.pop('candidate_feedback')` (or copy without popping if pros need both keys)."
+}
