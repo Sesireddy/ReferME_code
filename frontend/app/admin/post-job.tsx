@@ -138,39 +138,43 @@ export default function AdminPostJob() {
     if (err) return webSafeAlert("Please fix the form", err);
     setBusy(isDraft ? "draft" : "publish");
     try {
-      await api("/admin/jobs", {
-        method: "POST",
-        body: {
-          company: f.company.trim(),
-          title: f.title.trim(),
-          description: f.description.trim(),
-          location: f.location.trim(),
-          skills_required: f.skills.split(",").map((s) => s.trim()).filter(Boolean),
-          experience_min: parseInt(f.experience_min || "0", 10),
-          experience_max: f.experience_max ? parseInt(f.experience_max, 10) : null,
-          open_positions: parseInt(f.open_positions || "1", 10),
-          employment_type: f.employment_type,
-          salary_range: f.salary_range.trim(),
-          walk_in_date: f.walk_in_date.trim(),
-          walk_in_time: f.walk_in_time.trim(),
-          venue: f.venue.trim(),
-          contact_person: f.contact_person.trim(),
-          contact_number: f.contact_number.trim(),
-          contact_email: f.contact_email.trim(),
-          application_deadline: f.application_deadline.trim(),
-          company_logo_b64: f.company_logo_b64,
-          company_logo_mime: f.company_logo_mime,
-          status,
-        },
-      });
+      const body = {
+        company: f.company.trim(),
+        title: f.title.trim(),
+        description: f.description.trim(),
+        location: f.location.trim(),
+        skills_required: f.skills.split(",").map((s) => s.trim()).filter(Boolean),
+        experience_min: parseInt(f.experience_min || "0", 10),
+        experience_max: f.experience_max ? parseInt(f.experience_max, 10) : null,
+        open_positions: parseInt(f.open_positions || "1", 10),
+        employment_type: f.employment_type,
+        salary_range: f.salary_range.trim(),
+        walk_in_date: f.walk_in_date.trim(),
+        walk_in_time: f.walk_in_time.trim(),
+        venue: f.venue.trim(),
+        contact_person: f.contact_person.trim(),
+        contact_number: f.contact_number.trim(),
+        contact_email: f.contact_email.trim(),
+        application_deadline: f.application_deadline.trim(),
+        company_logo_b64: f.company_logo_b64,
+        company_logo_mime: f.company_logo_mime,
+        status,
+      };
+      if (isEdit) {
+        await api(`/admin/jobs/${editId}`, { method: "PATCH", body });
+      } else {
+        await api("/admin/jobs", { method: "POST", body });
+      }
       successAlert.show({
-        title: isDraft ? "Draft Saved" : "Job Published 🎉",
+        title: isEdit
+          ? (isDraft ? "Draft Updated" : "Job Updated 🎉")
+          : (isDraft ? "Draft Saved" : "Job Published 🎉"),
         message: isDraft
-          ? "You can resume editing from Admin → Jobs → My Posted Jobs."
+          ? "You can resume editing from My Posted Jobs."
           : "This job is now visible under Walk-in & Direct Jobs.",
       });
       setF(EMPTY);
-      router.replace("/admin/dashboard");
+      router.replace("/admin/my-posted-jobs");
     } catch (e: any) {
       Alert.alert("Error", e?.message || "Could not save job.");
     } finally {

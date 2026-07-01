@@ -1,0 +1,40 @@
+{
+  "summary": "Iter48 retest — Frontend fixes verified (POST→PATCH branch, 'Job Updated 🎉' title, /admin/my-posted-jobs redirect) — the source in /app/frontend/app/admin/post-job.tsx is correct. However a CRITICAL BACKEND BUG was uncovered by this retest: a LEGACY PATCH /admin/jobs/{id} endpoint in /app/backend/server.py:3546 shadows the newer /app/backend/routers/admin_jobs.py:199 PATCH endpoint (FastAPI first-registered-wins). The legacy handler rejects status='open' with 400 'Status must be active or closed.' and only allows title/description/salary_range/location/status fields, silently DROPPING walk_in_time/walk_in_date/venue/skills/contact_* etc. Net effect: after fix, admin 'Save & Publish' on an existing job → PATCH 400 → user sees error alert → nothing saves. Save Draft (status='draft') is also blocked by same 400. NEW-mode POST is unaffected and passes end-to-end (Publish Job → POST /admin/jobs 200 → 'Job Published 🎉' alert → redirect /admin/my-posted-jobs). Backend iter45 admin_jobs pytest suite still 16/16 because the existing test_patch_updates_fields sends only title+salary_range with no status field and both endpoints accept that subset — the test is too narrow to detect the shadow. Duplicate-creation bug (iter47 bug #1) IS fixed frontend-side (no POST fired on edit, count stayed at 1 job after Save&Publish attempt, though the save 400s).",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "PATCH /api/admin/jobs/{job_id}", "issue": "Legacy AdminEditJobBody handler in /app/backend/server.py:3546 shadows the new admin_jobs router at /app/backend/routers/admin_jobs.py:199 (FastAPI first-registered wins). Legacy handler (a) rejects status='open' and status='draft' with 400 'Status must be active or closed.', (b) only accepts title/description/salary_range/location/status — silently drops walk_in_date, walk_in_time, venue, skills_required, contact_person/number/email, experience_min/max, open_positions, company, company_logo, employment_type, industry_type, category, application_deadline. Reproduction: PATCH /api/admin/jobs/<id> with {title:'X', status:'open'} → 400. With status='active' → succeeds but walk_in_time & other walk-in fields ignored (verified: sent walk_in_time='9AM', response echoed original value). Also legacy sets status='active' which drops the job from the student-facing /api/jobs?source=admin list (which requires status='open').", "priority": "CRITICAL"}
+    ],
+    "minor": [
+      {"endpoint": "GET /api/admin/jobs/mine + admin PATCH regression coverage", "issue": "test_iter45_admin_jobs.py::test_patch_updates_fields only patches {title, salary_range} and doesn't send status, so the legacy shadow never surfaces. Recommend adding a PATCH test that sends status='open' along with walk_in_date/venue/contact_* to catch shadow-routing regressions."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Admin Edit posted job Save & Publish (edit-mode PATCH)", "issue": "Frontend now correctly calls PATCH /api/admin/jobs/{editId} with the full body incl. status='open' — verified via network trace. But the backend responds 400 due to the legacy shadow endpoint (see backend critical). User sees Alert 'Error: Status must be active or closed.' and no save happens. Requires backend fix, not frontend.", "affected_testIDs": ["admin-job-publish", "edit-<id>"], "priority": "CRITICAL"},
+      {"flow": "Admin Edit posted job Save Draft (edit-mode PATCH draft)", "issue": "Same root cause — legacy endpoint rejects status='draft'. Not re-tested end-to-end since same 400 is expected; PATCH construction in frontend confirmed identical to publish branch except status='draft'.", "affected_testIDs": ["admin-job-save-draft"], "priority": "CRITICAL"}
+    ],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter45_admin_jobs.py",
+    "/app/test_reports/pytest/pytest_iter48_admin_jobs.xml"
+  ],
+  "action_items": [
+    "REMOVE the legacy PATCH /admin/jobs/{job_id} handler at /app/backend/server.py:3546 (function admin_edit_job with AdminEditJobBody) OR gate it behind a different path (e.g. /admin/jobs/{job_id}/status). It is dead-shadowing the newer router in /app/backend/routers/admin_jobs.py:199. The router-based handler already supports (a) 'draft'/'open'/'closed', (b) full admin walk-in fields, and (c) source='admin' scoping.",
+    "Extend /app/backend/tests/test_iter45_admin_jobs.py::TestAdminJobsCRUD::test_patch_updates_fields (or add a new test) to PATCH with status='open' AND a walk-in field (e.g. walk_in_time or venue) and assert both persist. This test would have caught the shadow.",
+    "After the backend fix, re-run the manual retest of the 3 edit-flow assertions (PATCH 200, 'Job Updated 🎉' alert, redirect to /admin/my-posted-jobs, no duplicate). Frontend code is already correct."
+  ],
+  "critical_code_review_comments": [
+    "server.py has ballooned to ~4000 lines and includes multiple job/admin endpoints that have since been extracted into /app/backend/routers/. Legacy handlers left behind now silently shadow the new routers. Suggest sweeping server.py for any endpoint whose path also appears in routers/*.py and removing the server.py copy.",
+    "FastAPI does not error on duplicate routes — this shadowing is invisible unless you diff the OpenAPI schema. Consider adding a startup assertion that fails if any (method, path) is registered twice."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% pytest (16/16 iter45 admin_jobs) — but real-world PATCH broken by shadow route; integration success 0% for admin-job edit", "frontend": "100% for the 3 iter48 fixes in isolation (PATCH branch fires, correct alert copy code path, correct redirect target) — but end-to-end user flow blocked by backend 400"},
+  "seed_data_creation": "No permanent seed added. Cleaned up: transient duplicate b1027bf3-3dfa-4153-bba7-7a31b8901fc5 (leftover from pre-restart stale bundle), Iter48 NewMode TEST job e447df2c-... Only the iter45 seed dfa59a3a-ebe7-46c1-a6ce-a1696d7f8882 remains.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "After main-agent removes the legacy PATCH handler in server.py:3546 (AdminEditJobBody / admin_edit_job), retest the edit flow: login admin → /admin/my-posted-jobs → Edit on dfa59a3a-... → append ' — v2' to title → Save & Publish → assert (a) network shows PATCH /api/admin/jobs/{id} 200 (b) alert 'Job Updated 🎉' (c) URL /admin/my-posted-jobs (d) GET /admin/jobs/mine count unchanged and title reflects edit. Also retest Save Draft on an existing draft job (create one first via New → Save Draft). NEW-mode is already verified passing this iter.",
+  "rca_of_issue": "ROOT CAUSE: Two PATCH handlers registered for the same path '/api/admin/jobs/{job_id}'. (1) /app/backend/server.py:3546 uses AdminEditJobBody (title/description/salary_range/location/status; status must be 'active'|'closed'). (2) /app/backend/routers/admin_jobs.py:199 uses AdminJobPatchBody (full walk-in schema; status='draft'|'open'|'closed'; source='admin' scoped). FastAPI resolves duplicate routes by first-registered-wins; server.py is included before routers/admin_jobs.py in the app init, so the legacy handler wins. Frontend send status='open' → legacy validator raises 400 'Status must be active or closed.'. REPRODUCTION: `curl -X PATCH .../api/admin/jobs/<id> -H 'Authorization: Bearer <admin>' -d '{\"title\":\"X\",\"status\":\"open\"}'` → 400. With status omitted, only title updates (walk_in_* fields silently dropped). MITIGATION: delete the legacy handler + Pydantic model in server.py:3536-3574 (admin_edit_job / AdminEditJobBody); the router-based handler already covers this endpoint and the 3 iter45 pytest tests that exercise PATCH will continue to pass (title, salary_range are also in router's whitelist). Optionally also add a startup uniqueness-check on registered routes."
+}
