@@ -1,0 +1,39 @@
+{
+  "summary": "Iter49 retest — Legacy PATCH /admin/jobs/{id} shadow handler REMOVAL verified end-to-end. All requested backend + frontend flows now pass. server.py:3536-3542 is now a comment-only stub; router at routers/admin_jobs.py:199 (AdminJobPatchBody) is the sole handler. Backend: added new pytest suite tests/test_iter49_admin_patch_retest.py (5 tests — full walk-in body patch with status='open' + status='closed' + status='draft' + invalid contact_number/email → 400) — 5/5 PASS. Regression: iter45 admin_jobs suite still 16/16 PASS. Total 21/21 PASS. Frontend E2E (viewport 414x896, admin@referme.app): (1) Edit Live job Save & Publish → EXACTLY ONE PATCH 200 + 'Job Updated 🎉' alert + redirect to /admin/my-posted-jobs + edited title visible in row + no duplicate creation. (2) Save Draft on newly-created draft → PATCH 200 + 'Draft Updated' alert + redirect + title updated in row. (3) NEW mode POST → 200 + 'Job Published 🎉' + redirect. No React Native red screens, no console errors of substance (only shadow*/pointerEvents deprecation warnings). Iter48's blocker is fully resolved.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "shadow* style props (multiple)", "issue": "Console emits repeated deprecation warning \"'shadow*' style props are deprecated. Use 'boxShadow'.\" — RN Web deprecation across many cards/buttons. Cosmetic only, not blocking any flow."},
+      {"component": "props.pointerEvents", "issue": "Console warning \"props.pointerEvents is deprecated. Use style.pointerEvents\" — RN Web deprecation. Cosmetic."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter49_admin_patch_retest.py",
+    "/app/backend/tests/test_iter45_admin_jobs.py",
+    "/app/test_reports/pytest/pytest_iter49.xml"
+  ],
+  "action_items": [
+    "None blocking for the current retest scope — all requested assertions pass.",
+    "(Optional, from iter48 code-review carryover) Sweep server.py for other legacy handlers that may still shadow endpoints extracted into routers/*. Consider adding a startup assertion that fails if any (method, path) is registered twice (FastAPI won't warn on duplicates).",
+    "(Optional, non-critical) Address RN Web deprecation warnings ('shadow*' → 'boxShadow', 'props.pointerEvents' → 'style.pointerEvents') across shared card/button components."
+  ],
+  "critical_code_review_comments": [
+    "routers/admin_jobs.py PATCH handler correctly whitelists fields, validates contact_number/email/dates via _validate_common, and keeps denormalised fields (employer_name, open_positions_label, verification_status when status='open') in sync — clean implementation.",
+    "server.py is still ~3933 lines. Continue extracting resource domains to routers/ as done for admin_jobs to prevent future shadow-route regressions."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter49_admin_patch_retest.py (new — 5 tests covering the exact regressions from iter48)"
+  ],
+  "success_rate": {"backend": "100% (21/21 pytest — 5 new iter49 + 16 iter45 regression)", "frontend": "100% (3/3 E2E flows: edit-publish PATCH200 + 'Job Updated 🎉' + redirect + no duplicate; draft PATCH200 + 'Draft Updated'; new POST200 + 'Job Published 🎉')"},
+  "seed_data_creation": "No permanent seed added. Transient TEST-Iter49 jobs (c66fc3f7 draft, f3a39dbe live) created during frontend E2E were cleaned up via DELETE /api/admin/jobs/{id}. Remaining admin job: dfa59a3a-ebe7-46c1-a6ce-a1696d7f8882 (iter45 seed, title now 'Iter45 Walk-in Retest d7881 — v49retest' after edit-flow retest — same document, no duplicate).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter49 fully green. If a future iteration touches server.py or admin_jobs router, re-run: pytest /app/backend/tests/test_iter49_admin_patch_retest.py /app/backend/tests/test_iter45_admin_jobs.py -v (expect 21/21). The new iter49 suite specifically pins: (a) PATCH accepts full walk-in body with status='open' and persists ALL fields, (b) status='closed' and status='draft' both accepted (regression pin for the iter48 shadow bug), (c) invalid contact_number/email return 400. These would immediately catch a re-introduction of the legacy shadow handler.",
+  "rca_of_issue": "Iter48 root cause (legacy PATCH handler in server.py shadowing router) — confirmed resolved this iteration. server.py:3536-3542 now contains only a documentation comment noting the migration; there is no remaining @api.patch decorator for /admin/jobs/{job_id} in server.py (grep verified: only GET/DELETE/POST verify endpoints remain in server.py for admin/jobs). The router-based handler (routers/admin_jobs.py:199) is now the sole registered PATCH route, accepts AdminJobPatchBody with full walk-in schema + status draft|open|closed, and end-to-end returns 200 for all requested payloads. Frontend has not changed since iter48 (already correct) and now succeeds because backend accepts its payload."
+}

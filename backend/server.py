@@ -3534,42 +3534,12 @@ async def admin_adjust_credits(user_id: str, body: AdminCreditAdjustBody, admin:
 
 
 # ---- Edit Job ----
-class AdminEditJobBody(BaseModel):
-    title: Optional[str] = None
-    description: Optional[str] = None
-    salary_range: Optional[str] = None
-    location: Optional[str] = None
-    status: Optional[str] = None  # active | closed
-    reason: Optional[str] = ""
-
-
-@api.patch("/admin/jobs/{job_id}")
-async def admin_edit_job(job_id: str, body: AdminEditJobBody, admin: dict = Depends(admin_only)):
-    job = await db.jobs.find_one({"id": job_id}, {"_id": 0})
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-    update: dict[str, Any] = {}
-    for k in ("title", "description", "salary_range", "location"):
-        v = getattr(body, k)
-        if v is not None:
-            update[k] = v.strip() if isinstance(v, str) else v
-    if body.status is not None:
-        if body.status not in ("active", "closed"):
-            raise HTTPException(status_code=400, detail="Status must be active or closed.")
-        update["status"] = body.status
-    if not update:
-        raise HTTPException(status_code=400, detail="No editable fields provided.")
-
-    before_snap = {k: job.get(k) for k in update.keys()}
-    await db.jobs.update_one({"id": job_id}, {"$set": update})
-    await write_audit(
-        admin, "job.edit", "job", job_id,
-        before=before_snap, after=update, reason=body.reason or "",
-        extra={"job_title": job.get("title", "")},
-    )
-    updated = await db.jobs.find_one({"id": job_id}, {"_id": 0})
-    return {"ok": True, "job": updated}
-
+# NOTE: The full admin edit-job endpoint has moved to routers/admin_jobs.py which
+# supports every AdminJobBody field (walk-in, contacts, skills, logo, status draft|open|closed).
+# The legacy stub that lived here shadowed the router handler and rejected valid statuses,
+# so it was removed. If you need the tiny "title/description/status active|closed" shape
+# retained by some old admin UIs, use PATCH /api/admin/jobs/{id} with the newer schema —
+# the router accepts partial payloads via AdminJobPatchBody.
 
 # ---- Cancel Booking (Admin) — auto-refund 49 credits to student ----
 class AdminCancelBookingBody(BaseModel):
