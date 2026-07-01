@@ -1,0 +1,35 @@
+{
+  "summary": "Iter47 — Admin My-Posted-Jobs list works well but the Edit flow is broken. 3 major bugs found in /app/frontend/app/admin/post-job.tsx: (1) In edit mode the submit handler still calls POST /admin/jobs instead of PATCH /admin/jobs/{editId} → tapping 'Save & Publish' CREATES A DUPLICATE JOB instead of updating (verified: after editing title on job dfa59a3a, a new job d1313b36 was created with the modified title while original remained untouched). (2) After both Publish and Save-Draft the form redirects to /admin/dashboard, but the spec (and this iter's contract) requires /admin/my-posted-jobs. (3) The edit-mode success alert still shows 'Job Published 🎉' instead of the required 'Job Updated 🎉'. Everything else in the iter47 contract works: menu order (My Posted Jobs above Post a Job above Logout) ✓, navigation to /admin/my-posted-jobs ✓, header + 'new-job-btn' ✓, card renders company + title + Live badge + location + open positions + Edit + Delete + Publish (drafts only) ✓, Edit navigates to /admin/post-job?editId= and hydrates all fields ✓, Stack title + H1 + submit label all flip to 'Edit Job' / 'Save & Publish' ✓, New→create draft→draft appears at top with Publish button ✓, Publish flips badge to Live via POST /admin/jobs/{id}/publish ✓, window.confirm delete dialog fires ✓, backend iter45 admin_jobs pytest suite still 16/16 ✓.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Admin edit posted job (Save & Publish)", "issue": "In edit mode (editId query param present), submit() still calls POST /admin/jobs which CREATES A DUPLICATE JOB. Must branch on isEdit and call PATCH /admin/jobs/{editId} instead. Reference: /app/frontend/app/admin/post-job.tsx line 141 (`await api('/admin/jobs', { method: 'POST', ...`). Verified end-to-end: edited title 'Iter45 Walk-in Retest d7881' → 'Iter45 Walk-in Retest d7881 EDITED47' on existing job dfa59a3a-...; UI POSTed and created NEW job id d1313b36-... with the new title. Original job's title was NOT updated.", "affected_testIDs": ["admin-job-publish", "edit-{id}"], "priority": "CRITICAL"},
+      {"flow": "Admin post-job redirect after submit", "issue": "After Publish AND after Save-Draft, code does `router.replace('/admin/dashboard')` (line 173). Per iter47 spec this must be `/admin/my-posted-jobs`. Verified in browser: both save-draft and edit-publish land on /admin/dashboard. Also in edit mode the same code path fires and lands on dashboard, so the 'redirect to /admin/my-posted-jobs' assertion fails for both new-mode and edit-mode.", "affected_testIDs": ["admin-job-publish", "admin-job-save-draft"], "priority": "HIGH"},
+      {"flow": "Admin edit posted job success message", "issue": "In edit mode, successAlert title stays 'Job Published 🎉' (line 167). Spec requires 'Job Updated 🎉' for edit mode. Add an `isEdit` branch on both title and message.", "affected_testIDs": ["admin-job-publish"], "priority": "MEDIUM"}
+    ],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter45_admin_jobs.py",
+    "/app/test_reports/pytest/pytest_iter47_regression.xml"
+  ],
+  "action_items": [
+    "In /app/frontend/app/admin/post-job.tsx submit(): if `isEdit`, call `api(`/admin/jobs/${editId}`, { method: 'PATCH', body: { ...fields, status } })` instead of POST /admin/jobs (line 141).",
+    "Change redirect on success from `/admin/dashboard` to `/admin/my-posted-jobs` in both draft and publish branches (line 173).",
+    "In successAlert.show, use `isEdit ? 'Job Updated 🎉' : (isDraft ? 'Draft Saved' : 'Job Published 🎉')` for the title (line 167).",
+    "Cleanup: I deleted the accidentally-duplicated job d1313b36-... and the TEST Iter47 Draft Job d43dc4d0-... via API during testing. Seeded admin job dfa59a3a-... remains in DB for future runs."
+  ],
+  "critical_code_review_comments": [
+    "post-job.tsx submit() has a single POST branch. When editId is set the UI cosmetics (title, button label) all flip correctly, but the actual mutation stays as POST — a classic 'edit UI without edit wiring' regression. This is silently destructive because it doubles the job count on every 'Save & Publish' tap.",
+    "The redirect target was changed from a route that doesn't exist yet in the spec — moving the target to /admin/my-posted-jobs is trivial (one line), but should also be reflected in tests if any."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (16/16 iter45 admin_jobs regression pass)", "frontend": "60% — list/render/menu/prefill/new-draft/publish/delete-dialog all pass; edit-submit path + redirect + edit success message all fail"},
+  "seed_data_creation": "No new seed. Used existing admin job dfa59a3a-ebe7-46c1-a6ce-a1696d7f8882 (from iter45). Created + cleaned up transient TEST Iter47 Draft Job during flow test. Cleaned up the duplicate d1313b36-... created by the buggy edit POST.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "After main-agent fixes the 3 bugs in post-job.tsx (POST→PATCH in edit mode, redirect→/admin/my-posted-jobs, success title 'Job Updated 🎉'), retest by: login admin@referme.app / Admin@12345 → /admin/my-posted-jobs → Edit on any card → change title → Save & Publish → assert (a) network shows PATCH /admin/jobs/{id} (not POST /admin/jobs), (b) URL after success is /admin/my-posted-jobs, (c) admin/jobs/mine count did NOT increase, (d) original job's title WAS updated, (e) success alert reads 'Job Updated 🎉'. Also retest save-draft new-mode redirect to /admin/my-posted-jobs.",
+  "rca_of_issue": "post-job.tsx was extended to support ?editId= — the read/hydrate side + cosmetic flips (title, button label) were added, but the write side was left as-is (single POST /admin/jobs branch, hard-coded 'Job Published 🎉' title, hard-coded /admin/dashboard redirect). Reproduction: login admin → /admin/my-posted-jobs → tap Edit on any existing job → change any field (e.g. title) → tap 'Save & Publish' → observe (1) network tab shows `POST /api/admin/jobs` not `PATCH /api/admin/jobs/{id}` (2) redirect lands on /admin/dashboard (3) success reads 'Job Published 🎉'. Verified via GET /admin/jobs/mine that job count grew from 1 to 2 with a new UUID carrying the edited fields while the original job was untouched. Mitigation is a 3-line fix inside submit(): branch on isEdit for URL/method, redirect, and successAlert title."
+}

@@ -122,6 +122,10 @@ export default function AdminDashboard() {
               <Ionicons name="time-outline" size={20} color="#2563EB" />
               <Txt style={styles.menuLabel}>Audit Logs</Txt>
             </TouchableOpacity>
+            <TouchableOpacity testID="menu-my-posted-jobs" style={styles.menuRow} onPress={() => { setMenuOpen(false); router.push("/admin/my-posted-jobs"); }}>
+              <Ionicons name="list" size={20} color="#7C3AED" />
+              <Txt style={styles.menuLabel}>My Posted Jobs</Txt>
+            </TouchableOpacity>
             <TouchableOpacity testID="menu-post-a-job" style={styles.menuRow} onPress={() => { setMenuOpen(false); router.push("/admin/post-job"); }}>
               <Ionicons name="briefcase-outline" size={20} color={colors.success} />
               <Txt style={styles.menuLabel}>Post a Job</Txt>

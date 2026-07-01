@@ -1,9 +1,9 @@
 // Admin — Post a Job screen. Publishes walk-in / direct hiring jobs that appear
 // under the Job Seeker "Walk-in & Direct Jobs" section (no credit deduction,
 // no approval flow, Details-only view — no Apply button).
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { View, StyleSheet, TouchableOpacity, ScrollView, Alert, Image } from "react-native";
-import { Stack, useRouter } from "expo-router";
+import { Stack, useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { Screen } from "@/src/components/Screen";
@@ -53,8 +53,47 @@ const EMPTY: FormState = {
 
 export default function AdminPostJob() {
   const router = useRouter();
+  const { editId } = useLocalSearchParams<{ editId?: string }>();
+  const isEdit = !!editId;
   const [f, setF] = useState<FormState>(EMPTY);
   const [busy, setBusy] = useState<"" | "publish" | "draft">("");
+  const [loading, setLoading] = useState<boolean>(isEdit);
+
+  // In edit mode, hydrate the form from the existing job.
+  useEffect(() => {
+    if (!editId) return;
+    (async () => {
+      setLoading(true);
+      try {
+        const rows: any[] = await api("/admin/jobs/mine");
+        const j = (rows || []).find((r) => r.id === editId);
+        if (!j) { webSafeAlert("Job not found", "This job could not be loaded for editing."); router.back(); return; }
+        setF({
+          company: j.company || "",
+          title: j.title || "",
+          description: j.description || "",
+          location: j.location || "",
+          experience_min: String(j.experience_min ?? 0),
+          experience_max: j.experience_max != null ? String(j.experience_max) : "",
+          skills: (j.skills_required || []).join(", "),
+          open_positions: String(j.open_positions ?? 1),
+          employment_type: j.employment_type || "Full-time",
+          salary_range: j.salary_range || "",
+          walk_in_date: j.walk_in_date || "",
+          walk_in_time: j.walk_in_time || "",
+          venue: j.venue || "",
+          contact_person: j.contact_person || "",
+          contact_number: j.contact_number || "",
+          contact_email: j.contact_email || "",
+          application_deadline: j.application_deadline || "",
+          company_logo_b64: j.company_logo_b64 || "",
+          company_logo_mime: j.company_logo_mime || "",
+          company_logo_uri: j.company_logo_b64 || "",
+        });
+      } catch (e: any) { webSafeAlert("Load failed", e?.message || "Could not load job."); }
+      finally { setLoading(false); }
+    })();
+  }, [editId]);
 
   const setField = <K extends keyof FormState>(k: K, v: FormState[K]) => setF((p) => ({ ...p, [k]: v }));
 
@@ -141,11 +180,11 @@ export default function AdminPostJob() {
 
   return (
     <Screen keyboardOffset={0}>
-      <Stack.Screen options={{ title: "Post a Job" }} />
+      <Stack.Screen options={{ title: isEdit ? "Edit Job" : "Post a Job" }} />
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
-        <Txt variant="h1">Post a Job</Txt>
+        <Txt variant="h1">{isEdit ? "Edit Job" : "Post a Job"}</Txt>
         <Txt variant="muted" style={{ marginTop: 4, marginBottom: 16 }}>
-          Walk-in Drives · Direct Hiring · Campus & Mass Recruitment. Published jobs go live immediately for free access.
+          {loading ? "Loading job…" : "Walk-in Drives · Direct Hiring · Campus & Mass Recruitment. Published jobs go live immediately for free access."}
         </Txt>
 
         <Card>
@@ -209,7 +248,7 @@ export default function AdminPostJob() {
         </Card>
 
         <View style={{ marginTop: 20, gap: 8 }}>
-          <Button testID="admin-job-publish" title="Publish Job" loading={busy === "publish"} onPress={() => submit("open")} />
+          <Button testID="admin-job-publish" title={isEdit ? "Save & Publish" : "Publish Job"} loading={busy === "publish"} onPress={() => submit("open")} />
           <Button testID="admin-job-save-draft" title="Save Draft" variant="secondary" loading={busy === "draft"} onPress={() => submit("draft")} />
           <Button testID="admin-job-cancel" title="Cancel" variant="ghost" onPress={() => router.back()} />
         </View>
