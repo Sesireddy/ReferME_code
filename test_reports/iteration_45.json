@@ -1,0 +1,76 @@
+{
+  "summary": "Iter45 Walk-in & Direct Jobs — Admin post flow works end-to-end (dashboard menu → /admin/post-job → SuccessAlert → redirect). Student dashboard tile 'walkin-jobs-tile' present with 'WALK-IN & DIRECT JOBS' label; old LEADERBOARD rank card gone from the tile stack. Details screen renders company/title/description/skills/Overview + 'no Apply / no credits' banner and no Apply button. Backend admin CRUD/draft/publish/validation: 15/16 pytest PASS. CRITICAL FINDING: `GET /api/jobs?source=admin` returns 0 admin jobs for job-seekers because the student-role `$or` clause is not cleared when `source=admin` is explicitly requested — this makes the entire /student/walkin-jobs listing empty in the UI (verified via API + UI: 'No Admin-posted opportunities yet.'). Details page still works via direct URL, so the /api/jobs/{id} endpoint is fine. Also spotted an Expo Router layout regression: student bottom tab bar auto-exposes the new walkin-jobs/index and walkin-jobs/[id] routes as tabs because student/_layout.tsx doesn't hide them with `href: null`.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "GET /api/jobs?source=admin (as student)",
+        "issue": "Returns 0 admin jobs. In server.py list_jobs the student branch first sets `q['status']='open'` and `q['$or']=[{posted_by_role != professional, source != admin}, {posted_by_role: professional, verification_status: verified}]`. When `source=admin` is later applied, `q['source']='admin'` is added but the pre-existing `$or` (which excludes admin) is NOT cleared, so the resulting Mongo query matches nothing. Fix: when `source == 'admin'`, ALSO drop the student-branch `$or` (e.g. `q.pop('$or', None)`) OR handle the source filter BEFORE the role branch. Reference: /app/backend/server.py:1912-1940.",
+        "priority": "CRITICAL"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Student /student/walkin-jobs (list)",
+        "issue": "List is empty for job seekers ('No Admin-posted opportunities yet.') even though admin-posted jobs exist. Root cause is the backend $source=admin bug above. Details page (direct URL) renders fine so the FE code itself is correct.",
+        "testID": "walkin-card-*",
+        "priority": "CRITICAL"
+      },
+      {
+        "component": "Student bottom Tabs bar",
+        "issue": "New file-based routes /student/walkin-jobs/index.tsx and /student/walkin-jobs/[id].tsx are auto-exposed as bottom tabs because /app/frontend/app/student/_layout.tsx does not declare them with `href: null`. Bottom bar now shows ~7 items with 'walkin-jobs/index' label (and appears cluttered). Add `<Tabs.Screen name=\"walkin-jobs\" options={{ href: null }} />` (and if needed one for the dynamic segment) alongside the other hidden tabs. Reference: /app/frontend/app/student/_layout.tsx:29-32.",
+        "testID": "n/a",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Student → /student/walkin-jobs listing",
+        "issue": "FE correctly calls /api/jobs?source=admin, but BE returns [], so the listing appears empty. Fix the BE query and this flow is complete.",
+        "affected_testIDs": ["walkin-jobs-tile", "walkin-card-*", "walkin-details-*"]
+      }
+    ],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "View (props.pointerEvents)", "issue": "Console still warns 'props.pointerEvents is deprecated. Use style.pointerEvents'. Pre-existing carry-over from iter42/43/44 — not introduced in iter45."},
+      {"component": "shadow* style props", "issue": "Console warns '\"shadow*\" style props are deprecated. Use \"boxShadow\"'. Pre-existing."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter45_admin_jobs.py",
+    "/app/test_reports/pytest/pytest_iter45.xml",
+    "/tmp/iter45_admin_dash.png",
+    "/tmp/iter45_admin_menu.png",
+    "/tmp/iter45_postjob_form.png",
+    "/tmp/iter45_after_publish.png",
+    "/tmp/iter45_student_dash.png",
+    "/tmp/iter45_walkin_list.png",
+    "/tmp/iter45_walkin_detail.png"
+  ],
+  "action_items": [
+    "CRITICAL: Fix student /api/jobs?source=admin query. In /app/backend/server.py list_jobs around L1935: when source == 'admin', either pop the pre-set $or/status from the student branch (q.pop('$or', None)) OR restructure so the source filter is applied before the role-based defaults. Without this fix, students cannot see ANY admin-posted walk-in jobs in the UI.",
+    "HIGH: In /app/frontend/app/student/_layout.tsx, hide the new walkin-jobs route from the tab bar: `<Tabs.Screen name=\"walkin-jobs\" options={{ href: null }} />`. Currently the bottom bar is overcrowded with an extra 'walkin-jobs/index' tab.",
+    "MINOR: Consider adding a pytest for the ?source=admin student query as an explicit contract test (already covered in test_iter45_admin_jobs.py::TestJobsSourceFilter::test_student_source_admin_returns_only_admin — currently FAILS as an intentional bug reproducer)."
+  ],
+  "critical_code_review_comments": [
+    "server.py list_jobs (L1889-1940): the source filter block runs AFTER the role branch sets $or/status. For students, when the client passes `source=admin`, the $or from the role branch (which explicitly requires `source != admin` or `posted_by_role == professional`) is still present, producing an unsatisfiable AND. Suggested minimal patch: `if source == 'admin': q = {'source': 'admin', 'status': 'open'}` (fully replace the role-based filter for this explicit request), matching the intent that admin jobs are free & auto-verified and don't need student credit gating.",
+    "admin_jobs.py is clean, well-commented, uses new_id + audit_log, excludes _id in response. draft-vs-open date bypass logic is correct. Contact-number regex ^[6-9]\\d{9}$ correctly rejects '1234567890'. Experience min/max validation returns human-readable 400. Nothing to change.",
+    "post-job.tsx form has all required testIDs (admin-job-company, -title, -description, -location, -skills, -openings, -walkin-date, -walkin-time, -venue, -contact-*, -deadline, -publish, -save-draft, -cancel). No changes needed.",
+    "walkin-jobs/[id].tsx correctly omits any Apply CTA and shows the 'no Apply / no credits' banner. Contact number/email have tap-to-copy fallback on web (Platform.OS === 'web') — good.",
+    "student/dashboard.tsx correctly replaces the leaderboard tile with the walkin-jobs-tile (walkin-jobs-tile testID present, no LEADERBOARD copy remains on the tile row)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter45_admin_jobs.py (new)"
+  ],
+  "success_rate": {
+    "backend": "15/16 (93.75%) on test_iter45_admin_jobs.py — the one FAIL is the intentional student ?source=admin query bug reproducer.",
+    "frontend": "Admin flow 5/5 (dashboard → menu → post-job form → publish → success alert + redirect). Student flow 3/4 (tile present ✅, tile navigates ✅, list EMPTY due to BE bug ❌, details render + no Apply ✅)."
+  },
+  "seed_data_creation": "Ad-hoc admin jobs created inline in test_iter45_admin_jobs.py (all cleaned up in-test via DELETE). One UI-side admin job ('TEST UI Walk-in Role', id 828f3c2e-...) was published during the FE run and deleted at the end.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "After the ?source=admin backend fix lands, re-run: `pytest /app/backend/tests/test_iter45_admin_jobs.py -v` — the currently-failing `test_student_source_admin_returns_only_admin` should PASS and the frontend /student/walkin-jobs list should populate with the seeded admin job. After the layout fix (student/_layout.tsx href:null), verify the bottom tab bar has exactly 5 tabs (Home / Jobs / Interviews / LeadBoard / Profile). Everything else in iter45 is green.",
+  "rca_of_issue": "Bug: Student /student/walkin-jobs list is always empty. Repro: (a) POST /api/admin/jobs as admin — job persists with source='admin', status='open', verification_status='verified'; (b) as a student, GET /api/jobs?source=admin — returns []. Root cause: in server.py list_jobs, for role==student, `q['$or']` is set to [{posted_by_role != professional, source != admin}, {posted_by_role: professional, verification_status: verified}]. When the client then requests source=admin, only `q['source']='admin'` and `q['status']='open'` are added — the $or is untouched — so the resulting AND clause is unsatisfiable (source=admin AND (source != admin OR posted_by_role=professional) → matches nothing because admin jobs have posted_by_role='admin'). Mitigation: when `source == 'admin'`, drop the role-branch $or/status (or short-circuit `q = {'source':'admin','status':'open'}`) for job-seekers since admin jobs are intended to be free and gate-free."
+}

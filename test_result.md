@@ -123,7 +123,17 @@ backend:
           agent: "testing"
           comment: "Iter30 regression: 22/22 new tests pass. /api/interviews/{slots,book,my-bookings,joined,complete} all behaviour-neutral vs pre-refactor. /api/jobs/apply path that calls _can_use_free now works (used_free=true for free-pool users, -49 credits otherwise). Phase A endpoints (referrals + leaderboard) still 200. Pre-existing iter13 phone-gate fixture failures are unrelated to this refactor."
 
-  - task: "Student My Mock Interviews — show View feedback whenever pro submitted feedback (legacy slot fix) + send Resend feedback email to candidate"
+  - task: "Walk-in & Direct Jobs — admin-posted free jobs section (backend + admin post-job + student walk-in list/details)"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/server.py, /app/backend/routers/admin_jobs.py, /app/frontend/app/admin/post-job.tsx, /app/frontend/app/admin/dashboard.tsx, /app/frontend/app/student/dashboard.tsx, /app/frontend/app/student/walkin-jobs/index.tsx, /app/frontend/app/student/walkin-jobs/[id].tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "User asked for a full Walk-in/Direct-Jobs feature: (1) Admin gets a 'Post a Job' menu above Logout that opens a form with 15 fields (company, title, description, location, exp min/max, skills, positions, employment_type, salary, walk_in_date/time, venue, contact_person/number/email, deadline, company_logo) + Publish/Save Draft/Cancel; (2) admin jobs auto-verified, no approval, no credits, tagged source='admin'; (3) Student home 'LEADERBOARD' tile replaced with 'Walk-in & Direct Jobs' tile → new list at /student/walkin-jobs (Details button, no Apply) + full details screen at /student/walkin-jobs/[id]; (4) Regular /jobs listing excludes source='admin' automatically. Backend: added source discriminator to POST /jobs, new POST /admin/jobs + GET /admin/jobs/mine + PATCH /admin/jobs/{id} + POST /admin/jobs/{id}/publish in new /app/backend/routers/admin_jobs.py (mounted in server.py). Validation: 10-digit Indian mobile for contact_number, valid email for contact_email, YYYY-MM-DD + future-only for dates when publishing (drafts skip date-future check). All lint clean. Backend reloaded cleanly (401 on protected route). Needs full end-to-end testing (backend endpoints + frontend flow)."
     implemented: true
     working: true
     file: "/app/backend/routers/interviews.py, /app/frontend/app/student/my-mock-interviews.tsx"

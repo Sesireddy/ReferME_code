@@ -1840,6 +1840,7 @@ async def post_job(body: JobPostBody, u: dict = Depends(require_role(["employer"
         "employer_name": company_resolved,
         "posted_by_role": u["role"],
         "posted_by_name": u.get("name") or u["email"].split("@")[0],
+        "source": "professional",  # discriminator for Walk-in & Direct Jobs vs regular listing
         "title": body.title.strip(),
         "company": company_resolved,
         "description": body.description.strip(),
@@ -1883,6 +1884,7 @@ async def list_jobs(
     industry: Optional[str] = Query(None),
     sort: Optional[Literal["newest", "oldest"]] = Query("newest"),
     mine: bool = Query(False, description="When true (pro/employer), return only jobs posted by the current user"),
+    source: Optional[Literal["admin", "professional"]] = Query(None, description="Filter by job source"),
 ):
     q: dict = {}
     if u["role"] == "employer":
@@ -1905,13 +1907,15 @@ async def list_jobs(
                 },
             ]
     elif u["role"] == "admin":
-        # Admin sees everything
+        # Admin sees everything by default (no source filter)
         pass
     else:
         # Job seekers: only Approved Pro jobs OR Employer-posted jobs
+        # Admin-posted jobs (source='admin') are surfaced in the dedicated
+        # "Walk-in & Direct Jobs" section via ?source=admin — exclude here.
         q["status"] = "open"
         q["$or"] = [
-            {"posted_by_role": {"$ne": "professional"}},
+            {"posted_by_role": {"$ne": "professional"}, "source": {"$ne": "admin"}},
             {"posted_by_role": "professional", "verification_status": "verified"},
         ]
     if skill:
@@ -1926,6 +1930,14 @@ async def list_jobs(
         q["company"] = {"$regex": company, "$options": "i"}
     if industry:
         q["industry_type"] = {"$regex": re.escape(industry), "$options": "i"}
+    # Explicit source filter (used by Job Seeker "Walk-in & Direct Jobs" screen
+    # to fetch source='admin' only, and by the regular Jobs screen with source='professional').
+    if source == "admin":
+        q["source"] = "admin"
+        q["status"] = "open"
+    elif source == "professional":
+        # Keep the existing student default constraints
+        q["source"] = {"$ne": "admin"}
 
     sort_dir = 1 if sort == "oldest" else -1
     jobs = await db.jobs.find(q, {"_id": 0}).sort("created_at", sort_dir).to_list(500)
@@ -3931,6 +3943,8 @@ api.include_router(_referrals_router.router)
 api.include_router(_leaderboard_router.router)
 from routers import interviews as _interviews_router  # noqa: E402
 api.include_router(_interviews_router.router)
+from routers import admin_jobs as _admin_jobs_router  # noqa: E402
+api.include_router(_admin_jobs_router.router)
 app.include_router(api)
 
 app.add_middleware(

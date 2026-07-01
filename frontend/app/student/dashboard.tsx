@@ -197,25 +197,23 @@ export default function StudentDashboard() {
         </TouchableOpacity>
       </View>
 
-      <Card style={{ marginTop: 16 }}>
-        <View style={{ flexDirection: "row", alignItems: "center" }}>
-          <View style={[styles.rankIcon, { backgroundColor: "#FFF4E0" }]}>
-            <Ionicons name="trophy" size={28} color={colors.accent} />
-          </View>
-          <View style={{ flex: 1, marginLeft: 14 }}>
-            <Txt variant="label">Leaderboard</Txt>
-            <Txt variant="h3" style={{ marginTop: 2 }}>
-              {rank ? `Rank #${rank}` : "Not ranked yet"}
-            </Txt>
-            <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 2 }}>
-              Climb by improving your TPS
-            </Txt>
-          </View>
-          <TouchableOpacity onPress={() => router.push("/student/leaderboard")}>
+      <TouchableOpacity testID="walkin-jobs-tile" activeOpacity={0.85} onPress={() => router.push("/student/walkin-jobs")}>
+        <Card style={{ marginTop: 16 }}>
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            <View style={[styles.rankIcon, { backgroundColor: "#E0F2FE" }]}>
+              <Ionicons name="megaphone" size={26} color="#2563EB" />
+            </View>
+            <View style={{ flex: 1, marginLeft: 14 }}>
+              <Txt variant="label">Walk-in & Direct Jobs</Txt>
+              <Txt variant="h3" style={{ marginTop: 2 }}>Free · Admin curated</Txt>
+              <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 2 }}>
+                Walk-in drives, mass hiring, campus & direct openings
+              </Txt>
+            </View>
             <Ionicons name="chevron-forward" size={22} color={colors.textSecondary} />
-          </TouchableOpacity>
-        </View>
-      </Card>
+          </View>
+        </Card>
+      </TouchableOpacity>
 
       {ranks ? (
         <Card style={{ marginTop: 16 }}>
