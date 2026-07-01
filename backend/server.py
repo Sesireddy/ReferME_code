@@ -1933,8 +1933,9 @@ async def list_jobs(
     # Explicit source filter (used by Job Seeker "Walk-in & Direct Jobs" screen
     # to fetch source='admin' only, and by the regular Jobs screen with source='professional').
     if source == "admin":
-        q["source"] = "admin"
-        q["status"] = "open"
+        # Fully replace prior role-based query — admin jobs are free-access + auto-verified,
+        # so we don't want the student `$or` (which excludes source='admin') to make it unsatisfiable.
+        q = {"source": "admin", "status": "open"}
     elif source == "professional":
         # Keep the existing student default constraints
         q["source"] = {"$ne": "admin"}

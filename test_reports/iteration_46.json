@@ -1,0 +1,29 @@
+{
+  "summary": "Iter45 retest — Backend list_jobs source=admin fix VERIFIED (16/16 test_iter45_admin_jobs pass including the previously failing student-source-admin case + all 4 regression smoke tests pass). Frontend fix needed a follow-up correction: original single `<Tabs.Screen name=\"walkin-jobs\">` did NOT hide the tab items because expo-router treats the folder route as TWO nested routes named `walkin-jobs/index` and `walkin-jobs/[id]`. Console proved this with warning: `No route named \"walkin-jobs\" exists in nested children: [..., walkin-jobs/[id], walkin-jobs/index]`. I applied a small config fix (replaced the one line with two Tabs.Screen entries for the nested names) and after `sudo supervisorctl restart expo` the student dashboard tab bar now shows exactly the 5 declared tabs (Home / Jobs / Interviews / LeadBoard / Profile) — no walk-in-jobs items. Walk-in list shows admin job with correct testIDs; Details page shows Overview + description + skills + walk-in section + contact, and NO Apply button anywhere.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter45_admin_jobs.py",
+    "/app/backend/tests/test_iter45_retest_regression.py",
+    "/app/test_reports/pytest/pytest_iter45_retest.xml",
+    "/app/test_reports/pytest/pytest_iter45_retest_regression.xml"
+  ],
+  "action_items": [
+    "Fix already applied by testing agent — please review /app/frontend/app/student/_layout.tsx (lines 32-34). If you prefer, this could be further simplified using a `walkin-jobs/_layout.tsx` (Stack) so a single Tabs.Screen name=\"walkin-jobs\" would match; current two-line fix is minimal and correct."
+  ],
+  "critical_code_review_comments": [
+    "Expo Router folder-based nested routes (index.tsx + [id].tsx inside a subfolder) are registered with slash-delimited names (`walkin-jobs/index`, `walkin-jobs/[id]`), NOT as a single `walkin-jobs` route — this is by design in expo-router when there is no Stack _layout.tsx inside the folder. Any future subroute folders (e.g., /student/foo/index.tsx) that should be hidden from the tab bar must be hidden individually per nested screen."
+  ],
+  "updated_files": ["/app/frontend/app/student/_layout.tsx"],
+  "success_rate": {"backend": "100% (16/16 iter45 + 4/4 regression)", "frontend": "100% (all 4 UI assertions pass after the applied fix)"},
+  "seed_data_creation": "Seeded 1 admin job via POST /api/admin/jobs (id=dfa59a3a-ebe7-46c1-a6ce-a1696d7f8882, title 'Iter45 Walk-in Retest d7881') + created 1 verified student 'test_student_iter45retest_f2d5d7af@referme.io / Test@12345'.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Both fixes verified working. Backend list_jobs source=admin branch correctly returns only admin+open jobs. Frontend tab bar shows the 5 declared tabs only. Applied a follow-up patch to _layout.tsx replacing single walkin-jobs Tabs.Screen with two entries (walkin-jobs/index + walkin-jobs/[id]) because expo-router folder-routes need per-nested-name hiding. Seeded admin job id dfa59a3a-ebe7-46c1-a6ce-a1696d7f8882 is still in DB.",
+  "rca_of_issue": "Frontend fix in main-agent commit used name=\"walkin-jobs\" but expo-router file-based routing registered the /student/walkin-jobs FOLDER as two separate route entries (walkin-jobs/index and walkin-jobs/[id]) because the folder has no internal _layout.tsx. The mismatch caused the Tabs.Screen with name=\"walkin-jobs\" to have no effect (visible via console warning `No route named 'walkin-jobs' exists`), and both nested routes fell through to the default 'discovered route' behaviour that auto-adds them to the tab bar. Applied minimal fix: replaced with two `<Tabs.Screen>` entries using the exact route names. Alternative long-term fix: add `/app/frontend/app/student/walkin-jobs/_layout.tsx` exporting a Stack — that would collapse both nested routes back into a single `walkin-jobs` route that the original single-line hide would then match."
+}
