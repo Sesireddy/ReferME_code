@@ -125,15 +125,24 @@ backend:
 
   - task: "Walk-in & Direct Jobs — admin-posted free jobs section (backend + admin post-job + student walk-in list/details)"
     implemented: true
-    working: "NA"
-    file: "/app/backend/server.py, /app/backend/routers/admin_jobs.py, /app/frontend/app/admin/post-job.tsx, /app/frontend/app/admin/dashboard.tsx, /app/frontend/app/student/dashboard.tsx, /app/frontend/app/student/walkin-jobs/index.tsx, /app/frontend/app/student/walkin-jobs/[id].tsx"
+    working: true
+    file: "/app/backend/server.py, /app/backend/routers/admin_jobs.py, /app/frontend/app/admin/post-job.tsx, /app/frontend/app/admin/dashboard.tsx, /app/frontend/app/student/dashboard.tsx, /app/frontend/app/student/walkin-jobs/index.tsx, /app/frontend/app/student/walkin-jobs/[id].tsx, /app/frontend/app/student/_layout.tsx"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
         - working: "NA"
           agent: "main"
-          comment: "User asked for a full Walk-in/Direct-Jobs feature: (1) Admin gets a 'Post a Job' menu above Logout that opens a form with 15 fields (company, title, description, location, exp min/max, skills, positions, employment_type, salary, walk_in_date/time, venue, contact_person/number/email, deadline, company_logo) + Publish/Save Draft/Cancel; (2) admin jobs auto-verified, no approval, no credits, tagged source='admin'; (3) Student home 'LEADERBOARD' tile replaced with 'Walk-in & Direct Jobs' tile → new list at /student/walkin-jobs (Details button, no Apply) + full details screen at /student/walkin-jobs/[id]; (4) Regular /jobs listing excludes source='admin' automatically. Backend: added source discriminator to POST /jobs, new POST /admin/jobs + GET /admin/jobs/mine + PATCH /admin/jobs/{id} + POST /admin/jobs/{id}/publish in new /app/backend/routers/admin_jobs.py (mounted in server.py). Validation: 10-digit Indian mobile for contact_number, valid email for contact_email, YYYY-MM-DD + future-only for dates when publishing (drafts skip date-future check). All lint clean. Backend reloaded cleanly (401 on protected route). Needs full end-to-end testing (backend endpoints + frontend flow)."
+          comment: "Full Walk-in/Direct-Jobs feature: admin Post-a-Job menu + form with 15 fields + Publish/Draft/Cancel; source discriminator on jobs collection; student Home tile swapped from LEADERBOARD → Walk-in; new /student/walkin-jobs list + [id] details (Details button, no Apply)."
+        - working: false
+          agent: "testing"
+          comment: "Iter45: 15/16 BE PASS + FE renders — but GET /api/jobs?source=admin as student returned 0 (student $or overrode source filter) so list was empty. Also student tab bar auto-exposed walkin-jobs as 2 extra tabs."
+        - working: "NA"
+          agent: "main"
+          comment: "BE: list_jobs?source=admin now fully replaces q with {source:'admin', status:'open'}. FE: added <Tabs.Screen name='walkin-jobs' href=null />."
+        - working: true
+          agent: "testing"
+          comment: "Iter46 retest: BE 16/16 + 4/4 regression PASS. FE: tab bar now shows 5 tabs only; /student/walkin-jobs shows the admin job; Details shows all fields, NO Apply button. testing_agent applied a small correction — expo-router registered walkin-jobs as walkin-jobs/index + walkin-jobs/[id], so the _layout hides BOTH nested route names individually. Fix verified working end-to-end."
     implemented: true
     working: true
     file: "/app/backend/routers/interviews.py, /app/frontend/app/student/my-mock-interviews.tsx"
