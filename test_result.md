@@ -123,7 +123,32 @@ backend:
           agent: "testing"
           comment: "Iter30 regression: 22/22 new tests pass. /api/interviews/{slots,book,my-bookings,joined,complete} all behaviour-neutral vs pre-refactor. /api/jobs/apply path that calls _can_use_free now works (used_free=true for free-pool users, -49 credits otherwise). Phase A endpoints (referrals + leaderboard) still 200. Pre-existing iter13 phone-gate fixture failures are unrelated to this refactor."
 
-  - task: "Walk-in & Direct Jobs — admin-posted free jobs section (backend + admin post-job + student walk-in list/details)"
+  - task: "Admin My Posted Jobs list + inline Publish/Edit/Delete + Edit mode on post-job form"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/admin/my-posted-jobs.tsx, /app/frontend/app/admin/post-job.tsx, /app/frontend/app/admin/dashboard.tsx, /app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Built /admin/my-posted-jobs list (drafts+published) with Publish/Edit/Delete per card + New button. Extended post-job.tsx to accept ?editId and PATCH the existing job. Added menu-my-posted-jobs entry above menu-post-a-job in admin dashboard."
+        - working: false
+          agent: "testing"
+          comment: "iter47: hydrate + menu + card actions PASS, but submit() still POSTed on edit (duplicate), used wrong success title, and redirected to /admin/dashboard."
+        - working: "NA"
+          agent: "main"
+          comment: "Rewrote submit() to branch on isEdit (PATCH vs POST), correct success alerts, redirect to /admin/my-posted-jobs."
+        - working: false
+          agent: "testing"
+          comment: "iter48: FE fixes verified, but a LEGACY @api.patch('/admin/jobs/{job_id}') stub at server.py:3546 was SHADOWING the router version — rejected status='open'/'draft' with 400 and silently dropped walk-in/contact/skills fields."
+        - working: "NA"
+          agent: "main"
+          comment: "Removed the legacy admin_edit_job handler + AdminEditJobBody model from server.py (replaced with comment-only stub). Router at routers/admin_jobs.py is now sole PATCH handler."
+        - working: true
+          agent: "testing"
+          comment: "iter49: 21/21 backend PASS (5 new + 16 iter45 regression). FE 3/3 scenarios PASS — Edit Live job PATCH 200 → 'Job Updated 🎉' → redirect (no duplicate); Save Draft PATCH 200 → 'Draft Updated'; NEW POST 200 → 'Job Published 🎉'. New iter49 pytest pins the shadow-route regression."
     implemented: true
     working: true
     file: "/app/backend/server.py, /app/backend/routers/admin_jobs.py, /app/frontend/app/admin/post-job.tsx, /app/frontend/app/admin/dashboard.tsx, /app/frontend/app/student/dashboard.tsx, /app/frontend/app/student/walkin-jobs/index.tsx, /app/frontend/app/student/walkin-jobs/[id].tsx, /app/frontend/app/student/_layout.tsx"

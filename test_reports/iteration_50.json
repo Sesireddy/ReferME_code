@@ -1,0 +1,46 @@
+{
+  "summary": "Iter50 — Job Seeker Leaderboard subtitle refactor verified. Frontend-only change to /app/frontend/app/student/leaderboard.tsx. NOTE: on first UI load the running Metro bundle was serving a STALE version (old 'Top performers · 100 participants' subtitle, no baseTotal fetch). Cleared /app/frontend/.metro-cache and restarted expo via supervisorctl — after rebundle the new subtitle rendered correctly. All 4 acceptance criteria + baseTotal single-fetch requirement PASS. Regression: iter45 admin_jobs suite 16/16 PASS (no backend touched). ONE UX/design issue: when filters are applied the long line-1 wraps to 2 sub-lines which causes 'Top 100 performers' (line 2) to be visually clipped by numberOfLines={2} on ScreenTitle subtitle — the DOM innerText contains it but it is not rendered on screen. Number in 'Total participants: 5000' and '(filtered fresher: 541)' both remain visible; the truncation only hides line 2 while a filter is active. Recommend bumping numberOfLines to 3 (or removing it entirely) on the ScreenTitle subtitle when filters are active.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "/student/leaderboard",
+        "issues": [
+          "When any filter is applied, subtitle line 1 becomes 'Total participants: 5000 (filtered fresher: 541)' which wraps to 2 lines at 414px viewport. ScreenTitle subtitle has numberOfLines={2} (ScreenTitle.tsx:34), so line 2 'Top 100 performers' is CLIPPED and shown as ellipsis (see screenshot lb_fresher.png). The spec asked for two lines total; if the intent is that both semantic lines must always be visible, either (a) raise numberOfLines to 3, (b) shorten the label, or (c) drop numberOfLines on the subtitle."
+        ]
+      }
+    ],
+    "react_native_issues": [
+      {"component": "shadow* style props (multiple)", "issue": "RN Web deprecation warning \"'shadow*' style props are deprecated. Use 'boxShadow'.\" — carried over from prior iterations, cosmetic only."},
+      {"component": "props.pointerEvents", "issue": "RN Web deprecation warning \"props.pointerEvents is deprecated. Use style.pointerEvents\" — carried over, cosmetic only."}
+    ]
+  },
+  "test_report_links": [
+    "/app/test_reports/pytest/pytest_iter50_regression.xml"
+  ],
+  "action_items": [
+    "Consider raising ScreenTitle subtitle numberOfLines to 3 (or dropping it) so the 'Top 100 performers' line remains visible when filters are applied and line 1 wraps.",
+    "(Ops/build hygiene, non-blocking) Metro was serving a stale leaderboard bundle prior to this iteration — the previous file had `Top performers · 100 participants` cached. It was resolved by `rm -rf /app/frontend/.metro-cache && sudo supervisorctl restart expo`. If future iterations touch this screen and users report 'old text still showing', clearing the metro cache is the fix.",
+    "(Optional, non-critical) Address RN Web deprecation warnings ('shadow*' → 'boxShadow', 'props.pointerEvents' → 'style.pointerEvents')."
+  ],
+  "critical_code_review_comments": [
+    "leaderboard.tsx:79-87 — baseTotal useEffect has an empty dependency array [] so it fires exactly once at mount. Verified with network capture: only one `?page=1&page_size=1` request across the entire session (initial + Fresher filter + Clear). ✓ correct.",
+    "leaderboard.tsx:117-129 — subtitle string composed as `${line1}\\nTop 100 performers`; ScreenTitle already sets whiteSpace: pre-wrap via numberOfLines={2}. Working but see design_issues.",
+    "leaderboard.tsx:125 — filterLabel = activeFilters.join(', '). With multiple filters this becomes long fast (e.g., 'fresher, Python, Bangalore') which will exacerbate the line-2 truncation described above."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% (16/16 iter45 admin_jobs regression)",
+    "frontend": "4/4 primary assertions PASS + baseTotal single-fetch PASS + 1 minor design issue (line 2 clipped when filters active)"
+  },
+  "seed_data_creation": "Created 1 test student via API: test-lb-student-1782961121@example.com / Test@12345 (verified via mock_otp). Used only for the login UI leg — safe to leave; no PII, no data written beyond a user row + welcome bonus 100 credits.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Live baseTotal on this env is 5000 job seekers. Fresher-filtered total is 541. If the numbers shift due to new seed, re-verify with: curl -H 'Authorization: Bearer <token>' 'https://refer-connect-11.preview.emergentagent.com/api/leaderboard/students?page=1&page_size=1' (baseTotal) and same URL with &category=fresher (filteredTotal). Login flow for /student/leaderboard requires an actual student user — see /app/memory/test_credentials.md; you can quickly signup+verify via /api/auth/signup (returns mock_otp) then /api/auth/verify-otp.",
+  "rca_of_issue": "Initial UI run showed the OLD subtitle 'Top performers · 100 participants' even though source code had the new implementation. Root cause: stale Metro bundler cache at /app/frontend/.metro-cache — the compiled bundle for /app/frontend/app/student/leaderboard.tsx retained a previous version of the file (grep of the .metro-cache dir showed the old JSX with `board.length` for participants and no baseTotal state). Mitigation applied by testing agent: `rm -rf /app/frontend/.metro-cache && sudo supervisorctl restart expo` — after 20s rebundle window, the UI served the new subtitle and all assertions passed. This is not a code bug; it is a build/cache freshness issue. Recommend main agent adds a cache-clear step to any future iteration that touches Expo-served screens where hot-reload does not visibly pick up changes."
+}

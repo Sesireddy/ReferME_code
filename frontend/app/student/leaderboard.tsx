@@ -34,6 +34,8 @@ type LbItem = {
 
 export default function StudentLeaderboard() {
   const [board, setBoard] = useState<LbItem[]>([]);
+  const [filteredTotal, setFilteredTotal] = useState<number>(0);
+  const [baseTotal, setBaseTotal] = useState<number>(0);
   const [refreshing, setRefreshing] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
 
@@ -59,12 +61,30 @@ export default function StudentLeaderboard() {
       params.set("page_size", "100");
       const qs = params.toString();
       const r = await api<{ items: LbItem[]; total: number } | LbItem[]>(`/leaderboard/students${qs ? "?" + qs : ""}`);
-      setBoard(Array.isArray(r) ? r : (r.items || []));
+      if (Array.isArray(r)) {
+        setBoard(r);
+        setFilteredTotal(r.length);
+      } else {
+        setBoard(r.items || []);
+        setFilteredTotal(r.total ?? (r.items?.length || 0));
+      }
     } catch {}
     setRefreshing(false);
   }, [category, skill, location]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Fetch the unfiltered global participant count once at mount (used to render
+  // "Total participants: N (filtered X: M)" in the header).
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await api<{ total?: number; items?: any[] } | any[]>(`/leaderboard/students?page=1&page_size=1`);
+        if (Array.isArray(r)) setBaseTotal(r.length);
+        else setBaseTotal(r.total ?? 0);
+      } catch {}
+    })();
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -96,6 +116,18 @@ export default function StudentLeaderboard() {
 
   const hasAppliedFilters = Boolean(category || skill || location);
 
+  // Build the subtitle: two lines. Line 1 shows total participants with the
+  // filter-adjusted count in brackets when filters are applied.
+  const activeFilters: string[] = [];
+  if (category) activeFilters.push(category);
+  if (skill) activeFilters.push(skill);
+  if (location) activeFilters.push(location);
+  const filterLabel = activeFilters.join(", ");
+  const line1 = hasAppliedFilters
+    ? `Total participants: ${baseTotal} (filtered ${filterLabel}: ${filteredTotal})`
+    : `Total participants: ${baseTotal}`;
+  const subtitle = `${line1}\nTop 100 performers`;
+
   return (
     <Screen refreshing={refreshing} onRefresh={load}>
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
@@ -104,7 +136,7 @@ export default function StudentLeaderboard() {
             title="Leaderboard"
             icon="trophy"
             color={colors.accent}
-            subtitle={`Top performers · ${board.length} participants`}
+            subtitle={subtitle}
           />
         </View>
         <TouchableOpacity testID="filter-btn" onPress={openFilters} style={styles.filterBtn}>
