@@ -31,7 +31,7 @@ export function ScreenTitle({
             {title}
           </Txt>
           {subtitle ? (
-            <Txt variant="muted" numberOfLines={2} style={{ marginTop: 2 }}>
+            <Txt variant="muted" numberOfLines={3} style={{ marginTop: 2 }}>
               {subtitle}
             </Txt>
           ) : null}
