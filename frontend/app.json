@@ -13,7 +13,8 @@
       "infoPlist": {
         "NSCameraUsageDescription": "Join mock interviews with video.",
         "NSMicrophoneUsageDescription": "Talk with your interviewer."
-      }
+      },
+      "bundleIdentifier": "com.emergent.referconnect.bihcy1"
     },
     "android": {
       "adaptiveIcon": {
@@ -25,7 +26,8 @@
         "CAMERA",
         "RECORD_AUDIO",
         "MODIFY_AUDIO_SETTINGS"
-      ]
+      ],
+      "package": "com.emergent.referconnect.bihcy1"
     },
     "web": {
       "bundler": "metro",

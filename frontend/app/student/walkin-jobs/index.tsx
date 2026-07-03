@@ -9,7 +9,6 @@ import { Card } from "@/src/components/Card";
 import { Button } from "@/src/components/Button";
 import { colors, radius } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
-
 type Job = {
   id: string;
   title: string;
@@ -84,6 +83,13 @@ export default function WalkinJobsList() {
   return (
     <Screen>
       <Stack.Screen options={{ title: "Walk-in & Direct Jobs" }} />
+      <View style={styles.header}>
+        <TouchableOpacity testID="walkin-back" onPress={() => { if (router.canGoBack()) router.back(); else router.replace("/student/dashboard"); }} style={styles.backBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <Ionicons name="chevron-back" size={22} color={colors.textPrimary} />
+          <Txt style={{ marginLeft: 2, color: colors.textPrimary, fontWeight: "600" }}>Back</Txt>
+        </TouchableOpacity>
+        <Txt variant="h2" style={{ flex: 1, textAlign: "center", marginRight: 60 }} numberOfLines={1}>Walk-in & Direct Jobs</Txt>
+      </View>
       <FlatList
         data={jobs}
         keyExtractor={(j) => j.id}
@@ -104,6 +110,8 @@ export default function WalkinJobsList() {
 }
 
 const styles = StyleSheet.create({
+  header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingTop: 8, paddingBottom: 4 },
+  backBtn: { flexDirection: "row", alignItems: "center", paddingVertical: 6, paddingRight: 8 },
   metaRow: { flexDirection: "row", alignItems: "center", marginTop: 4 },
   metaText: { marginLeft: 4, color: colors.textSecondary },
   freeBadge: { flexDirection: "row", alignItems: "center", backgroundColor: colors.success, paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.sm, gap: 3 },

@@ -29,9 +29,8 @@ export default function StudentLayout() {
       <Tabs.Screen name="my-mock-interviews" options={{ href: null }} />
       <Tabs.Screen name="my-leaderboard" options={{ href: null }} />
       <Tabs.Screen name="refer" options={{ href: null }} />
-      {/* walkin-jobs is a folder route (index + [id]) — each nested screen must be hidden individually */}
-      <Tabs.Screen name="walkin-jobs/index" options={{ href: null }} />
-      <Tabs.Screen name="walkin-jobs/[id]" options={{ href: null }} />
+      {/* walkin-jobs is a nested Stack (see walkin-jobs/_layout.tsx) so push/back stays inside it */}
+      <Tabs.Screen name="walkin-jobs" options={{ href: null }} />
     </Tabs>
   );
 }

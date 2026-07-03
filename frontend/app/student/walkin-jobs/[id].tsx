@@ -1,7 +1,7 @@
 // Job Seeker — Walk-in job details. No Apply button. Free access, full details view.
 import React, { useEffect, useState } from "react";
 import { View, StyleSheet, ScrollView, Image, TouchableOpacity, Linking, Platform } from "react-native";
-import { useLocalSearchParams, Stack } from "expo-router";
+import { useLocalSearchParams, Stack, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import { Screen } from "@/src/components/Screen";
@@ -44,6 +44,7 @@ async function copy(value: string, label: string) {
 
 export default function WalkinDetails() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const router = useRouter();
   const [j, setJ] = useState<Job | null>(null);
   const [err, setErr] = useState("");
 
@@ -70,6 +71,13 @@ export default function WalkinDetails() {
   return (
     <Screen>
       <Stack.Screen options={{ title: j.company || "Details" }} />
+      <View style={styles.header}>
+        <TouchableOpacity testID="walkin-details-back" onPress={() => { if (router.canGoBack()) router.back(); else router.replace("/student/walkin-jobs"); }} style={styles.backBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <Ionicons name="chevron-back" size={22} color={colors.textPrimary} />
+          <Txt style={{ marginLeft: 2, color: colors.textPrimary, fontWeight: "600" }}>Back</Txt>
+        </TouchableOpacity>
+        <Txt variant="h3" style={{ flex: 1, textAlign: "center", marginRight: 60 }} numberOfLines={1}>{j.company || "Details"}</Txt>
+      </View>
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
         <Card>
           <View style={{ flexDirection: "row", alignItems: "center" }}>
@@ -154,6 +162,8 @@ export default function WalkinDetails() {
 }
 
 const styles = StyleSheet.create({
+  header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingTop: 8, paddingBottom: 4 },
+  backBtn: { flexDirection: "row", alignItems: "center", paddingVertical: 6, paddingRight: 8 },
   field: { flexDirection: "row", alignItems: "center", marginBottom: 10 },
   fieldIcon: { width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center", marginRight: 10 },
   skillChip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: colors.primary + "12", borderWidth: 1, borderColor: colors.primary + "33" },
