@@ -61,8 +61,13 @@ async def leaderboard_students(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=500),
 ):
-    """LeaderBoard — ranks Students by Talent Potential Score (TPS)."""
-    students = await db.users.find({"role": "student"}, {"_id": 0, "password_hash": 0}).to_list(5000)
+    """LeaderBoard — ranks Students by Talent Potential Score (TPS).
+
+    NOTE: `to_list(None)` (uncapped) is used so `total` reflects the true count
+    of matching Students regardless of DB size. Previously capped at 5000, which
+    silently showed 5000 as the total even when the real count was higher.
+    """
+    students = await db.users.find({"role": "student"}, {"_id": 0, "password_hash": 0}).to_list(None)
     out: list[dict] = []
     for s in students:
         sid = s["id"]
