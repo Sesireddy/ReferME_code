@@ -1626,7 +1626,7 @@ async def subscription_plans(u: dict = Depends(current_user)):
             "first_deposit_inr": FIRST_DEPOSIT_MIN_INR,
             "first_deposit_credits": FIRST_DEPOSIT_BONUS_CREDITS,
             "subsequent_rate": "1 INR = 1 credit",
-            "action_cost": ACTION_COST,
+            "action_cost": get_action_cost(u),
         },
     }
 
