@@ -3577,7 +3577,7 @@ async def admin_adjust_credits(user_id: str, body: AdminCreditAdjustBody, admin:
 # retained by some old admin UIs, use PATCH /api/admin/jobs/{id} with the newer schema —
 # the router accepts partial payloads via AdminJobPatchBody.
 
-# ---- Cancel Booking (Admin) — auto-refund 49 credits to student ----
+# ---- Cancel Booking (Admin) — auto-refund credits to student (99 or 199, per stored credits_charged) ----
 class AdminCancelBookingBody(BaseModel):
     reason: str = Field(min_length=2, max_length=400)
     refund: Optional[bool] = True

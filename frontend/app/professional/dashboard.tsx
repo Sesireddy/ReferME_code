@@ -98,7 +98,7 @@ export default function ProDashboard() {
           <Card style={[styles.tileCard, { borderColor: "#7C3AED", borderWidth: 2 }]}>
             <Ionicons name="videocam" size={24} color="#7C3AED" />
             <Txt variant="h3" style={{ marginTop: 8 }}>Conduct Interview</Txt>
-            <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 4 }}>+35 credits / session</Txt>
+            <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 4 }}>+110 credits / session</Txt>
           </Card>
         </TouchableOpacity>
         <TouchableOpacity testID="cta-post-job" style={styles.tile} onPress={() => router.push("/professional/post-job")}>

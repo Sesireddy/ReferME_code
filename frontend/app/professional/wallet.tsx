@@ -137,8 +137,8 @@ export default function ProWallet() {
           <Txt variant="label" style={{ color: colors.primary, marginLeft: 6 }}>How you earn credits</Txt>
         </View>
         <View style={{ marginTop: 6 }}>
-          <Txt variant="small">• +35 credits per successful mock interview</Txt>
-          <Txt variant="small">• +100 credits on 4 valid applications to a job you posted</Txt>
+          <Txt variant="small">• +110 credits per successful mock interview</Txt>
+          <Txt variant="small">• +200 credits on 4 valid applications to a job you posted</Txt>
           <Txt variant="small">• +1500 credits when your hire is verified</Txt>
         </View>
       </Card>

@@ -115,7 +115,7 @@ export default function ProMyJobs() {
           <Ionicons name="briefcase-outline" size={42} color={colors.textSecondary} />
           <Txt variant="h3" style={{ marginTop: 10 }}>No jobs posted yet</Txt>
           <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 4, textAlign: "center" }}>
-            Post your first job and get +100 credits after 4 valid applications.
+            Post your first job and get +200 credits after 4 valid applications.
           </Txt>
           <Button testID="empty-post" title="Post a Job" onPress={() => router.push("/professional/post-job")} style={{ marginTop: 14, paddingHorizontal: 32 }} />
         </Card>
@@ -184,7 +184,7 @@ export default function ProMyJobs() {
                 {j.posting_reward_paid ? (
                   <View style={[styles.meta, { backgroundColor: "#FFF4E0", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2 }]}>
                     <Ionicons name="gift" size={12} color="#FF8F00" />
-                    <Txt variant="small" style={{ color: "#FF8F00", marginLeft: 4, fontWeight: "700" }}>+100 earned</Txt>
+                    <Txt variant="small" style={{ color: "#FF8F00", marginLeft: 4, fontWeight: "700" }}>+200 earned</Txt>
                   </View>
                 ) : null}
               </View>

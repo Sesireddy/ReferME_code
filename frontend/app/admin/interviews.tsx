@@ -120,7 +120,7 @@ export default function AdminInterviews() {
         scrollEnabled={false}
         renderItem={({ item: s }) => {
           const isCompleted = s.status === "completed";
-          const creditsAwarded = isCompleted ? 35 : 0;
+          const creditsAwarded = isCompleted ? 110 : 0;
           const hasProof = !!s.proof_screenshot;
           const isPdf = hasProof && String(s.proof_screenshot).startsWith("data:application/pdf");
           return (
@@ -294,7 +294,7 @@ export default function AdminInterviews() {
                 <Row label="Scheduled" value={new Date(detail.start_at).toLocaleString()} />
                 <Row label="Status" value={String(detail.status || "—").toUpperCase()} />
                 <Row label="Overall Rating" value={detail.candidate_rating != null ? `${detail.candidate_rating}/10` : "—"} />
-                <Row label="Credits Awarded" value={detail.status === "completed" ? "+35" : "0"} />
+                <Row label="Credits Awarded" value={detail.status === "completed" ? "+110" : "0"} />
                 {detail.candidate_feedback ? (
                   <View style={{ marginTop: 6 }}>
                     <Txt variant="small" style={{ color: colors.textSecondary }}>Feedback</Txt>
