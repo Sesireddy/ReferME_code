@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { View, ActivityIndicator } from "react-native";
-import { Tabs, useRouter } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
+import { Stack, useRouter } from "expo-router";
 import { colors } from "@/src/theme/tokens";
 import { getToken, getUser } from "@/src/lib/api";
 
+// Root Stack for the Admin area (with auth guard). Hidden pushed screens
+// (audit-logs, payouts, disputes, post-job, my-posted-jobs) are stacked on top
+// of the (tabs) group — back button performs a real one-step pop.
 export default function AdminLayout() {
   const router = useRouter();
   const [authed, setAuthed] = useState<"checking" | "yes" | "no">("checking");
@@ -31,27 +33,13 @@ export default function AdminLayout() {
   }
 
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.textSecondary,
-        tabBarStyle: { backgroundColor: colors.surface, borderTopColor: colors.border, height: 64, paddingBottom: 8, paddingTop: 6 },
-        tabBarLabelStyle: { fontSize: 10, fontWeight: "600" },
-      }}
-    >
-      <Tabs.Screen name="dashboard" options={{ title: "Dashboard", tabBarIcon: ({ color, size }) => <Ionicons name="stats-chart" size={size} color={color} /> }} />
-      <Tabs.Screen name="users" options={{ title: "Users", tabBarIcon: ({ color, size }) => <Ionicons name="people" size={size} color={color} /> }} />
-      <Tabs.Screen name="jobs" options={{ title: "Jobs", tabBarIcon: ({ color, size }) => <Ionicons name="briefcase" size={size} color={color} /> }} />
-      <Tabs.Screen name="interviews" options={{ title: "Interviews", tabBarIcon: ({ color, size }) => <Ionicons name="videocam" size={size} color={color} /> }} />
-      <Tabs.Screen name="transactions" options={{ title: "Credits", tabBarIcon: ({ color, size }) => <Ionicons name="card" size={size} color={color} /> }} />
-      <Tabs.Screen name="redemptions" options={{ title: "Approvals", tabBarIcon: ({ color, size }) => <Ionicons name="checkmark-done-circle" size={size} color={color} /> }} />
-      <Tabs.Screen name="audit-logs" options={{ href: null }} />
-      <Tabs.Screen name="payouts" options={{ href: null }} />
-      <Tabs.Screen name="disputes" options={{ href: null }} />
-      {/* Admin Walk-in & Direct Jobs — hidden from tab bar, reached from admin dashboard/jobs */}
-      <Tabs.Screen name="post-job" options={{ href: null }} />
-      <Tabs.Screen name="my-posted-jobs" options={{ href: null }} />
-    </Tabs>
+    <Stack screenOptions={{ headerShown: false, animation: "slide_from_right" }}>
+      <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="audit-logs" />
+      <Stack.Screen name="payouts" />
+      <Stack.Screen name="disputes" />
+      <Stack.Screen name="post-job" />
+      <Stack.Screen name="my-posted-jobs" />
+    </Stack>
   );
 }
