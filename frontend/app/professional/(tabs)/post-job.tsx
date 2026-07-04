@@ -90,19 +90,23 @@ export default function ProPostJob() {
   }
 
   async function pickPdf() {
-    const res = await DocumentPicker.getDocumentAsync({ type: ["application/pdf"], copyToCacheDirectory: true });
-    if (res.canceled || !res.assets?.[0]) return;
-    const a = res.assets[0];
     try {
-      // Read as base64
-      const FileSystem = await import("expo-file-system/legacy");
-      const base64 = await (FileSystem as any).readAsStringAsync(a.uri, { encoding: "base64" });
-      setProofDataUri(`data:application/pdf;base64,${base64}`);
+      const res = await DocumentPicker.getDocumentAsync({ type: ["application/pdf"], copyToCacheDirectory: true });
+      if (res.canceled || !res.assets?.[0]) return;
+      const a = res.assets[0];
+      // Cross-platform base64 read (fetch + FileReader) — see fileToDataUri.ts for the full rationale.
+      const { fileToDataUri } = await import("@/src/lib/fileToDataUri");
+      const dataUri = await fileToDataUri(a.uri, { forceMime: "application/pdf" });
+      setProofDataUri(dataUri);
       setProofMime("application/pdf");
       setProofFileName(a.name || "proof.pdf");
       setErrors((e) => ({ ...e, proof: undefined }));
     } catch (e: any) {
-      Alert.alert("Read failed", "Could not read PDF file.");
+      console.warn("pickPdf failed", e);
+      const msg = /exceeds/i.test(String(e?.message || ""))
+        ? String(e.message)
+        : "Could not read the selected PDF. Please try a different file or use the Job Opening Link instead.";
+      Alert.alert("PDF upload failed", msg);
     }
   }
 

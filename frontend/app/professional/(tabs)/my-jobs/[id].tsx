@@ -4,7 +4,6 @@ import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
-import * as FileSystem from "expo-file-system/legacy";
 import { Screen } from "@/src/components/Screen";
 import { Txt } from "@/src/components/Txt";
 import { Card } from "@/src/components/Card";
@@ -93,9 +92,10 @@ export default function JobApplicants() {
       const res = await DocumentPicker.getDocumentAsync({ type: ["application/pdf", "image/*"], copyToCacheDirectory: true });
       if (res.canceled || !res.assets?.length) return;
       const a = res.assets[0];
-      const base64 = await FileSystem.readAsStringAsync(a.uri, { encoding: FileSystem.EncodingType.Base64 });
       const mime = a.mimeType || (a.name?.endsWith(".pdf") ? "application/pdf" : "image/jpeg");
-      const dataUrl = `data:${mime};base64,${base64}`;
+      // Cross-platform base64 read (fetch + FileReader) — see /src/lib/fileToDataUri.ts.
+      const { fileToDataUri } = await import("@/src/lib/fileToDataUri");
+      const dataUrl = await fileToDataUri(a.uri, { forceMime: mime });
       setProofB64(dataUrl);
       setProofPreview(mime.startsWith("image/") ? a.uri : "");
       setProofKind(mime === "application/pdf" ? "pdf" : "image");
