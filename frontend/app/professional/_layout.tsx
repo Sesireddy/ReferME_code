@@ -23,7 +23,7 @@ export default function ProLayout() {
       <Tabs.Screen name="payout" options={{ href: null }} />
       <Tabs.Screen name="wallet" options={{ href: null }} />
       <Tabs.Screen name="redeem" options={{ href: null }} />
-      <Tabs.Screen name="my-jobs/[id]" options={{ href: null }} />
+      {/* my-jobs is a nested Stack (see my-jobs/_layout.tsx) — no separate hidden tab needed for [id] */}
       <Tabs.Screen name="my-mock-interviews" options={{ href: null }} />
       <Tabs.Screen name="my-leaderboard" options={{ href: null }} />
     </Tabs>

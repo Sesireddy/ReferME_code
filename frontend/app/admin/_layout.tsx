@@ -49,6 +49,9 @@ export default function AdminLayout() {
       <Tabs.Screen name="audit-logs" options={{ href: null }} />
       <Tabs.Screen name="payouts" options={{ href: null }} />
       <Tabs.Screen name="disputes" options={{ href: null }} />
+      {/* Admin Walk-in & Direct Jobs — hidden from tab bar, reached from admin dashboard/jobs */}
+      <Tabs.Screen name="post-job" options={{ href: null }} />
+      <Tabs.Screen name="my-posted-jobs" options={{ href: null }} />
     </Tabs>
   );
 }
