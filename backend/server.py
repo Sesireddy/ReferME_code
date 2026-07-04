@@ -82,10 +82,30 @@ def expand_city(term: str) -> list[str]:
 
 
 # Business rules
-ACTION_COST = 49  # credits per action (apply / book)
-INTERVIEW_PRO_REWARD = 35  # credits awarded to pro for a completed mock interview
-JOB_POST_REWARD = 100  # one-time credits awarded when a posted job gets >= JOB_POST_REWARD_MIN_APPS valid applications
+# Credit costs are now per Job Seeker category (see get_action_cost()):
+#   Fresher / Intern  → 99 credits per action (book interview / apply pro job)
+#   Experienced       → 199 credits per action
+# Admin Walk-in & Direct Jobs stay FREE (no credit deduction — enforced separately).
+ACTION_COST_FRESHER = 99
+ACTION_COST_EXPERIENCED = 199
+ACTION_COST = ACTION_COST_FRESHER  # legacy default (used for admin refunds when category is unknown)
+INTERVIEW_PRO_REWARD = 110  # credits awarded to pro for a completed mock interview
+JOB_POST_REWARD = 200  # one-time credits awarded when a posted job gets >= JOB_POST_REWARD_MIN_APPS valid applications
 JOB_POST_REWARD_MIN_APPS = 4
+
+
+def get_action_cost(u: dict) -> int:
+    """Credit cost per Job Seeker action based on the profile category.
+
+    - Student with `preferred_role == "experienced"`  → 199
+    - Student with `preferred_role in ("fresher","intern")` (or missing) → 99
+    - Non-students → 0 (they never pay to book/apply)
+    """
+    if not u or u.get("role") != "student":
+        return 0
+    profile = u.get("profile") or {}
+    role = (profile.get("preferred_role") or "fresher").strip().lower()
+    return ACTION_COST_EXPERIENCED if role == "experienced" else ACTION_COST_FRESHER
 
 # ------------------- Referral Program -------------------
 REFERRAL_REWARD = 25  # credits awarded to the referrer for each successful Job Seeker signup
@@ -242,6 +262,8 @@ def user_public(u: dict) -> dict:
         out["interviews_attended"] = int(u.get("interviews_attended") or 0)
         out["student_rating"] = float(u.get("student_rating") or 0)
         out["student_ratings_count"] = int(u.get("student_ratings_count") or 0)
+        # Per-action credit cost driven by profile category (Fresher/Experienced).
+        out["action_cost"] = get_action_cost(u)
     return out
 
 
@@ -1584,6 +1606,7 @@ async def get_wallet(u: dict = Depends(current_user)):
         "locked_credits": u.get("locked_credits", 0),
         "free_uses_left": u.get("free_uses_left", 0),
         "total_deposits": u.get("total_deposits", 0),
+        "action_cost": get_action_cost(u),
         "transactions": txs,
     }
 
@@ -2126,16 +2149,26 @@ async def apply_job(body: ApplyJobBody, u: dict = Depends(require_role(["student
     job = await db.jobs.find_one({"id": body.job_id}, {"_id": 0})
     if not job or job["status"] != "open":
         raise HTTPException(status_code=400, detail="Job not available")
+    # Admin-posted Walk-in & Direct Jobs are FREE and do NOT accept in-app applications.
+    # Job seekers are instructed to use the contact details from the details page instead.
+    if (job.get("source") or "").lower() == "admin":
+        raise HTTPException(
+            status_code=400,
+            detail="This is an Admin Walk-in & Direct Job. Please contact the recruiter directly using the details on the job page — no in-app application needed.",
+        )
     existing = await db.applications.find_one({"job_id": job["id"], "student_id": u["id"]}, {"_id": 0})
     if existing:
         raise HTTPException(status_code=400, detail="Already applied")
     use_free = _can_use_free(u, "referral")
-    if not use_free and u.get("credits", 0) < ACTION_COST:
+    per_action_cost = get_action_cost(u)
+    if not use_free and u.get("credits", 0) < per_action_cost:
         raise HTTPException(status_code=402, detail="Insufficient credits. Please add credits to continue applying for this job.")
     if use_free:
         await db.users.update_one({"id": u["id"]}, {"$inc": {"free_uses_left": -1}})
+        charged = 0
     else:
-        await _credit_user(u["id"], -ACTION_COST, "job_application", {"job_id": job["id"]})
+        await _credit_user(u["id"], -per_action_cost, "job_application", {"job_id": job["id"], "cost": per_action_cost})
+        charged = per_action_cost
     app_doc = {
         "id": new_id(),
         "job_id": job["id"],
@@ -2146,6 +2179,7 @@ async def apply_job(body: ApplyJobBody, u: dict = Depends(require_role(["student
         "referrer_pro_id": None,
         "status": "applied",  # applied -> shortlisted -> referred -> awaiting_interview -> interview_scheduled -> hired / rejected
         "status_history": [{"status": "applied", "at": now_iso(), "by": u["id"]}],
+        "credits_charged": charged,
         "created_at": now_iso(),
     }
     await db.applications.insert_one(app_doc)
@@ -2711,9 +2745,11 @@ async def admin_cancel_slot(slot_id: str, _: dict = Depends(admin_only)):
         raise HTTPException(status_code=404, detail="Slot not found")
     await db.interview_slots.update_one({"id": slot_id}, {"$set": {"status": "cancelled"}})
     if slot.get("student_id"):
-        # refund credits
-        await _credit_user(slot["student_id"], ACTION_COST, "interview_cancel_refund", {"slot_id": slot_id})
-        await push_notification(slot["student_id"], "Interview cancelled", "Credits refunded.", "warning")
+        # Refund the exact amount the student was charged for this booking
+        # (persisted on the slot at booking time — falls back to legacy ACTION_COST).
+        refund_amount = int(slot.get("credits_charged") or ACTION_COST)
+        await _credit_user(slot["student_id"], refund_amount, "interview_cancel_refund", {"slot_id": slot_id, "amount": refund_amount})
+        await push_notification(slot["student_id"], "Interview cancelled", f"{refund_amount} credits refunded.", "warning")
     return {"message": "Slot cancelled"}
 
 

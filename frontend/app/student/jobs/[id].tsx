@@ -50,10 +50,14 @@ export default function JobDetail() {
     } catch (e: any) {
       const msg = e.message || "";
       if (/insufficient credit/i.test(msg)) {
-        Alert.alert("Insufficient credits", "Please add credits to continue applying for this job.", [
-          { text: "Add Credits", onPress: () => router.push("/student/wallet") },
-          { text: "Cancel", style: "cancel" },
-        ]);
+        Alert.alert(
+          "Insufficient Credits",
+          "You don't have enough credits to continue. Please purchase additional credits.",
+          [
+            { text: "Buy Credits", onPress: () => router.push("/student/wallet") },
+            { text: "Cancel", style: "cancel" },
+          ],
+        );
       } else {
         Alert.alert("Cannot apply", msg);
       }

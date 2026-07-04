@@ -25,6 +25,7 @@ from server import (
     SLOT_MAX_HOURS_PER_DAY,
     JITSI_BASE,
     ACTION_COST,
+    get_action_cost,
     _can_use_free,
     _credit_user,
     _build_candidate_summary,
@@ -273,7 +274,8 @@ async def book_interview(body: BookInterviewBody, u: dict = Depends(require_role
         raise HTTPException(status_code=400, detail="Slot not available")
     slot = res
     use_free = _can_use_free(u, "interview")
-    if not use_free and u.get("credits", 0) < ACTION_COST:
+    per_action_cost = get_action_cost(u)
+    if not use_free and u.get("credits", 0) < per_action_cost:
         # Roll back the booking since the user can't pay for it.
         await db.interview_slots.update_one(
             {"id": slot["id"]},
@@ -282,8 +284,12 @@ async def book_interview(body: BookInterviewBody, u: dict = Depends(require_role
         raise HTTPException(status_code=400, detail="Insufficient credits. Please add credits to continue booking this interview.")
     if use_free:
         await db.users.update_one({"id": u["id"]}, {"$inc": {"free_uses_left": -1}})
+        credits_charged = 0
     else:
-        await _credit_user(u["id"], -ACTION_COST, "interview_booking", {"slot_id": slot["id"]})
+        await _credit_user(u["id"], -per_action_cost, "interview_booking", {"slot_id": slot["id"], "cost": per_action_cost})
+        credits_charged = per_action_cost
+    # Persist credits_charged on the slot so admin cancellations refund the exact amount.
+    await db.interview_slots.update_one({"id": slot["id"]}, {"$set": {"credits_charged": credits_charged}})
     pro = await db.users.find_one({"id": slot["pro_id"]}, {"_id": 0, "password_hash": 0})
     when = slot.get("start_at", "")
     end_when = slot.get("end_at", "")
@@ -333,6 +339,7 @@ async def book_interview(body: BookInterviewBody, u: dict = Depends(require_role
         "meeting_url": meeting,
         "booked_at": booked_at_iso,
         "status": "booked",
+        "credits_charged": credits_charged,
         "student_email_status": "sent" if student_sent else "queued",
         "pro_email_status": "sent" if pro_sent else "queued",
     })

@@ -212,7 +212,7 @@ export default function AdminInterviews() {
               {s.status === "booked" ? (
                 <Button
                   testID={`cancel-booking-${s.id}`}
-                  title="Cancel Booking & Refund 49 credits"
+                  title={`Cancel Booking & Refund ${Number(s.credits_charged ?? 99)} credits`}
                   variant="outline"
                   onPress={() => { setCancelling(s); setCancelReason(""); }}
                   icon={<Ionicons name="close-circle" size={16} color={colors.error} />}
@@ -250,7 +250,7 @@ export default function AdminInterviews() {
               numberOfLines={3}
             />
             <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 6 }}>
-              💡 The slot will be released, the student will be auto-refunded 49 credits, and both parties will be notified.
+              💡 The slot will be released, the student will be auto-refunded the credits charged at booking time, and both parties will be notified.
             </Txt>
             <Button
               testID="cancel-submit"

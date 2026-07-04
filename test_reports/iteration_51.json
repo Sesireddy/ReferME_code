@@ -1,0 +1,40 @@
+{
+  "summary": "Iter51 credit-system overhaul (Fresher=99, Experienced=199, Interview reward=110, Job-post reward=200, Admin walk-in FREE) fully verified. Wrote /app/backend/tests/test_iter51_credit_overhaul.py with 17 test cases covering all 11 requested behaviours. RESULT: 17/17 PASSED (100%). All new constants + get_action_cost() helper + credits_charged persistence on slots/applications + one-time job_post_reward + admin refund path work as specified. NOTE: legacy tests hardcoded to 49/35/100 (test_iter30_phaseb_regression, test_iteration35_redemption_rate_1to1) are EXPECTED regressions vs new spec and were intentionally NOT re-run per main agent context note.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/subscription/plans", "issue": "'action_cost' in paid_tier still returns legacy ACTION_COST_FRESHER (99) module constant rather than user-specific get_action_cost(u). Cosmetic — GET /wallet already returns the correct per-user cost, which is what the frontend uses for gating."},
+      {"endpoint": "POST /api/jobs/apply", "issue": "Insufficient-credit path returns HTTP 402 while POST /api/interviews/book returns HTTP 400 for the same condition. Spec (line: 'trigger the 402/400 flow') accepts both, but the inconsistency is worth flagging so the frontend catches both codes."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter51_credit_overhaul.py",
+    "/app/test_reports/pytest/pytest_iter51.xml"
+  ],
+  "action_items": [
+    "Update /app/memory/test_credentials.md 'Business constants' section — still lists ACTION_COST=49, INTERVIEW_PRO_REWARD=35, JOB_POST_REWARD=100.",
+    "Consider aligning /subscription/plans.paid_tier.action_cost with get_action_cost(u) for consistency.",
+    "Consider harmonising HTTP status for insufficient-credit (currently 400 for interviews, 402 for jobs)."
+  ],
+  "critical_code_review_comments": [
+    "server.py get_action_cost() correctly defaults to fresher (99) when preferred_role missing — matches spec.",
+    "interviews.py book_interview persists credits_charged on the slot; admin_cancel_slot refunds exact amount — verified with both 99 and 199.",
+    "apply_job uses posting_reward_paid + conditional update_one modified_count check → race-safe & idempotent. Verified reward paid exactly once at 4th application, NOT on 5th.",
+    "user_public() surfaces action_cost only when role=='student' (line 266) — non-students correctly omit the key."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter51_credit_overhaul.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "not tested (backend-only request)"},
+  "seed_data_creation": "Test suite dynamically signs up disposable TEST_ prefixed Fresher/Experienced/Pro accounts (OTP mock), seeds credits + preferred_role directly in Mongo, and inserts pro-posted jobs + admin walk-in jobs + interview slots directly in Mongo to skip unrelated gates. No changes to seeded production users.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter51 credit-economy suite is stable and reusable at /app/backend/tests/test_iter51_credit_overhaul.py. Legacy iter30/iter35 tests hardcoded to 49/35/100 are known regressions of the new spec — do NOT try to 'fix' backend to satisfy them; the new constants (99/199/110/200) are the source of truth.",
+  "rca_of_issue": "N/A — no bugs found. Two minor observations (subscription/plans stale field, 402 vs 400 mismatch) documented above but do not violate the spec's stated invariants."
+}

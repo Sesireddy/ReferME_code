@@ -42,6 +42,18 @@ export default function MockInterviews() {
   const [dateFilter, setDateFilter] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string | null>("");
   const [refreshing, setRefreshing] = useState(false);
+  const [actionCost, setActionCost] = useState<number>(99);
+
+  // Fetch the current user's per-action credit cost (99 for Fresher/Intern,
+  // 199 for Experienced) — used in the subtitle + confirm dialogs.
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await api<{ user?: { action_cost?: number } }>("/auth/me");
+        if (typeof r?.user?.action_cost === "number") setActionCost(r.user.action_cost);
+      } catch {}
+    })();
+  }, []);
 
   // Two ISO time ranges [a1,a2) and [b1,b2) overlap iff a1<b2 AND a2>b1
   const hasOverlap = useCallback(
@@ -151,10 +163,14 @@ export default function MockInterviews() {
         });
         loadMyBookings();
       } else if (/insufficient credit/i.test(msg)) {
-        Alert.alert("Insufficient credits", "Please add credits to continue booking this interview.", [
-          { text: "Add Credits", onPress: () => router.push("/student/wallet") },
-          { text: "Cancel", style: "cancel" },
-        ]);
+        Alert.alert(
+          "Insufficient Credits",
+          "You don't have enough credits to continue. Please purchase additional credits.",
+          [
+            { text: "Buy Credits", onPress: () => router.push("/student/wallet") },
+            { text: "Cancel", style: "cancel" },
+          ],
+        );
       } else {
         Alert.alert("Cannot book", msg);
       }
@@ -176,7 +192,7 @@ export default function MockInterviews() {
 
   return (
     <Screen refreshing={refreshing} onRefresh={load}>
-      <ScreenTitle title="Mock Interviews" icon="mic" color={colors.primary} subtitle="Practice with vetted professionals. 49 credits per interview." />
+      <ScreenTitle title="Mock Interviews" icon="mic" color={colors.primary} subtitle={`Practice with vetted professionals. ${actionCost} credits per interview.`} />
 
       <Input
         testID="mi-search"
