@@ -1,0 +1,42 @@
+{
+  "summary": "Iter52 admin transactions signed-amount fix verified end-to-end. Wrote /app/backend/tests/test_iter52_admin_signed_amount.py — 16/16 PASSED. GET /admin/transactions/search now returns 1887/1891 rows with non-zero signed `amount` (previously all 0). Confirmed: signup_bonus row = +100, interview_booking row = -99, interview_admin_refund row = +99, all with matching `credits_added`/`credits_deducted`. GET /admin/stats/overview.credits = {purchased: 169519, used: 10917, earned: 400435, rewarded: 281330} — all four buckets healthy and non-zero. Book-then-admin-cancel flow generated a fresh -99/+99 pair correctly surfaced on the admin search endpoint. Regression: GET /wallet still returns raw txns with `delta` field intact.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /admin/transactions/search", "issue": "type_map lists 'wallet_deposit_confirm' and 'credit_purchase' under 'purchase' but the codebase never writes those reasons — only 'wallet_deposit' is used (0 rows for the other two). Non-blocking, but the mapping is over-inclusive."},
+      {"endpoint": "GET /admin/stats/overview", "issue": "PURCHASE_REASONS bucket includes 'signup_bonus' and 'first_deposit_bonus' — these are gifts, not paid purchases. The `purchased` figure therefore mixes paid deposits with signup gifts. Consider moving 'signup_bonus' + 'first_deposit_bonus' into `earned` (or a separate `bonus` bucket) for accurate revenue-vs-earned reporting."},
+      {"endpoint": "POST /admin/interviews/bookings/{id}/cancel", "issue": "Writes reason='interview_admin_refund' but the review request calls it 'interview_cancel_refund'. Not a bug (functionally identical, signed amount is correct), just a naming inconsistency to be aware of. The stats/overview REWARD_REASONS set does NOT include 'interview_admin_refund', so admin refunds are correctly excluded from `earned`/`rewarded` totals."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter52_admin_signed_amount.py",
+    "/app/test_reports/pytest/pytest_iter52.xml"
+  ],
+  "action_items": [
+    "OPTIONAL: Move 'signup_bonus' + 'first_deposit_bonus' out of PURCHASE_REASONS in /admin/stats/overview (server.py:2845) so the `purchased` bucket reflects only real deposits.",
+    "OPTIONAL: Rename 'interview_admin_refund' → 'interview_cancel_refund' for consistency with the review request, OR update the review-request wording. Purely cosmetic; the stats/overview bucket mapping already handles the current name correctly.",
+    "OPTIONAL: Trim type_map['purchase'] in /admin/transactions/search (server.py:2979) to just {'wallet_deposit'} since 'wallet_deposit_confirm'/'credit_purchase' are never written."
+  ],
+  "critical_code_review_comments": [
+    "server.py:2848-2860 and 3011-3013 — the `t.get('delta', t.get('amount', 0)) or 0` idiom is correct and backward-safe. Verified all 1877+ historical docs read correctly (they all have `delta`).",
+    "server.py:2842 REWARD_REASONS correctly includes mock_interview_reward as requested in the fix. Test confirms rewarded=281330 exactly matches the DB sum for those 5 reasons.",
+    "server.py:3020-3021 credits_added/credits_deducted derivation is bijective with `amount`: verified 100% row-level consistency across all 1891 rows.",
+    "server.py:3013 uses `or 0` guarding against None — good defensive coding.",
+    "GET /wallet (server.py:1601-1611) is untouched by this fix and still returns raw docs with `delta` field — confirmed by TestWalletRegression."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter52_admin_signed_amount.py (new, 16 test cases)"
+  ],
+  "success_rate": {"backend": "100% (16/16)", "frontend": "not tested (backend-only request)"},
+  "seed_data_creation": "Fresh disposable users created via signup (TEST_I52_FR_*, TEST_I52_EX_*, TEST_I52_PRO_*). Real interview slot inserted via Mongo and booked/cancelled through public endpoints — generated a genuine -99 interview_booking + +99 interview_admin_refund pair, both visible on /admin/transactions/search with correct signed amounts.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter52 admin-signed-amount fix is stable. All bucket totals on /admin/stats/overview are >0 on production DB (purchased=169519, used=10917, earned=400435, rewarded=281330). Reusable regression suite lives at /app/backend/tests/test_iter52_admin_signed_amount.py. The book-then-cancel test uses `_signup_verify` + Mongo direct slot insert + real /interviews/book + real /admin/interviews/bookings/{id}/cancel endpoints, so it's a good smoke test for the whole credit-transaction pipeline.",
+  "rca_of_issue": "ROOT CAUSE: _credit_user() persists signed credit amount to transactions.delta, but two admin readers (GET /admin/transactions/search and GET /admin/stats/overview) referenced t.get('amount', 0) — the `amount` key never exists on any doc, so both readers always saw 0 → Admin UI showed -0 everywhere and credit KPIs were all 0. FIX: server.py:2849 and 3013 now use int(t.get('delta', t.get('amount', 0)) or 0), reading `delta` first and falling back to `amount` for forward-compat. Iter52 suite confirms 1887/1891 rows are now non-zero, all reward reasons contribute correctly to the `rewarded` bucket, and a fresh book→cancel cycle produces the expected -99/+99 signed pair."
+}

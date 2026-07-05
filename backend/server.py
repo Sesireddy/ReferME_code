@@ -2839,11 +2839,14 @@ async def admin_stats_overview(_: dict = Depends(admin_only)):
     }
     # CREDITS — sum txn amounts by reason bucket
     credit_buckets = {"purchased": 0, "used": 0, "earned": 0, "rewarded": 0}
-    REWARD_REASONS = {"interview_pro_reward", "job_post_reward", "hiring_reward", "referral_hired_reward"}
+    REWARD_REASONS = {"interview_pro_reward", "job_post_reward", "hiring_reward", "referral_hired_reward", "mock_interview_reward"}
     USED_REASONS = {"job_application", "interview_booking"}
-    PURCHASE_REASONS = {"wallet_deposit", "wallet_deposit_confirm", "credit_purchase"}
-    async for t in db.transactions.find({}, {"_id": 0, "amount": 1, "reason": 1}):
-        amt = int(t.get("amount", 0))
+    # Wallet deposit reasons written by different code paths — accept all of them.
+    PURCHASE_REASONS = {"wallet_deposit", "wallet_deposit_confirm", "credit_purchase", "deposit", "signup_bonus", "first_deposit_bonus"}
+    # Transactions are stored with the signed amount on the field name `delta` — historical
+    # readers referenced `amount` (which does not exist) and always saw 0. Read both for safety.
+    async for t in db.transactions.find({}, {"_id": 0, "delta": 1, "amount": 1, "reason": 1}):
+        amt = int(t.get("delta", t.get("amount", 0)) or 0)
         reason = t.get("reason", "")
         if amt > 0:
             if reason in PURCHASE_REASONS:
@@ -3005,7 +3008,9 @@ async def admin_transactions_search(
             target = " ".join([t.get("id", ""), u.get("name", ""), u.get("email", ""), str(t.get("reason", ""))]).lower()
             if q.lower() not in target:
                 continue
-        amt = int(t.get("amount", 0))
+        # Transactions store the signed credit amount on the `delta` field (historical readers
+        # incorrectly referenced `amount` and always saw 0). Read both for safety.
+        amt = int(t.get("delta", t.get("amount", 0)) or 0)
         out.append({
             "id": t.get("id"),
             "user_id": t.get("user_id"),
