@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { View, StyleSheet, TouchableOpacity, FlatList, Linking, Modal, Alert, Image } from "react-native";
+import { View, StyleSheet, TouchableOpacity, FlatList, Linking, Modal, Alert, Image, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Screen } from "@/src/components/Screen";
 import { Txt } from "@/src/components/Txt";
@@ -13,6 +13,40 @@ import { colors } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
 import { successAlert } from "@/src/lib/successAlert";
 
+// Robust PDF detection — supports the exact `data:application/pdf` prefix, the
+// generic `data:application/octet-stream` some browsers report for PDFs, and a
+// magic-bytes sniff on the base64 payload (`JVBERi0` decodes to `%PDF-`).
+function isPdfProof(raw: string | undefined | null): boolean {
+  const s = String(raw || "").slice(0, 200);
+  if (!s) return false;
+  if (/^data:application\/pdf/i.test(s)) return true;
+  if (/^data:application\/octet-stream/i.test(s)) return true;
+  const commaIdx = s.indexOf(",");
+  const payloadStart = commaIdx >= 0 ? s.slice(commaIdx + 1, commaIdx + 20) : s.slice(0, 20);
+  return payloadStart.startsWith("JVBERi0"); // base64("%PDF-")
+}
+
+// Open a data-URI or URL proof reliably on both web and native.
+async function openProof(uri: string) {
+  if (!uri) return;
+  try {
+    if (Platform.OS === "web") {
+      // window.open with data: URIs works across major browsers and opens in a
+      // new tab. Fallback to Linking.openURL if the window handle is null.
+      const w = typeof window !== "undefined" ? window.open(uri, "_blank", "noopener,noreferrer") : null;
+      if (!w) {
+        await Linking.openURL(uri);
+      }
+      return;
+    }
+    // Native: Linking.openURL handles data: URIs on iOS ≥ 14 / Android — best effort.
+    const ok = await Linking.canOpenURL(uri).catch(() => true);
+    if (ok !== false) await Linking.openURL(uri);
+  } catch (e) {
+    Alert.alert("Cannot open proof", "The attached proof could not be opened. Please try again from a desktop browser.");
+  }
+}
+
 const STATUS_OPTS = [
   { value: "", label: "All" },
   { value: "available", label: "Available" },
@@ -20,6 +54,30 @@ const STATUS_OPTS = [
   { value: "completed", label: "Completed" },
   { value: "cancelled", label: "Cancelled" },
 ];
+
+// Small thumbnail with graceful fallback: shows a "document-text" icon for PDFs
+// and image content otherwise. If the <Image> fails to render (bad/oversized data
+// URI), it falls back to a generic "image" icon so the row never renders as a
+// silent white square — which was the original UX bug.
+function ProofThumb({ uri, isPdf }: { uri: string; isPdf: boolean }) {
+  const [failed, setFailed] = useState(false);
+  if (isPdf || failed) {
+    return (
+      <View style={[styles.proofThumb, { alignItems: "center", justifyContent: "center" }]}>
+        <Ionicons name={isPdf ? "document-text" : "image"} size={26} color="#7C3AED" />
+        <Txt variant="small" style={{ marginTop: 4, color: colors.textSecondary }}>{isPdf ? "PDF" : "Proof"}</Txt>
+      </View>
+    );
+  }
+  return (
+    <Image
+      source={{ uri }}
+      style={styles.proofThumb}
+      resizeMode="cover"
+      onError={() => setFailed(true)}
+    />
+  );
+}
 
 export default function AdminInterviews() {
   const [items, setItems] = useState<any[]>([]);
@@ -122,7 +180,7 @@ export default function AdminInterviews() {
           const isCompleted = s.status === "completed";
           const creditsAwarded = isCompleted ? 110 : 0;
           const hasProof = !!s.proof_screenshot;
-          const isPdf = hasProof && String(s.proof_screenshot).startsWith("data:application/pdf");
+          const isPdf = hasProof && isPdfProof(s.proof_screenshot);
           return (
             <Card style={{ marginTop: 10 }}>
               <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
@@ -183,17 +241,10 @@ export default function AdminInterviews() {
 
                   {hasProof ? (
                     <View style={styles.proofRow}>
-                      {isPdf ? (
-                        <View style={[styles.proofThumb, { alignItems: "center", justifyContent: "center" }]}>
-                          <Ionicons name="document-text" size={26} color="#7C3AED" />
-                          <Txt variant="small" style={{ marginTop: 4, color: colors.textSecondary }}>PDF</Txt>
-                        </View>
-                      ) : (
-                        <Image source={{ uri: s.proof_screenshot }} style={styles.proofThumb} resizeMode="cover" />
-                      )}
+                      <ProofThumb uri={s.proof_screenshot} isPdf={isPdf} />
                       <TouchableOpacity
                         testID={`view-proof-${s.id}`}
-                        onPress={() => isPdf ? Linking.openURL(s.proof_screenshot).catch(() => {}) : setProofPreview(s.proof_screenshot)}
+                        onPress={() => isPdf ? openProof(s.proof_screenshot) : setProofPreview(s.proof_screenshot)}
                         style={styles.viewProofBtn}
                       >
                         <Ionicons name="eye" size={14} color="#fff" />
@@ -264,11 +315,21 @@ export default function AdminInterviews() {
           </View>
         </View>
       </Modal>
-      {/* Full-screen proof viewer */}
+      {/* Full-screen proof viewer (images only — PDFs open in a new tab via openProof) */}
       <Modal visible={!!proofPreview} transparent animationType="fade" onRequestClose={() => setProofPreview("")}>
         <TouchableOpacity activeOpacity={1} onPress={() => setProofPreview("")} style={modStyles.lightboxBg}>
           {proofPreview ? (
-            <Image source={{ uri: proofPreview }} style={modStyles.lightboxImg} resizeMode="contain" />
+            <Image
+              source={{ uri: proofPreview }}
+              style={modStyles.lightboxImg}
+              resizeMode="contain"
+              onError={() => {
+                // If the payload isn't a renderable image, fall back to opening it in a new tab.
+                Alert.alert("Cannot preview inline", "Opening proof in a new tab…", [
+                  { text: "OK", onPress: () => { openProof(proofPreview); setProofPreview(""); } },
+                ]);
+              }}
+            />
           ) : null}
           <View style={modStyles.lightboxClose}>
             <Ionicons name="close" size={26} color="#fff" />
