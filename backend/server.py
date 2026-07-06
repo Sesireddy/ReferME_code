@@ -1598,37 +1598,9 @@ async def update_profile(body: ProfileBody, u: dict = Depends(current_user)):
 
 
 # ------------------- Wallet & Subscription -------------------
-@api.get("/wallet")
-async def get_wallet(u: dict = Depends(current_user)):
-    txs = await db.transactions.find({"user_id": u["id"]}, {"_id": 0}).sort("created_at", -1).to_list(100)
-    return {
-        "credits": u.get("credits", 0),
-        "locked_credits": u.get("locked_credits", 0),
-        "free_uses_left": u.get("free_uses_left", 0),
-        "total_deposits": u.get("total_deposits", 0),
-        "action_cost": get_action_cost(u),
-        "transactions": txs,
-    }
-
-
-@api.get("/subscription/plans")
-async def subscription_plans(u: dict = Depends(current_user)):
-    is_first = (u.get("total_deposits", 0) == 0)
-    return {
-        "free_tier": {
-            "title": "Free Tier",
-            "description": "1 referral application + 1 mock interview",
-            "free_uses_left": u.get("free_uses_left", 0),
-        },
-        "paid_tier": {
-            "title": "Paid Credits",
-            "is_first_deposit": is_first,
-            "first_deposit_inr": FIRST_DEPOSIT_MIN_INR,
-            "first_deposit_credits": FIRST_DEPOSIT_BONUS_CREDITS,
-            "subsequent_rate": "1 INR = 1 credit",
-            "action_cost": get_action_cost(u),
-        },
-    }
+# Wallet endpoints moved to routers/wallet.py in Phase C.
+# The helpers below (_can_use_free, _credit_user) stay here because they are shared
+# by other routers (interviews, jobs, applications) and by admin endpoints below.
 
 
 def _can_use_free(u: dict, kind: str) -> bool:
@@ -1654,64 +1626,7 @@ async def _credit_user(user_id: str, delta: int, reason: str, meta: Optional[dic
     return res["credits"] if res else 0
 
 
-@api.post("/wallet/deposit/create-order")
-async def create_deposit_order(body: DepositBody, u: dict = Depends(require_role(["student", "professional", "employer"]))):
-    if body.amount_inr < 1:
-        raise HTTPException(status_code=400, detail="Amount must be ≥ ₹1")
-    is_first = (u.get("total_deposits", 0) == 0)
-    if is_first and body.amount_inr < FIRST_DEPOSIT_MIN_INR:
-        raise HTTPException(status_code=400, detail=f"First deposit must be ≥ ₹{FIRST_DEPOSIT_MIN_INR}")
-    order_id = f"order_{new_id()[:18]}"
-    credits = FIRST_DEPOSIT_BONUS_CREDITS if (is_first and body.amount_inr == FIRST_DEPOSIT_MIN_INR) else body.amount_inr
-    if is_first and body.amount_inr > FIRST_DEPOSIT_MIN_INR:
-        # First-time bonus only on exact ₹199, otherwise 1:1
-        credits = body.amount_inr * 2 if body.amount_inr == FIRST_DEPOSIT_MIN_INR else body.amount_inr
-    doc = {
-        "id": new_id(),
-        "razorpay_order_id": order_id,
-        "user_id": u["id"],
-        "amount_inr": body.amount_inr,
-        "credits_to_grant": credits,
-        "status": "created",
-        "is_first_deposit": is_first,
-        "mock": MOCK_PAYMENTS_MODE,
-        "created_at": now_iso(),
-    }
-    await db.deposit_orders.insert_one(doc)
-    return {
-        "order_id": doc["id"],
-        "razorpay_order_id": order_id,
-        "amount_inr": body.amount_inr,
-        "credits_to_grant": credits,
-        "razorpay_key_id": RAZORPAY_KEY_ID,
-        "mock": MOCK_PAYMENTS_MODE,
-    }
-
-
-@api.post("/wallet/deposit/confirm")
-async def confirm_deposit(body: VerifyPaymentBody, u: dict = Depends(current_user)):
-    """In mock mode, accept any signature. In real mode, verify HMAC."""
-    order = await db.deposit_orders.find_one({"razorpay_order_id": body.razorpay_order_id}, {"_id": 0})
-    if not order or order["user_id"] != u["id"]:
-        raise HTTPException(status_code=404, detail="Order not found")
-    if order["status"] == "paid":
-        return {"message": "Already credited", "credits": u["credits"]}
-    if not MOCK_PAYMENTS_MODE:
-        import hashlib
-        import hmac
-        msg = f"{body.razorpay_order_id}|{body.razorpay_payment_id}".encode()
-        expected = hmac.new(RAZORPAY_KEY_SECRET.encode(), msg, hashlib.sha256).hexdigest()
-        if expected != body.razorpay_signature:
-            raise HTTPException(status_code=400, detail="Invalid signature")
-    await db.deposit_orders.update_one(
-        {"id": order["id"]},
-        {"$set": {"status": "paid", "razorpay_payment_id": body.razorpay_payment_id, "updated_at": now_iso()}},
-    )
-    credits = order["credits_to_grant"]
-    new_balance = await _credit_user(u["id"], credits, "deposit", {"order_id": order["id"], "amount_inr": order["amount_inr"]})
-    await db.users.update_one({"id": u["id"]}, {"$inc": {"total_deposits": 1}})
-    await push_notification(u["id"], "Credits added 💰", f"+{credits} credits added to your wallet.", "success")
-    return {"message": "Payment confirmed", "credits": new_balance, "added": credits}
+# Deposit endpoints moved to routers/wallet.py (Phase C).
 
 
 # ------------------- Mock Interviews -------------------
@@ -3194,83 +3109,7 @@ def _redemption_inr(credits: int) -> float:
     return round(credits * REDEMPTION_INR_PER_CREDIT, 2)
 
 
-@api.post("/redemption/submit")
-async def submit_redemption(
-    body: RedemptionSubmitBody,
-    u: dict = Depends(require_role(["professional"])),
-):
-    await require_phone_verified(u)
-    if not _upi_valid(body.upi_id):
-        raise HTTPException(status_code=400, detail="Please enter a valid UPI ID (e.g. name@bank)")
-    if body.credits < REDEMPTION_MIN_CREDITS:
-        raise HTTPException(status_code=400, detail=f"Minimum {REDEMPTION_MIN_CREDITS} credits are required to submit a redemption request.")
-    avail = u.get("credits", 0)
-    if body.credits > avail:
-        raise HTTPException(status_code=400, detail="Redemption amount exceeds available credits.")
-
-    req_id = new_id()
-    now = now_iso()
-    # Atomically deduct from credits and increment locked_credits
-    upd = await db.users.find_one_and_update(
-        {"id": u["id"], "credits": {"$gte": body.credits}},
-        {"$inc": {"credits": -body.credits, "locked_credits": body.credits}},
-        return_document=True,
-        projection={"_id": 0, "credits": 1, "locked_credits": 1},
-    )
-    if not upd:
-        raise HTTPException(status_code=400, detail="Available credits changed. Please refresh and try again.")
-
-    doc = {
-        "id": req_id,
-        "pro_id": u["id"],
-        "pro_name": u.get("name") or u.get("full_name") or u.get("email", ""),
-        "pro_email": u.get("email", ""),
-        "credits_requested": body.credits,
-        "amount_inr": _redemption_inr(body.credits),
-        "available_credits_at_request": avail,
-        "account_holder_name": body.account_holder_name.strip(),
-        "upi_id": body.upi_id.strip(),
-        "bank_account": (body.bank_account or "").strip(),
-        "ifsc": (body.ifsc or "").strip().upper(),
-        "status": "pending",  # pending | approved | paid | rejected
-        "payment_ref": "",
-        "payment_date": "",
-        "remarks": "",
-        "rejection_reason": "",
-        "created_at": now,
-        "updated_at": now,
-        "approved_at": "",
-        "paid_at": "",
-        "rejected_at": "",
-    }
-    await db.redemption_requests.insert_one(doc)
-
-    # Ledger entry for traceability
-    await db.transactions.insert_one({
-        "id": new_id(),
-        "user_id": u["id"],
-        "delta": -body.credits,
-        "reason": "redemption_locked",
-        "meta": {"request_id": req_id, "upi_id": body.upi_id, "amount_inr": doc["amount_inr"]},
-        "created_at": now,
-    })
-
-    await push_notification(
-        u["id"],
-        "Redemption requested 🕒",
-        f"Your request to redeem {body.credits} credits (₹{doc['amount_inr']:.2f}) is pending approval.",
-        "info",
-    )
-    doc.pop("_id", None)
-    return doc
-
-
-@api.get("/redemption/my")
-async def my_redemptions(u: dict = Depends(require_role(["professional"]))):
-    items = await db.redemption_requests.find(
-        {"pro_id": u["id"]}, {"_id": 0}
-    ).sort("created_at", -1).to_list(200)
-    return {"items": items, "min_credits": REDEMPTION_MIN_CREDITS, "inr_per_credit": REDEMPTION_INR_PER_CREDIT}
+# /redemption/submit and /redemption/my moved to routers/wallet.py (Phase C).
 
 
 # ---- Admin redemption endpoints ----
@@ -3957,6 +3796,9 @@ from routers import interviews as _interviews_router  # noqa: E402
 api.include_router(_interviews_router.router)
 from routers import admin_jobs as _admin_jobs_router  # noqa: E402
 api.include_router(_admin_jobs_router.router)
+# Phase C: wallet endpoints (/wallet, /subscription/plans, /wallet/deposit/*, /redemption/*)
+from routers import wallet as _wallet_router  # noqa: E402
+api.include_router(_wallet_router.router)
 app.include_router(api)
 
 app.add_middleware(
