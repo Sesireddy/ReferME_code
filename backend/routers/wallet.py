@@ -74,10 +74,12 @@ async def create_deposit_order(body: DepositBody, u: dict = Depends(require_role
     if is_first and body.amount_inr < FIRST_DEPOSIT_MIN_INR:
         raise HTTPException(status_code=400, detail=f"First deposit must be ≥ ₹{FIRST_DEPOSIT_MIN_INR}")
     order_id = f"order_{new_id()[:18]}"
-    credits = FIRST_DEPOSIT_BONUS_CREDITS if (is_first and body.amount_inr == FIRST_DEPOSIT_MIN_INR) else body.amount_inr
-    if is_first and body.amount_inr > FIRST_DEPOSIT_MIN_INR:
-        # First-time bonus only on exact ₹199, otherwise 1:1
-        credits = body.amount_inr * 2 if body.amount_inr == FIRST_DEPOSIT_MIN_INR else body.amount_inr
+    # First-time bonus applies ONLY when the deposit is exactly ₹FIRST_DEPOSIT_MIN_INR (₹199 → 398 credits).
+    # Every other deposit (first or subsequent) is a 1:1 rate: ₹N → N credits.
+    if is_first and body.amount_inr == FIRST_DEPOSIT_MIN_INR:
+        credits = FIRST_DEPOSIT_BONUS_CREDITS
+    else:
+        credits = body.amount_inr
     doc = {
         "id": new_id(),
         "razorpay_order_id": order_id,
