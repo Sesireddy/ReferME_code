@@ -1,0 +1,37 @@
+{
+  "summary": "Iteration 54 — Phase C part 2 refactor (auth router extraction) verified. All 31 iter-54 regression tests + all 21 iter-53 wallet regression tests pass. The 11 endpoints moved to /app/backend/routers/auth.py behave identically after extraction: POST /auth/signup (student credits=100 + signup_bonus txn + referral_code + referral gate; admin & employer role rejections with correct copy; professional personal-email rejection; invalid ref_code → 400), POST /auth/verify-otp (verify_email flips is_email_verified, returns JWT + user + welcome_bonus=100, referral reward path credits referrer + writes 'referral_reward' txn + marks referral 'successful' + push_notification), POST /auth/login (200 valid, 401 wrong pw, 403 email_not_verified, 403 account_suspended), POST /auth/forgot-password + /auth/reset-password (mock_otp returned, password rotated, old pw fails / new pw succeeds), GET /auth/me (student → user+profile only; professional → additionally profile_completion, missing_fields, gmail_verified, alternate_gmail), POST /profile/phone/send-otp (accepts 10-digit / 91-prefixed / +91-prefixed; invalid → exact copy 'Please enter a valid 10-digit Indian mobile number.'), POST /profile/phone/verify-otp (correct OTP → profile.phone_verified=true, wrong OTP → 400), POST /auth/google (bad session_id → 401), POST /pro/gmail/send-otp (accepts gmail.com, rejects yahoo, rejects same-as-login), POST /pro/gmail/verify-otp (flips gmail_verified=true, stores alternate_gmail, push_notification). Adjacent endpoints (POST /wallet/deposit/create-order, POST /redemption/submit role-gate, POST /interviews/book, POST /jobs/apply, GET /admin/transactions/search) all still resolve — confirming shared helpers (hash_password, verify_password, create_jwt, current_user, require_role, normalize_indian_mobile, send_otp_email, user_public, compute_pro_profile_completion, pro_missing_fields, make_referral_code, is_student_complete, require_phone_verified) that stayed in server.py still import cleanly into the new router. No regressions detected.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter54_auth_router_refactor.py",
+    "/app/test_reports/pytest/pytest_iter54_auth_refactor.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is still 3406 lines (>700-line guideline). Phase C part 3 remaining to complete the refactor.",
+    "routers/auth.py cleanly imports helpers + Pydantic models from server.py — no circular-import risk observed at runtime. Good separation.",
+    "In /app/backend/routers/auth.py::signup, the self-referral guard sets referrer_user = None *after* the referrals row would have been created — but the insertion is gated on 'if referrer_user and body.role == \"student\"' so behaviour is correct; the earlier self-check just silently drops the ref. Preserved behaviour from pre-refactor code.",
+    "POST /pro/gmail/verify-otp uses 'code_hash' whereas /auth/verify-otp and /profile/phone/verify-otp use 'otp_hash' — pre-existing inconsistency (not a regression). Consider unifying in a later pass.",
+    "GmailVerifyBody is reused for both send-otp (only email needed) and verify-otp (email+otp) — send-otp tests must pass otp=''. Minor API-ergonomics smell (pre-existing)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter54_auth_router_refactor.py (new — 31 regression tests)"
+  ],
+  "success_rate": {
+    "backend": "100% (31/31 passed on iter54 + 21/21 passed on iter53 regression re-run)",
+    "frontend": "not tested (backend-only per request)"
+  },
+  "seed_data_creation": "Test creates ~14 fresh users via /auth/signup with unique uuid suffixes (prefix 'iter54_*'). No modification of seeded admin/redeem_pro data. One user is toggled to account_status='suspended' in DB to test suspended-login gate. All test data is namespaced and does not touch production/seed rows.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 54 = Phase C part 2 of 3. Auth router (/app/backend/routers/auth.py, 457 lines) now owns: /auth/signup, /auth/verify-otp, /auth/login, /auth/forgot-password, /auth/reset-password, /auth/google, /auth/me, /profile/phone/send-otp, /profile/phone/verify-otp, /pro/gmail/send-otp, /pro/gmail/verify-otp. Helpers still in server.py: hash_password, verify_password, create_jwt, current_user, require_role, normalize_indian_mobile, is_valid_indian_mobile, require_phone_verified, send_otp_email, user_public, compute_pro_profile_completion, pro_missing_fields, make_referral_code, is_student_complete, push_notification. Router registered at server.py:3391-3392. Reusable regression test: /app/backend/tests/test_iter54_auth_router_refactor.py. TEST_RETURN_OTP=1 is set in backend/.env so signup + forgot-password + phone/send-otp + pro/gmail/send-otp all return mock_otp in the JSON response. Phase C part 3 (remaining endpoints to extract) not yet started.",
+  "rca_of_issue": "N/A — refactor validated cleanly. Zero regressions across 31 endpoint-level tests covering all 11 moved endpoints + shared-helper-dependent adjacent endpoints."
+}
