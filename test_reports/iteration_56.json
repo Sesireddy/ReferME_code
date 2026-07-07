@@ -1,0 +1,44 @@
+{
+  "summary": "Iteration 56 — Phase D admin router refactor verified. All 35 /admin/* endpoints extracted into /app/backend/routers/admin.py (1033 lines) behave identically after the refactor. 46/46 pytest cases PASS. One REGRESSION was found and FIXED during testing: the CSV-export endpoints (/admin/export/users, /jobs, /interviews, /transactions, /redemptions) were 500-erroring with `NameError: name '_serve' is not defined` because the shared `_serve()` helper (defined at server.py:1649) was NOT included in the `from server import ...` block at the top of routers/admin.py. Added `_serve` to the imports. After the fix, all five export endpoints stream text/csv correctly. Verified coverage: (a) auth gating — every representative endpoint returns 401 unauthenticated + 403 for non-admin (student token); (b) all GET/list endpoints return 200 with expected shape (users have account_status; jobs/search adds applied_count/shortlisted_count; interview-bookings adds current_slot_status; audit-logs returns retention_days_for_jobs_and_interviews; stats/overview.credits buckets purchased/used/earned/rewarded all >0 confirming iter52 delta-field fix intact; transactions/search returns signed amount + credits_added/credits_deducted); (c) end-to-end status-change moderation — pro posts pro-job, student applies, poster raises hire status_change via /applications/hire, admin approves → poster credits +1500 HIRING_REWARD, application.status=hired, status_history appended, hiring_reward txn row written; reject path leaves status unchanged, no credit awarded, status_change status=rejected; (d) payout reject → credits refunded via payout_refund txn; (e) users CRUD — patch name, credit adjust with ledger row, zero-delta 400, suspend/activate flips account_status, admin deletion blocked (404), non-admin deletion 200; (f) job verify approve + reject-with-note (rejection without note→400), delete-job idempotency; (g) full redemption workflow — approve → double-approve 400, mark-paid burns locked_credits + writes redemption_paid txn, reject refunds locked→credits + writes redemption_refunded txn; (h) admin interview cancellation — cancels booking, releases slot to available, refunds credits_charged (99), writes interview_admin_refund txn; delete-slot refund; slot cancel-booking wrapper; (i) adjacent endpoints /wallet, /auth/me, /jobs, /professionals, /applications, /leaderboard/students all still resolve confirming shared helpers (_credit_user, push_notification, write_audit, user_public, expand_city, compute_pro_profile_completion, normalize_indian_mobile, admin_only, current_user, require_role) and constants (ACTION_COST, HIRING_REWARD=1500, REFERRAL_HIRED_REWARD=500, REDEMPTION_INR_PER_CREDIT, PAYOUT_MIN, JOB_POST_REWARD_MIN_APPS, MASTER_SKILLS, AUDIT_PURGE_DAYS) still import cleanly across all routers.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/admin/export/*", "issue": "FIXED during testing. Phase D refactor missed importing the shared `_serve()` CSV helper from server.py — all five export endpoints crashed with NameError. Added `_serve` to the import list at routers/admin.py:19-49."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter56_admin_router_refactor.py",
+    "/app/test_reports/pytest/pytest_iter56_admin_refactor.xml"
+  ],
+  "action_items": [
+    "OPTIONAL: Consider moving `_serve` (server.py:1649) into a shared helpers module (e.g. backend/util/export.py) so future router extractions cannot silently miss it. The refactor extractor script that missed this dep during Phase D can also be updated to auto-detect helper references and warn on missing imports."
+  ],
+  "critical_code_review_comments": [
+    "REGRESSION: routers/admin.py imported 22 helpers/models/constants from server but MISSED `_serve` (server.py:1649). Every /admin/export/* endpoint was 500-erroring at runtime. Fix: added `_serve` to the import list. Recommend a lightweight CI grep for `NameError` on cold-boot to catch this class of miss.",
+    "routers/admin.py is 1033 lines — exceeds the <700-line guideline. Consider a further split by domain: admin_users.py (users CRUD/search/credits/suspend), admin_moderation.py (status-changes, payouts, disputes, redemption workflow), admin_reports.py (stats, transactions search, audit logs, CSV exports), admin_interviews.py (interview admin cancellation + slot ops). Non-blocking.",
+    "server.py went from 2656 → 1714 lines (−942, −35%). Total server.py drop across all phases: 3969 → 1714 lines (−57%). Clean modularisation.",
+    "Auth gating is uniform: every extracted endpoint uses `_: dict = Depends(admin_only)` (or `require_role(['admin'])` for /admin/interview-bookings). Verified via TestAuthGating on 21 representative endpoints — all return 401 unauthenticated and 403 for student token.",
+    "admin.py:70 (admin_status_action) uses `body.action + 'd' if body.action == 'approve' else 'rejected'` — this produces 'approved' or 'rejected'. Works, but a small ternary readability nit.",
+    "admin.py:497 type_map['purchase'] still lists 'wallet_deposit_confirm' and 'credit_purchase' that are never written by the codebase (carry-over from iter52). Non-blocking, over-inclusive.",
+    "admin.py:788 (admin_cancel_booking) — refund correctly uses bk.get('credits_charged') falling back to ACTION_COST. Verified via test that student credits increment by exactly credits_charged=99 and slot is unset (student_id removed) and status flips to available."
+  ],
+  "updated_files": [
+    "/app/backend/routers/admin.py (added `_serve` to the imports from server — fixes NameError on all /admin/export/* endpoints)",
+    "/app/backend/tests/test_iter56_admin_router_refactor.py (new — 46 regression tests across 12 test classes)"
+  ],
+  "success_rate": {
+    "backend": "100% (46/46 passed)",
+    "frontend": "not tested (backend-only per request)"
+  },
+  "seed_data_creation": "Test creates ~15 disposable users via /auth/signup with iter56_* prefixes for tags: iter56u/c/c0/s/d/w for user-CRUD scenarios, iter56pr/pr2 pros with phone_verified force-flipped in DB, iter56st/st2/ic/is/cw students with credits pre-seeded. Inserts fresh throwaway jobs (iter56job_*, iter56pend_*), interview slots (iter56slot_*, iter56ds_*, iter56cw_*), interview bookings (iter56bk_*, iter56cwbk_*), redemption requests (iter56red_*), and one payout (iter56po_*) directly via Mongo to sidestep OTP/verification friction on cross-cutting flows. Uses the seeded redeem.pro@example.com account for the redemption approve→mark-paid→reject workflow. No modification of seeded admin / demo-employer data.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter56 = Phase D admin router refactor. 35 /admin/* endpoints now live in /app/backend/routers/admin.py (1033 lines). Router registered at server.py:1700. server.py final size: 1714 lines. IMPORTANT: `_serve` had to be added to the router import list — do not remove it. Full regression suite at /app/backend/tests/test_iter56_admin_router_refactor.py (46 tests, class-scoped fixtures for admin/student/pro tokens, reusable for future changes). Iter52 delta-field fix (transactions.delta signed amount) is still intact (verified via TestListSmoke.test_stats_overview + test_transactions_search_signed_amount). Redemption workflow (approve → mark-paid burns locked_credits, reject refunds locked→credits with redemption_refunded txn) works end-to-end. All shared helpers still import cleanly from server.py into 8 sibling routers (wallet, auth, jobs, referrals, leaderboard, interviews, admin_jobs, admin).",
+  "rca_of_issue": "REGRESSION FOUND & FIXED: The Phase D extraction script missed the `_serve()` CSV helper when generating routers/admin.py imports. Symptom: any call to /api/admin/export/{users|jobs|interviews|transactions|redemptions} raised `NameError: name '_serve' is not defined` → HTTP 500. Root cause: `_serve` is defined in server.py:1649 and referenced by 5 export handlers in admin.py, but was NOT included in the `from server import (...)` block at admin.py:19-49. Fix applied: appended `_serve,` to the import list. Post-fix: all 5 export endpoints return 200 with text/csv payloads. Also confirmed via backend.err.log which showed the NameError stack trace from earlier requests."
+}
