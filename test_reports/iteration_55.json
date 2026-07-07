@@ -1,0 +1,37 @@
+{
+  "summary": "Iteration 55 — Phase C part 3 refactor (jobs/applications/professionals router extraction) verified. All 49 regression tests pass (100%). The 20 endpoints moved to /app/backend/routers/jobs.py behave identically after extraction: GET /api/professionals (returns list with skill/location/category filters + slot-availability aggregation), POST /api/jobs (all mandatory-field validations return correct exact-copy 400s — 'Job Title is required.', 'Job Description is required.', 'Location is required.', 'Skill Set is required.', 'Invalid Number of Open Positions...'; pro without proof_link OR proof_screenshot_b64 gets 400 with 'Job Opening Screenshot' / 'Job Opening Link' copy; pro-created jobs land with verification_status='pending'), GET /api/jobs (student sees only pro-verified + non-admin sources; pro sees own pending + others verified; admin sees all; source=admin filter returns walk-in jobs; skill+location regex + city-synonym expansion for 'Hyderabad'; applied_count/shortlisted_count aggregations; student applied/application_status keys), GET /api/jobs/{id} (404 on missing, student view has applied+application_status keys), PATCH /api/jobs/{id} (non-owner pro→403, owner OK, open_positions writes bulk_openings back-compat), POST /api/jobs/{id}/close+/reopen (owner-only, status flips), GET /api/jobs/{id}/applicants (owner-only 403 otherwise, student_profile snippet contains skills/resume_score/current_location/preferred_role/education/passed_out_year), POST /api/jobs/{id}/save + DELETE + GET /api/saved-jobs (upsert first_time flag, delete resets, pro→403 on GET /saved-jobs), POST /api/jobs/apply (99-credit deduction for fresher, 199 for experienced, credits_charged persisted on application row, admin walk-in rejected with EXACT copy 'This is an Admin Walk-in & Direct Job. Please contact the recruiter directly using the details on the job page — no in-app application needed.', dup rejected with 'Already applied', +200 JOB_POST_REWARD fires ONCE when 4th valid application arrives — verified via posting_reward_paid flag + single 'job_post_reward' transaction row), POST /api/referrals (400 on missing student/job, creates referred application row, increments referrals_made counter, dup blocked), GET /api/applications (student sees own with company/location hydrated from job), GET /api/applications/pool (pro-only, student→403, student_profile snippet contains education+resume_score+resume_link etc.), POST /api/applications/hire (400 without proof/note, non-poster→403, flips to hired_pending + writes status_changes row), POST /api/applications/refer-own (only posting pro can refer, non-poster→403, applied→referred walk, referrer_pro_id set, referrals_made++, auto-approved status_change row), POST /api/applications/status (non-participant→403, student on own app creates pending row), GET /api/applications/{id}/timeline (current_status+history+pending_changes), POST /api/jobs/{id}/resubmit (pro-owner only 403 otherwise, 400 unless verification_status='rejected', flips to pending on success). Adjacent endpoints /wallet, /wallet/deposit/create-order, /auth/me, /admin/transactions/search, /interviews/book all still resolve — confirming shared helpers (_credit_user, _can_use_free, get_action_cost, push_notification, write_audit, expand_city, require_phone_verified, new_id, now_iso) that stayed in server.py still import cleanly into the new router. No regressions detected.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter55_jobs_router_refactor.py",
+    "/app/test_reports/pytest/pytest_iter55_jobs_refactor.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is now 2656 lines (down from 3406 pre-refactor, -750 lines) — still above the <700-line guideline but Phase C is now complete for jobs/applications/wallet/auth. Further modularisation opportunities remain (admin/status-changes*, admin/redemption-requests/*, admin/hiring/*, referrals/*, /student/resume-score).",
+    "/app/backend/routers/jobs.py is 748 lines — approaches the <700-line guideline. Could later be split into three files (jobs.py / applications.py / professionals.py). Not blocking.",
+    "In POST /api/jobs/apply, the JOB_POST_REWARD idempotency uses a conditional update ({'posting_reward_paid': {'$ne': True}}) — this is race-safe. Verified by test that fires 4 concurrent applies and asserts exactly one 'job_post_reward' transaction row.",
+    "POST /api/referrals does NOT verify verification_status of the job — a pro can currently refer a student to their own 'pending' pro-job. Pre-existing behaviour, not a regression.",
+    "POST /api/applications/hire uses appdoc['employer_id'] == u['id'] for the poster gate — this correctly handles both employer-posted and pro-posted jobs (employer_id stores the poster's user id regardless of role). Verified in tests."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter55_jobs_router_refactor.py (new — 49 regression tests across 12 test classes)"
+  ],
+  "success_rate": {
+    "backend": "100% (49/49 passed on iter55 regression suite)",
+    "frontend": "not tested (backend-only per request)"
+  },
+  "seed_data_creation": "Test creates ~25 fresh users via /auth/signup with unique uuid suffixes (prefix 'iter55_*'), sets phone_verified=true directly on pros to satisfy the require_phone_verified gate on POST /api/jobs, and forces verification_status='verified' on freshly created pro-jobs to enable student flows. Also forces verification_status='rejected' on 2 jobs to exercise the resubmit path. Inserts one throwaway admin-source job document (id prefixed 'iter55_walkin_') and deletes it in the same test. No modification of seeded admin/redeem_pro/demo-employer data.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 55 = Phase C part 3 of 3 (final). Jobs router (/app/backend/routers/jobs.py, 748 lines) now owns 20 endpoints: /professionals, POST+GET /jobs, GET+PATCH /jobs/{id}, /jobs/{id}/close, /jobs/{id}/reopen, /jobs/{id}/applicants, POST+DELETE /jobs/{id}/save, GET /saved-jobs, POST /jobs/apply, POST /referrals, GET /applications, GET /applications/pool, POST /applications/hire, POST /applications/refer-own, POST /applications/status, GET /applications/{id}/timeline, POST /jobs/{id}/resubmit. Shared helpers still in server.py: _credit_user, _can_use_free, get_action_cost, push_notification, write_audit, expand_city, require_phone_verified, new_id, now_iso, plus all Pydantic models (JobPostBody, JobPatchBody, ApplyJobBody, ReferBody, HireBody, ReferOwnJobBody, StatusUpdateBody). Router registered at server.py:2640-2641. Reusable regression test: /app/backend/tests/test_iter55_jobs_router_refactor.py. server.py final size: 2656 lines (was 3969 originally, -1313). Phase C fully complete: wallet.py (iter53) + auth.py (iter54) + jobs.py (iter55) all extracted.",
+  "rca_of_issue": "N/A — refactor validated cleanly. Zero regressions across 49 endpoint-level tests covering all 20 moved endpoints + 5 shared-helper-dependent adjacent endpoints."
+}
