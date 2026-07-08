@@ -23,6 +23,7 @@ from server import (
     _credit_user,
     _can_use_free,
     get_action_cost,
+    student_missing_fields,
     JOB_POST_REWARD,
     JOB_POST_REWARD_MIN_APPS,
     OPEN_POSITIONS_OPTIONS,
@@ -429,6 +430,19 @@ async def list_saved_jobs(u: dict = Depends(require_role(["student"]))):
 # ------------------- Apply / Refer / Applications -------------------
 @router.post("/jobs/apply")
 async def apply_job(body: ApplyJobBody, u: dict = Depends(require_role(["student"]))):
+    # Iteration 58 — hard gate: no application from an incomplete profile, even if the
+    # request comes directly to the API. The frontend also blocks with a popup, but this
+    # is the authoritative check.
+    missing = student_missing_fields(u)
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "PROFILE_INCOMPLETE",
+                "message": "Please complete your profile before applying for jobs.",
+                "missing_fields": missing,
+            },
+        )
     job = await db.jobs.find_one({"id": body.job_id}, {"_id": 0})
     if not job or job["status"] != "open":
         raise HTTPException(status_code=400, detail="Job not available")

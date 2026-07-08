@@ -18,16 +18,36 @@ export default function JobDetail() {
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [missingFields, setMissingFields] = useState<string[]>([]);
+
+  // Iteration 58 — "Complete Your Profile" popup shown if a Job Seeker taps Apply
+  // while their profile is missing mandatory fields.
+  function showCompleteProfilePopup(missing?: string[]) {
+    const list = (missing && missing.length ? missing : missingFields).slice(0, 5);
+    const suffix = list.length
+      ? `\n\nStill needed:\n• ${list.join("\n• ")}`
+      : "";
+    Alert.alert(
+      "Complete Your Profile",
+      `Please complete your profile before applying for jobs. A complete profile helps Working Professionals and Employers evaluate your application more effectively.${suffix}`,
+      [
+        { text: "Complete Profile", onPress: () => router.push("/student/profile") },
+        { text: "Cancel", style: "cancel" },
+      ],
+    );
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [j, savedList] = await Promise.all([
+      const [j, savedList, me] = await Promise.all([
         api<any>(`/jobs/${id}`),
         api<any[]>(`/saved-jobs`).catch(() => []),
+        api<any>("/auth/me").catch(() => null),
       ]);
       setJob(j);
       setSaved(savedList.some((x) => x.id === id));
+      setMissingFields(Array.isArray(me?.missing_fields) ? me.missing_fields : []);
     } catch (e: any) {
       Alert.alert("Failed to load job", e.message);
     } finally {
@@ -38,9 +58,14 @@ export default function JobDetail() {
   useEffect(() => { load(); }, [load]);
 
   async function apply() {
+    // Client-side gate: short-circuit before hitting the backend.
+    if (missingFields.length > 0) {
+      showCompleteProfilePopup();
+      return;
+    }
     setBusy(true);
     try {
-      const r = await api<{ used_free?: boolean }>("/jobs/apply", { method: "POST", body: { job_id: id } });
+      await api<{ used_free?: boolean }>("/jobs/apply", { method: "POST", body: { job_id: id } });
       successAlert.show({
         title: "Application Submitted",
         message: "Your job application has been submitted successfully.",
@@ -49,7 +74,12 @@ export default function JobDetail() {
       load();
     } catch (e: any) {
       const msg = e.message || "";
-      if (/insufficient credit/i.test(msg)) {
+      const detail = (e as any).detail;
+      if (detail && typeof detail === "object" && detail.code === "PROFILE_INCOMPLETE") {
+        showCompleteProfilePopup(detail.missing_fields || []);
+      } else if (/PROFILE_INCOMPLETE|complete your profile/i.test(msg)) {
+        showCompleteProfilePopup();
+      } else if (/insufficient credit/i.test(msg)) {
         Alert.alert(
           "Insufficient Credits",
           "You don't have enough credits to continue. Please purchase additional credits.",

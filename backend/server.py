@@ -264,6 +264,8 @@ def user_public(u: dict) -> dict:
         out["student_ratings_count"] = int(u.get("student_ratings_count") or 0)
         # Per-action credit cost driven by profile category (Fresher/Experienced).
         out["action_cost"] = get_action_cost(u)
+        # Profile completion (Iteration 58 — gates job applications).
+        out["profile_completion"] = student_profile_completion(u)
     return out
 
 
@@ -1079,6 +1081,63 @@ async def recalc_tps_for_user(user_id: str) -> Optional[float]:
     prof["tps"] = tps
     await db.users.update_one({"id": user_id}, {"$set": {"profile": prof}})
     return tps
+
+
+def student_missing_fields(user: dict) -> list[str]:
+    """Return the list of mandatory Job-Seeker profile fields the user hasn't filled.
+
+    Powers the 'Profile Incomplete' popup on the Apply flow (Iteration 58) and the
+    'Complete the following to apply for jobs' panel on the Job Seeker profile screen.
+    The 11 mandatory fields are:
+        1. Full Name             (user.name)
+        2. Profile Category      (profile.preferred_role)
+        3. Mobile Number         (profile.phone + profile.phone_verified)
+        4. Email Address         (user.is_email_verified)
+        5. Gender                (profile.gender)
+        6. Date of Birth         (profile.dob)
+        7. Education             (profile.education)
+        8. Passed Out Year       (profile.passed_out_year)
+        9. Skills                (profile.skills, non-empty list)
+       10. Current Location      (profile.current_location)
+       11. Resume Upload         (profile.resume_base64 OR profile.resume_link)
+    """
+    p = user.get("profile") or {}
+    missing: list[str] = []
+    if not (user.get("name") or "").strip():
+        missing.append("Full Name")
+    role = (p.get("preferred_role") or "").strip().lower()
+    if role not in ("fresher", "experienced"):
+        missing.append("Profile Category")
+    phone = (p.get("phone") or "").strip()
+    if not phone or not p.get("phone_verified"):
+        missing.append("Verify Mobile Number")
+    if not user.get("is_email_verified") and user.get("role") == "student":
+        missing.append("Verify Email Address")
+    if not (p.get("gender") or "").strip():
+        missing.append("Gender")
+    if not (p.get("dob") or "").strip():
+        missing.append("Date of Birth")
+    if not (p.get("education") or "").strip():
+        missing.append("Education Qualification")
+    elif p.get("education") == "__OTHER__" and not (p.get("education_details") or "").strip():
+        missing.append("Education Qualification")
+    if not p.get("passed_out_year"):
+        missing.append("Passed Out Year")
+    skills = p.get("skills") or []
+    if not isinstance(skills, list) or len([s for s in skills if str(s).strip()]) == 0:
+        missing.append("Add Skills")
+    if not (p.get("current_location") or "").strip():
+        missing.append("Current Location")
+    if not (p.get("resume_base64") or p.get("resume_link")):
+        missing.append("Upload Resume")
+    return missing
+
+
+def student_profile_completion(user: dict) -> int:
+    """Return the Job-Seeker profile completion percentage (0..100) based on the 11 mandatory fields."""
+    total = 11
+    missing = len(student_missing_fields(user))
+    return max(0, min(100, int(round((total - missing) / total * 100))))
 
 
 def is_student_complete(profile: dict) -> bool:

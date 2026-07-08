@@ -24,6 +24,8 @@ from server import (
     new_id,
     make_referral_code,
     is_student_complete,
+    student_missing_fields,
+    student_profile_completion,
     send_otp_email,
     user_public,
     compute_pro_profile_completion,
@@ -384,6 +386,10 @@ async def get_me(u: dict = Depends(current_user)):
         out["user"]["gmail_verified"] = bool(u.get("gmail_verified"))
         out["user"]["alternate_gmail"] = u.get("alternate_gmail") or (u.get("profile", {}) or {}).get("alternate_gmail")
         out["user"]["email_verified"] = True  # company email verified at signup
+    elif u["role"] == "student":
+        # Iteration 58 — profile completion gate for Job Application flow.
+        out["profile_completion"] = student_profile_completion(u)
+        out["missing_fields"] = student_missing_fields(u)
     return out
 
 

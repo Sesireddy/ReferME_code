@@ -64,8 +64,17 @@ export async function api<T = any>(
     data = { raw: text };
   }
   if (!res.ok) {
-    const msg = (data && (data.detail || data.message)) || `HTTP ${res.status}`;
-    throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
+    const rawDetail = data && (data.detail ?? data.message);
+    const msg = typeof rawDetail === "string"
+      ? rawDetail
+      : (rawDetail && typeof rawDetail === "object" && typeof rawDetail.message === "string")
+          ? rawDetail.message
+          : (rawDetail ? JSON.stringify(rawDetail) : `HTTP ${res.status}`);
+    const err = new Error(msg) as Error & { status?: number; detail?: any; payload?: any };
+    err.status = res.status;
+    err.detail = rawDetail;  // structured server-side detail (may be a string, object, or list)
+    err.payload = data;      // full raw JSON response body for advanced handlers
+    throw err;
   }
   return data as T;
 }

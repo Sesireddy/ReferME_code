@@ -69,6 +69,7 @@ export default function StudentJobs() {
   const [jobs, setJobs] = useState<any[]>([]);
   const [apps, setApps] = useState<any[]>([]);
   const [user, setUser] = useState<any>(null);
+  const [missingFields, setMissingFields] = useState<string[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
 
@@ -97,6 +98,7 @@ export default function StudentJobs() {
       setJobs(j);
       setApps(a);
       setUser(me?.user || null);
+      setMissingFields(Array.isArray(me?.missing_fields) ? me.missing_fields : []);
     } catch {}
     setRefreshing(false);
   }, [skill, location, category, industry, sortBy]);
@@ -106,7 +108,31 @@ export default function StudentJobs() {
   const [applyTarget, setApplyTarget] = useState<any | null>(null);
   const [appliedOk, setAppliedOk] = useState(false);
 
-  function askApply(job: any) { setApplyTarget(job); }
+  // Iteration 58 — show the "Complete Your Profile" popup any time a Job Seeker
+  // taps Apply while their profile is missing mandatory fields. Uses the spec copy
+  // exactly (title / body / Complete Profile / Cancel).
+  function showCompleteProfilePopup(missing?: string[]) {
+    const list = (missing && missing.length ? missing : missingFields).slice(0, 5);
+    const suffix = list.length
+      ? `\n\nStill needed:\n• ${list.join("\n• ")}`
+      : "";
+    Alert.alert(
+      "Complete Your Profile",
+      `Please complete your profile before applying for jobs. A complete profile helps Working Professionals and Employers evaluate your application more effectively.${suffix}`,
+      [
+        { text: "Complete Profile", onPress: () => router.push("/student/profile") },
+        { text: "Cancel", style: "cancel" },
+      ],
+    );
+  }
+
+  function askApply(job: any) {
+    if (missingFields.length > 0) {
+      showCompleteProfilePopup();
+      return;
+    }
+    setApplyTarget(job);
+  }
   async function confirmApply() {
     if (!applyTarget) return;
     const jobId = applyTarget.id;
@@ -117,7 +143,13 @@ export default function StudentJobs() {
       load();
     } catch (e: any) {
       const msg = e.message || "";
-      if (/insufficient credit/i.test(msg)) {
+      // Backend may return a structured PROFILE_INCOMPLETE error with the missing list.
+      const detail = (e as any).detail;
+      if (detail && typeof detail === "object" && detail.code === "PROFILE_INCOMPLETE") {
+        showCompleteProfilePopup(detail.missing_fields || []);
+      } else if (/PROFILE_INCOMPLETE|complete your profile/i.test(msg)) {
+        showCompleteProfilePopup();
+      } else if (/insufficient credit/i.test(msg)) {
         Alert.alert(
           "Insufficient Credits",
           "You don't have enough credits to continue. Please purchase additional credits.",

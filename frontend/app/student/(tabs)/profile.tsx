@@ -130,15 +130,19 @@ export default function StudentProfile() {
     total_deposits: 0,
     transactions: [],
   });
+  const [profileCompletion, setProfileCompletion] = useState<number>(0);
+  const [missingFields, setMissingFields] = useState<string[]>([]);
 
   const load = useCallback(async () => {
     setRefreshing(true);
     try {
       const [me, w] = await Promise.all([
-        api<{ user: any; profile: any }>("/auth/me"),
+        api<{ user: any; profile: any; profile_completion?: number; missing_fields?: string[] }>("/auth/me"),
         api<any>("/wallet"),
       ]);
       setUser({ ...me.user, profile: me.profile || {} });
+      setProfileCompletion(typeof me.profile_completion === "number" ? me.profile_completion : (me.user?.profile_completion ?? 0));
+      setMissingFields(Array.isArray(me.missing_fields) ? me.missing_fields : []);
       setName(me.user.name || "");
       const p = me.profile || {};
       setPhone(p.phone || "");
@@ -513,6 +517,36 @@ export default function StudentProfile() {
       </Modal>
 
       <Card style={{ marginTop: 16 }}>
+        {/* Iteration 58 — Profile Completion strip. Shows the % complete + missing fields.
+            Job applications are blocked (backend + UI) until this is 100%. */}
+        <View style={{ marginBottom: 12 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+            <Txt variant="label">Profile Completion</Txt>
+            <Txt style={{ fontWeight: "700", color: profileCompletion >= 100 ? colors.success : colors.accent }}>{profileCompletion}%</Txt>
+          </View>
+          <View style={{ height: 8, borderRadius: 4, backgroundColor: colors.border, overflow: "hidden" }}>
+            <View style={{
+              width: `${Math.min(100, Math.max(0, profileCompletion))}%`,
+              height: "100%",
+              backgroundColor: profileCompletion >= 100 ? colors.success : colors.accent,
+            }} />
+          </View>
+          {missingFields.length > 0 ? (
+            <View style={{ marginTop: 8, paddingHorizontal: 8, paddingVertical: 8, backgroundColor: colors.accent + "10", borderRadius: 8 }}>
+              <Txt variant="small" style={{ color: colors.accent, fontWeight: "700" }}>
+                Complete the following to apply for jobs:
+              </Txt>
+              {missingFields.slice(0, 6).map((f) => (
+                <Txt key={f} variant="small" style={{ color: colors.textSecondary, marginTop: 2 }}>• {f}</Txt>
+              ))}
+              {missingFields.length > 6 ? (
+                <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 2, fontStyle: "italic" }}>
+                  + {missingFields.length - 6} more
+                </Txt>
+              ) : null}
+            </View>
+          ) : null}
+        </View>
         <View style={{ flexDirection: "row", alignItems: "center" }}>
           <View style={{ flex: 1 }}>
             <Txt variant="label">Email</Txt>

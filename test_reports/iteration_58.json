@@ -1,0 +1,37 @@
+{
+  "summary": "Iteration 58 — Job Application Profile-Completion Gate. All 15 backend tests PASS (100%). Verified: (1) GET /api/auth/me for a Job Seeker returns profile_completion (int 0..100) + missing_fields (list of the 11 mandatory field strings). (2) user_public() also mirrors profile_completion under me.user for students (server.py L268). (3) POST /api/jobs/apply on an INCOMPLETE profile returns HTTP 400 with detail={'code':'PROFILE_INCOMPLETE','message':...,'missing_fields':[...]} — FastAPI serialises the dict correctly under 'detail'. Missing_fields matches what /auth/me reports; no credits deducted; no application row inserted. (4) POST /api/jobs/apply on a COMPLETE profile succeeds and charges 99 credits for Fresher / 199 for Experienced (iteration-51 rules preserved). Application row status='applied'. (5) ORDER: profile-incomplete check fires BEFORE the admin-source Walk-in rejection — a student with an incomplete profile hitting an admin-source job gets PROFILE_INCOMPLETE (dict), while a complete profile hitting the same admin job gets the plain 'This is an Admin Walk-in & Direct Job…' string. (6) Completion math: 0 missing → 100, 3 missing → round((11-3)/11*100)=73, 11 missing → 0. (7) Regressions: GET /api/jobs and POST /jobs/{id}/save are unblocked for incomplete-profile students; POST /api/interviews/book is NOT gated by the 11-field completion (returns 404 Slot not found for a bogus slot rather than the PROFILE_INCOMPLETE dict). (8) Pro /auth/me still returns its own 9-field profile_completion + missing_fields; signup 100-credit welcome bonus still fires on verify-otp.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter58_profile_gate.py",
+    "/app/test_reports/pytest/iter58.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py L1086-1140: student_missing_fields emits user-friendly strings ('Verify Mobile Number', 'Upload Resume', 'Add Skills') — good UX signal for the frontend popup. The 11 checks match the spec exactly; the education branch also handles the '__OTHER__' sub-case correctly (must have education_details).",
+    "routers/jobs.py L432-445: The PROFILE_INCOMPLETE HTTPException is raised FIRST (before job lookup, admin-source rejection, credit check, and duplicate-application check). Order is correct — users on admin-source jobs with an incomplete profile see the actionable 'complete your profile' message rather than the misleading 'Admin Walk-in' string.",
+    "routers/auth.py L389-392: /auth/me now includes profile_completion + missing_fields for students. server.user_public() L266-268 also surfaces profile_completion so any client-facing user dict shows the same integer.",
+    "server.py L266: user_public exposes profile_completion only for students (pro path uses out.get('rating') etc. at L253-259). Pro user_public deliberately omits profile_completion — pros get it from /auth/me at the top-level key. Verified via test_pro_auth_me_has_completion_and_missing_fields.",
+    "Regression sanity: The apply endpoint's ordering (profile → job existence → admin-source → duplicate → credits) means a student with insufficient credits AND an incomplete profile sees the completion message first, which is the right UX (fixing the profile is a prerequisite to knowing whether credits are relevant)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter58_profile_gate.py (new — 15 tests, all passing)"
+  ],
+  "success_rate": {
+    "backend": "100% (15/15 passed)",
+    "frontend": "not tested (backend-only request)"
+  },
+  "seed_data_creation": "All test users created per-test via /api/auth/signup + /api/auth/verify-otp (mock OTP returned by backend). Employer users + applicable jobs (source='professional', verification_status='verified', status='open') inserted directly into MongoDB via pymongo to bypass the employer signup block. Admin walk-in jobs created via POST /api/admin/jobs. All test data uses TEST-prefixed emails (iter58_*@referme.io / @acmecorp.io) — no impact on seeded/production data.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 58 profile-completion gate is stable. Regression file /app/backend/tests/test_iter58_profile_gate.py covers all 11 mandatory fields, structured 400 detail shape {code, message, missing_fields}, order-vs-admin-source, and non-coupling with /interviews/book. Uses EXPO_PUBLIC_BACKEND_URL from frontend/.env. No mocked APIs.",
+  "rca_of_issue": "N/A — feature verification (not a bug fix). Iteration 58 implementation is correct across server.py (helpers + user_public), routers/auth.py (/auth/me student branch), and routers/jobs.py (/jobs/apply gate raised before admin-source check)."
+}
