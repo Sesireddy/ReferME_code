@@ -17,16 +17,24 @@ type ReferInfo = {
   link: string;
   reward: number;
   total: number;
-  successful: number;
+  // Iteration 57 buckets — pending stays until first successful deposit, then flips to rewarded.
   pending: number;
+  qualified: number;
+  rewarded: number;
+  rejected: number;
+  // Backwards-compat alias (older APIs used `successful`).
+  successful?: number;
   credits_earned: number;
 };
 
 type ReferralRow = {
   id: string;
-  status: "pending" | "successful" | "rejected";
+  status: "pending" | "qualified" | "rewarded" | "rejected" | "successful";
+  wallet_deposit_status?: "pending" | "completed";
   reward_credits: number;
   created_at: string;
+  qualified_at?: string | null;
+  rewarded_at?: string | null;
   completed_at: string | null;
   name: string;
   email_masked: string;
@@ -176,8 +184,8 @@ export default function ReferAFriend() {
           <Txt variant="h3" style={{ marginBottom: 10 }}>Your referral stats</Txt>
           <View style={styles.statsGrid}>
             <Stat testID="stat-total"      label="Total"          value={info?.total ?? 0}            color="#2563EB" />
-            <Stat testID="stat-successful" label="Successful"     value={info?.successful ?? 0}       color={colors.success} />
             <Stat testID="stat-pending"    label="Pending"        value={info?.pending ?? 0}          color={colors.accent} />
+            <Stat testID="stat-rewarded"   label="Rewarded"       value={info?.rewarded ?? info?.successful ?? 0} color={colors.success} />
             <Stat testID="stat-earned"     label="Credits Earned" value={`${info?.credits_earned ?? 0}`} color={colors.primary} />
           </View>
         </Card>
@@ -254,12 +262,14 @@ function Bullet({ children }: { children: React.ReactNode }) {
 }
 
 function badgeBg(s: string) {
-  if (s === "successful") return colors.success + "22";
+  if (s === "rewarded" || s === "successful") return colors.success + "22";
+  if (s === "qualified") return "#2563EB22";
   if (s === "pending") return colors.accent + "22";
   return colors.error + "22";
 }
 function badgeFg(s: string) {
-  if (s === "successful") return colors.success;
+  if (s === "rewarded" || s === "successful") return colors.success;
+  if (s === "qualified") return "#2563EB";
   if (s === "pending") return colors.accent;
   return colors.error;
 }

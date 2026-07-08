@@ -12,8 +12,8 @@ import { colors, radius } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
 import { successAlert } from "@/src/lib/successAlert";
 
-type ReferInfo = { code: string; link: string; reward: number; total: number; successful: number; pending: number; credits_earned: number };
-type ReferralRow = { id: string; status: "pending" | "successful" | "rejected"; reward_credits: number; created_at: string; completed_at: string | null; name: string; email_masked: string };
+type ReferInfo = { code: string; link: string; reward: number; total: number; pending: number; qualified: number; rewarded: number; rejected: number; successful?: number; credits_earned: number };
+type ReferralRow = { id: string; status: "pending" | "qualified" | "rewarded" | "rejected" | "successful"; wallet_deposit_status?: "pending" | "completed"; reward_credits: number; created_at: string; qualified_at?: string | null; rewarded_at?: string | null; completed_at: string | null; name: string; email_masked: string };
 
 function buildShareMessage(link: string) {
   return [
@@ -119,8 +119,8 @@ export default function ProReferAFriend() {
           <Txt variant="h3" style={{ marginBottom: 10 }}>Your referral stats</Txt>
           <View style={styles.statsGrid}>
             <Stat testID="stat-total" label="Total" value={info?.total ?? 0} color="#2563EB" />
-            <Stat testID="stat-successful" label="Successful" value={info?.successful ?? 0} color={colors.success} />
             <Stat testID="stat-pending" label="Pending" value={info?.pending ?? 0} color="#F59E0B" />
+            <Stat testID="stat-rewarded" label="Rewarded" value={info?.rewarded ?? info?.successful ?? 0} color={colors.success} />
             <Stat testID="stat-earned" label="Credits Earned" value={`${info?.credits_earned ?? 0}`} color="#7C3AED" />
           </View>
         </Card>
@@ -171,8 +171,8 @@ function Stat({ label, value, color, testID }: { label: string; value: any; colo
     </View>
   );
 }
-function badgeBg(s: string) { if (s === "successful") return colors.success + "22"; if (s === "pending") return "#FBBF2422"; return colors.error + "22"; }
-function badgeFg(s: string) { if (s === "successful") return colors.success; if (s === "pending") return "#D97706"; return colors.error; }
+function badgeBg(s: string) { if (s === "rewarded" || s === "successful") return colors.success + "22"; if (s === "qualified") return "#2563EB22"; if (s === "pending") return "#FBBF2422"; return colors.error + "22"; }
+function badgeFg(s: string) { if (s === "rewarded" || s === "successful") return colors.success; if (s === "qualified") return "#2563EB"; if (s === "pending") return "#D97706"; return colors.error; }
 
 const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border },

@@ -23,6 +23,7 @@ from server import (
     RAZORPAY_KEY_SECRET,
     REDEMPTION_MIN_CREDITS,
     REDEMPTION_INR_PER_CREDIT,
+    REFERRAL_REWARD,
     DepositBody,
     VerifyPaymentBody,
     RedemptionSubmitBody,
@@ -104,7 +105,12 @@ async def create_deposit_order(body: DepositBody, u: dict = Depends(require_role
 
 @router.post("/wallet/deposit/confirm")
 async def confirm_deposit(body: VerifyPaymentBody, u: dict = Depends(current_user)):
-    """In mock mode, accept any signature. In real mode, verify HMAC."""
+    """In mock mode, accept any signature. In real mode, verify HMAC.
+
+    Iteration 57: On a user's FIRST successful deposit, if they signed up via a
+    referral code, the referrer receives +REFERRAL_REWARD credits and the referral
+    row flips from `pending` → `rewarded`. See spec 'Referral Reward Policy'.
+    """
     order = await db.deposit_orders.find_one({"razorpay_order_id": body.razorpay_order_id}, {"_id": 0})
     if not order or order["user_id"] != u["id"]:
         raise HTTPException(status_code=404, detail="Order not found")
@@ -117,6 +123,11 @@ async def confirm_deposit(body: VerifyPaymentBody, u: dict = Depends(current_use
         expected = hmac.new(RAZORPAY_KEY_SECRET.encode(), msg, hashlib.sha256).hexdigest()
         if expected != body.razorpay_signature:
             raise HTTPException(status_code=400, detail="Invalid signature")
+
+    # Snapshot the pre-deposit total so we can detect the qualifying event for referrals.
+    fresh_u = await db.users.find_one({"id": u["id"]}, {"_id": 0}) or {}
+    is_first_deposit = int(fresh_u.get("total_deposits", 0) or 0) == 0
+
     await db.deposit_orders.update_one(
         {"id": order["id"]},
         {"$set": {"status": "paid", "razorpay_payment_id": body.razorpay_payment_id, "updated_at": now_iso()}},
@@ -125,7 +136,71 @@ async def confirm_deposit(body: VerifyPaymentBody, u: dict = Depends(current_use
     new_balance = await _credit_user(u["id"], credits, "deposit", {"order_id": order["id"], "amount_inr": order["amount_inr"]})
     await db.users.update_one({"id": u["id"]}, {"$inc": {"total_deposits": 1}})
     await push_notification(u["id"], "Credits added 💰", f"+{credits} credits added to your wallet.", "success")
-    return {"message": "Payment confirmed", "credits": new_balance, "added": credits}
+
+    # ---------- Referral reward (fires ONCE on the qualifying first successful deposit) ----------
+    referral_awarded = False
+    if is_first_deposit and fresh_u.get("referred_by"):
+        pending = await db.referrals.find_one(
+            {"referred_id": u["id"], "status": "pending"}, {"_id": 0}
+        )
+        if pending:
+            referrer = await db.users.find_one({"id": pending["referrer_id"]}, {"_id": 0})
+            same_email = referrer and referrer.get("email", "").lower() == (u.get("email") or "").lower()
+            if not referrer or same_email:
+                # Self-referral or missing referrer — mark rejected so it never rewards.
+                await db.referrals.update_one(
+                    {"id": pending["id"]},
+                    {"$set": {
+                        "status": "rejected",
+                        "reason": "self_referral" if same_email else "referrer_missing",
+                        "wallet_deposit_status": "completed",
+                        "completed_at": now_iso(),
+                    }},
+                )
+            else:
+                # Atomic transition pending → rewarded so a race can't double-pay.
+                res = await db.referrals.update_one(
+                    {"id": pending["id"], "status": "pending"},
+                    {"$set": {
+                        "status": "rewarded",
+                        "wallet_deposit_status": "completed",
+                        "qualified_at": now_iso(),
+                        "rewarded_at": now_iso(),
+                        "completed_at": now_iso(),
+                        "reward_credits": REFERRAL_REWARD,
+                    }},
+                )
+                if res.modified_count == 1:
+                    await _credit_user(
+                        referrer["id"],
+                        REFERRAL_REWARD,
+                        "referral_reward",
+                        {
+                            "label": f"Referral Bonus · {u.get('name') or u.get('email')}",
+                            "referred_id": u["id"],
+                            "referral_id": pending["id"],
+                            "deposit_order_id": order["id"],
+                        },
+                    )
+                    referral_awarded = True
+                    await push_notification(
+                        referrer["id"],
+                        "Referral Bonus Credited 🎉",
+                        f"Congratulations! Your referral bonus of {REFERRAL_REWARD} credits has been credited to your wallet.",
+                        "success",
+                    )
+                    await push_notification(
+                        u["id"],
+                        "First deposit successful ✅",
+                        "Your first wallet deposit was successful. Your referrer has received the referral reward.",
+                        "success",
+                    )
+    return {
+        "message": "Payment confirmed",
+        "credits": new_balance,
+        "added": credits,
+        "referral_awarded": referral_awarded,
+    }
 
 
 # ------------------- Redemption (Pro-side) -------------------

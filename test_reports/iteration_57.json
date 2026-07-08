@@ -1,0 +1,37 @@
+{
+  "summary": "Iteration 57 — Referral Reward Policy Update. Verified end-to-end that referrer credits (+25) are NO LONGER awarded on email verification and are ONLY awarded on the referred user's first successful wallet deposit. All 18 backend tests PASS (100% success). Coverage includes: signup with valid/invalid ref (student + professional both create pending referral rows), email-verify does NOT credit referrer but sends 'New referral signed up' notification, first ₹199 deposit atomically flips referral pending→rewarded and credits referrer +25 with referral_awarded=true in the response, second deposit is idempotent (no double-reward, referral_awarded=false), /refer/me exposes new keys {pending,qualified,rewarded,rejected,credits_earned} plus legacy `successful` alias mirroring `rewarded`, /refer/list rows include wallet_deposit_status, /refer/mine-inbound returns has_referral + referral_qualification_status. Adjacent flows unaffected: student welcome_bonus=100 still fires on verify, first ₹199 deposit still grants 398 credits, admin /admin/transactions/search finds the new referral_reward txn with delta=+25.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter57_referral_policy.py",
+    "/app/test_reports/pytest/iter57.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "wallet.py L142-197: Referral qualification is guarded by `is_first_deposit` (snapshot of total_deposits before increment) AND status='pending' atomic update in db.referrals — correctly prevents double-award via race. Good.",
+    "auth.py L191-212: On email-verify, referrer only notified; self-referral is defensively marked rejected. `was_unverified` gate prevents re-notifying on repeated verify-otp calls.",
+    "referrals.py L73, L110, L144: Legacy status='successful' is consistently bucketed to 'rewarded' across /refer/me, /refer/list, /refer/mine-inbound — backward compat preserved.",
+    "auth.py L85-86: Self-referral guard silently drops referrer_user; consider adding a log line for observability (nice-to-have, not a bug).",
+    "wallet.py L128-129: `fresh_u` is re-fetched to snapshot total_deposits — correct pattern to avoid stale `u` from the JWT-hydrated dependency."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter57_referral_policy.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (18/18 passed)",
+    "frontend": "not tested (backend-only request)"
+  },
+  "seed_data_creation": "Fresh referrer + referred users (student and professional @acmecorp.io) created per test via /api/auth/signup; MOCK_PAYMENTS_MODE + TEST_RETURN_OTP=1 enable end-to-end deposit flow without external Razorpay/SendGrid.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 57 referral policy is stable. Test file /app/backend/tests/test_iter57_referral_policy.py can serve as regression coverage. Uses EXPO_PUBLIC_BACKEND_URL env var (falls back to EXPO_BACKEND_URL). No mocked APIs — all flows exercised against live backend with MOCK_PAYMENTS_MODE=on.",
+  "rca_of_issue": "N/A — feature verification (not a bug fix). Policy shift correctly implemented across auth.py (verify-otp: notify-only), wallet.py (confirm_deposit: atomic pending→rewarded + _credit_user), referrals.py (status buckets + legacy 'successful' alias)."
+}

@@ -72,9 +72,11 @@ async def signup(body: SignupBody):
         raise HTTPException(status_code=400, detail="Email already registered")
 
     # ---------- Referral anti-fraud ----------
+    # Iteration 57: Referrals now apply to ALL roles (students + working professionals).
+    # The referral stays `pending` until the referred user's first successful deposit.
     referrer_user = None
     ref_code_raw = (body.ref or "").strip().upper()
-    if ref_code_raw and body.role == "student":
+    if ref_code_raw:
         referrer_user = await db.users.find_one({"referral_code": ref_code_raw}, {"_id": 0})
         if not referrer_user:
             raise HTTPException(status_code=400, detail="Invalid referral code. Please check and try again.")
@@ -104,15 +106,20 @@ async def signup(body: SignupBody):
         user_doc["referral_code"] = make_referral_code()
     await db.users.insert_one(user_doc)
 
-    if referrer_user and body.role == "student":
+    if referrer_user:
         await db.referrals.insert_one({
             "id": new_id(),
             "referrer_id": referrer_user["id"],
+            "referrer_role": referrer_user.get("role"),
             "referred_id": user_doc["id"],
+            "referred_role": body.role,
             "referred_email": email_lower,
             "code": ref_code_raw,
-            "status": "pending",
+            "status": "pending",  # pending → qualified → rewarded (or rejected)
             "reward_credits": REFERRAL_REWARD,
+            "wallet_deposit_status": "pending",  # flips to 'completed' on first successful deposit
+            "qualified_at": None,
+            "rewarded_at": None,
             "created_at": now_iso(),
             "completed_at": None,
         })
@@ -181,42 +188,27 @@ async def verify_otp(body: VerifyOtpBody):
                 "100 Credits have been added to your wallet as a welcome bonus.",
                 "success",
             )
+        # Referral policy (Iteration 57): Do NOT credit the referrer on email-verification.
+        # The referral stays `pending` until the referred user makes their first successful
+        # wallet deposit (see wallet.py confirm_deposit). Only notify the referrer here.
+        if was_unverified:
             pending = await db.referrals.find_one(
                 {"referred_id": u["id"], "status": "pending"}, {"_id": 0}
             )
             if pending:
                 referrer = await db.users.find_one({"id": pending["referrer_id"]}, {"_id": 0})
-                if not referrer or referrer.get("email", "").lower() == u.get("email", "").lower():
+                if referrer and referrer.get("email", "").lower() == u.get("email", "").lower():
+                    # Self-referral guard — mark rejected so it never rewards
                     await db.referrals.update_one(
                         {"id": pending["id"]},
                         {"$set": {"status": "rejected", "reason": "self_referral", "completed_at": now_iso()}},
                     )
-                else:
-                    await db.users.update_one(
-                        {"id": referrer["id"]},
-                        {"$inc": {"credits": REFERRAL_REWARD}},
-                    )
-                    await db.transactions.insert_one({
-                        "id": new_id(),
-                        "user_id": referrer["id"],
-                        "delta": REFERRAL_REWARD,
-                        "reason": "referral_reward",
-                        "meta": {
-                            "label": f"Referral Reward · {u.get('name') or u['email']}",
-                            "referred_id": u["id"],
-                            "referral_id": pending["id"],
-                        },
-                        "created_at": now_iso(),
-                    })
-                    await db.referrals.update_one(
-                        {"id": pending["id"]},
-                        {"$set": {"status": "successful", "completed_at": now_iso()}},
-                    )
+                elif referrer:
                     await push_notification(
                         referrer["id"],
-                        f"Referral Reward +{REFERRAL_REWARD} Credits 🎉",
-                        f"{u.get('name') or 'A friend'} just joined ReferME using your link. {REFERRAL_REWARD} credits added.",
-                        "success",
+                        "New referral signed up 🌟",
+                        f"{u.get('name') or 'A new user'} has successfully signed up using your referral. Referral reward will be credited after their first successful wallet deposit.",
+                        "info",
                     )
         return {"token": token, "user": user_public(u), "welcome_bonus": welcome_bonus}
     return {"message": "OTP verified", "reset_token": body.otp}
