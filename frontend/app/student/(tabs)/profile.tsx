@@ -637,6 +637,7 @@ export default function StudentProfile() {
           disabled={!isEditing}
         />
 
+
         <Txt variant="label" style={{ marginBottom: 6 }}>Date of Birth *</Txt>
         <View style={styles.dobRow}>
           <View style={{ flex: 1.1 }}>
