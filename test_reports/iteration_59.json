@@ -1,0 +1,31 @@
+{
+  "summary": "Iteration 59 — Job Seeker Jobs screen: initialLoading gate on first load. Frontend-only Playwright test via mobile viewport (390x844) on the deployed Expo web preview. Seeded a fresh Job Seeker (test_iter59_seeker@referme.io) via /api/auth/signup + verify-otp (mock_otp path). Throttled /api/jobs and /api/applications with a 4s route delay so the spinner would be reliably observable. All 5 scenarios PASS. (1) Cold navigation to Jobs tab: 'Loading jobs…' + ActivityIndicator visible, 'No jobs found matching the selected filters.' empty-state card NOT rendered while the request is in-flight. (2) After the API resolves: spinner disappears and 500 job cards render (testID job-card-*). If zero jobs matched, the code path renders the empty-state card only after initialLoading flips to false — verified by structure `initialLoading ? <Spinner/> : jobs.length === 0 ? <Empty/> : null`. (3) Applications sub-tab on first mount (switched before load resolves): 'Loading applications…' + spinner shown, 'No applications yet.' NOT rendered until initialLoading cleared. (4) Regression — re-fetch via filter Apply after initial load: NO spinner re-appears (initialLoading stays false; only `refreshing` toggles). (5) No red screen, no runtime console errors. Only pre-existing deprecation warnings ('shadow*' style props, 'props.pointerEvents') logged — unrelated to this fix. ActivityIndicator import present at line 2. Iter58 features (Apply button, Complete-Your-Profile popup) and Iter55 meta rows (category, salary, experience) all render alongside the fix without regression.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/tmp/iter59_jobs_loading.png",
+    "/tmp/iter59_apps_loading.png",
+    "/tmp/iter59_jobs_loaded.png",
+    "/tmp/iter59_dashboard.png"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "jobs/index.tsx L77: `initialLoading` starts true and flips to false in the finally-equivalent path at L108 (`setInitialLoading(false)` runs after both success and catch branches because it's outside the try). Correct.",
+    "jobs/index.tsx L253-273 & L345-354: Both empty-states are gated behind `initialLoading ? <Spinner/> : list.length === 0 ? <Empty/> : null` — the empty-state can only render AFTER the first fetch resolves. This is the exact fix requested by the bug report.",
+    "jobs/index.tsx L108: setInitialLoading(false) executes even when the API throws (try/catch swallows the error at L106). Good — a network failure won't strand the user on an infinite spinner; they'll fall through to the empty-state card, which is acceptable behaviour.",
+    "jobs/index.tsx L97-105: initial load fetches /jobs, /applications, /auth/me in parallel via Promise.all. Because initialLoading only flips once at the end of load(), BOTH tab spinners hide together after the first parallel fetch — verified by the applications-tab test where the spinner was visible on cold switch and cleared once /jobs (the slowest throttled call) responded.",
+    "jobs/index.tsx L109: dependency array on load() includes filter state, so applyFilters()→load() correctly re-runs. The re-run does NOT reset initialLoading (only setRefreshing), preserving the spec's regression requirement."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "n/a (frontend-only)", "frontend": "100% (5/5 scenarios)" },
+  "seed_data_creation": "One Job Seeker seeded via /api/auth/signup + /api/auth/verify-otp using mock_otp: test_iter59_seeker@referme.io / Test@12345. No other data created.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter59 loading-state fix on /app/frontend/app/student/(tabs)/jobs/index.tsx is confirmed working. To reproduce the loading-state visually, throttle /api/jobs via `page.route('**/api/jobs**', ...)` with an asyncio.sleep(3-5) delay — otherwise the API responds in ~200ms and the spinner will be invisible to the human eye. testIDs used: login-email, login-password, login-submit, tab-jobs, tab-applications, filter-btn, f-apply, job-card-{id}. Loading messages: 'Loading jobs…' and 'Loading applications…'.",
+  "rca_of_issue": "N/A — feature verification. Root cause of the original bug was that the empty-state card rendered whenever `jobs.length === 0`, including during the initial in-flight /api/jobs request. The applied fix introduces `initialLoading` state (initial true, flipped false after first load()) and gates both the jobs and applications empty-states behind it, showing an ActivityIndicator + descriptive message instead. Verified end-to-end via Playwright."
+}

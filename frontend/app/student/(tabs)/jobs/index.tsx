@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { View, StyleSheet, TouchableOpacity, Alert } from "react-native";
+import { View, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { Screen } from "@/src/components/Screen";
@@ -71,6 +71,10 @@ export default function StudentJobs() {
   const [user, setUser] = useState<any>(null);
   const [missingFields, setMissingFields] = useState<string[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  // Iteration 59 — track whether the first fetch has completed. Prevents the
+  // "No jobs found matching the selected filters." empty-state from flashing on
+  // the initial load (which used to show for ~5s before the API returned).
+  const [initialLoading, setInitialLoading] = useState(true);
   const [showFilters, setShowFilters] = useState(false);
 
   // Filters
@@ -101,6 +105,7 @@ export default function StudentJobs() {
       setMissingFields(Array.isArray(me?.missing_fields) ? me.missing_fields : []);
     } catch {}
     setRefreshing(false);
+    setInitialLoading(false);
   }, [skill, location, category, industry, sortBy]);
 
   useEffect(() => { load(); }, [load]);
@@ -245,7 +250,17 @@ export default function StudentJobs() {
 
       {tab === "jobs" ? (
         <View style={{ gap: 12, marginTop: 16 }}>
-          {jobs.length === 0 ? (
+          {initialLoading ? (
+            <Card>
+              <View style={{ alignItems: "center", paddingVertical: 24 }}>
+                <ActivityIndicator size="large" color={colors.primary} />
+                <Txt variant="h3" style={{ marginTop: 12, textAlign: "center" }}>Loading jobs…</Txt>
+                <Txt variant="small" style={{ marginTop: 4, color: colors.textSecondary, textAlign: "center" }}>
+                  Fetching the latest openings for you.
+                </Txt>
+              </View>
+            </Card>
+          ) : jobs.length === 0 ? (
             <Card>
               <View style={{ alignItems: "center", paddingVertical: 16 }}>
                 <Ionicons name="search-circle-outline" size={48} color={colors.textSecondary} />
@@ -327,7 +342,16 @@ export default function StudentJobs() {
 
       {tab === "applications" ? (
         <View style={{ gap: 12, marginTop: 16 }}>
-          {apps.length === 0 ? <Txt variant="muted">No applications yet.</Txt> : null}
+          {initialLoading ? (
+            <Card>
+              <View style={{ alignItems: "center", paddingVertical: 24 }}>
+                <ActivityIndicator size="large" color={colors.primary} />
+                <Txt variant="h3" style={{ marginTop: 12, textAlign: "center" }}>Loading applications…</Txt>
+              </View>
+            </Card>
+          ) : apps.length === 0 ? (
+            <Txt variant="muted">No applications yet.</Txt>
+          ) : null}
           {apps.map((a) => (
             <TouchableOpacity key={a.id} testID={`app-card-${a.id}`} activeOpacity={0.85} onPress={() => router.push(`/student/applications/${a.id}`)}>
               <Card>
