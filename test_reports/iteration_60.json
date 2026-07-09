@@ -1,0 +1,29 @@
+{
+  "summary": "Iteration 60 backend-only verification of the phone-OTP verify normalisation fix in /app/backend/routers/auth.py::phone_verify_otp. Wrote 8 focused pytest cases in /app/backend/tests/test_iter60_phone_otp.py covering: (1) normalised send + normalised verify happy path, (2) THE REPORTED BUG — normalised send + RAW 10-digit verify (previously 400, now 200), (3) raw send + raw verify, (4) wrong OTP → 400 'Incorrect OTP', (5) invalid phone on verify → 400 with exact copy 'Please enter a valid 10-digit Indian mobile number.' and OTP row not consumed, (6) expired OTP → 400 'OTP invalid or expired' (row expired via direct Mongo patch), (7) regression: pro alternate-Gmail send/verify unaffected, (8) /auth/me after verification — profile.phone becomes '+919525852855', profile.phone_verified=true, and 'Verify Mobile Number' drops from missing_fields with profile_completion going up. Result: 8/8 passed in 15.58s. The exact user-reported flow (send with '+919525852855' → verify with '9525852855' + correct OTP) now returns 200 and persists E.164 form as expected.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter60_phone_otp.py",
+    "/app/test_reports/pytest/iter60.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "The `$in: [phone, raw_input]` fallback for legacy rows is correct and idempotent. Minor: the ternary `... if raw_input and raw_input != phone else phone` means for E.164 input the query uses a scalar rather than $in — both branches are functionally equivalent for new rows but the branch keeps queries simple. No changes required.",
+    "Consider adding a small unit-level check that also handles the pathological case where `body.phone` is None (currently `normalize_indian_mobile('')` returns the expected error copy — verified indirectly by test 5)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "N/A - backend only"},
+  "seed_data_creation": "Fresh students + one professional signed up per test via /api/auth/signup with TEST_ prefix; not cleaned up but namespaced with uuid so they don't collide.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter60 fix (phone OTP verify normalisation) is fully validated. Test file /app/backend/tests/test_iter60_phone_otp.py can be reused as regression. No open backend issues on the phone-OTP flow.",
+  "rca_of_issue": "Original bug: send-otp stored the OTP doc with `phone` = normalize_indian_mobile(body.phone) → '+919525852855', but verify-otp queried db.otps with `phone` == body.phone taken verbatim from the frontend, which submits the raw 10-digit form ('9525852855'). find_one returned None → 400 'OTP invalid or expired' even for a correct OTP. Fix (auth.py phone_verify_otp lines 246-262): call normalize_indian_mobile on the incoming phone, then query with `{'phone': {'$in': [normalized, raw_input]}}` when the two differ (else scalar), so both the current E.164 rows and any legacy raw rows match. On success the user's profile.phone is also updated to the E.164 form so /auth/me and missing_fields stay consistent. Verified end-to-end with 8/8 tests passing."
+}

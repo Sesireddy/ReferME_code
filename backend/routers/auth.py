@@ -240,11 +240,19 @@ async def phone_send_otp(body: PhoneOtpSendBody, u: dict = Depends(current_user)
 
 @router.post("/profile/phone/verify-otp")
 async def phone_verify_otp(body: PhoneOtpVerifyBody, u: dict = Depends(current_user)):
-    phone = (body.phone or "").strip()
+    # Iteration 60: `send-otp` stores the OTP row keyed on the E.164-normalised phone
+    # (e.g. "+919525852855"). But some frontends may send the raw 10-digit form (e.g.
+    # "9525852855") back to verify. Normalise here so both formats match the stored row.
+    normalized, err = normalize_indian_mobile(body.phone or "")
+    if err:
+        raise HTTPException(status_code=400, detail=err)
+    phone = normalized
+    # Also match legacy rows that were saved with the raw input before this normalisation.
+    raw_input = (body.phone or "").strip()
     otp_doc = await db.otps.find_one(
         {
             "user_id": u["id"],
-            "phone": phone,
+            "phone": {"$in": [phone, raw_input]} if raw_input and raw_input != phone else phone,
             "purpose": "verify_phone",
             "consumed": False,
             "expires_at": {"$gt": now_ts()},
