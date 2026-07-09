@@ -575,11 +575,11 @@ export default function StudentProfile() {
             <Ionicons name="wallet" size={24} color="#fff" />
           </View>
           <View style={{ flex: 1, marginLeft: 12 }}>
-            <Txt style={{ color: "#fff", opacity: 0.85 }} variant="label">Wallet</Txt>
-            <Txt style={{ color: "#fff", fontSize: 36, fontWeight: "800", marginTop: 2 }} testID="profile-credits">
+            <Txt style={{ color: "#fff", opacity: 0.85, lineHeight: 12 }} variant="label">Wallet</Txt>
+            <Txt style={{ color: "#fff", fontSize: 36, fontWeight: "800", marginTop: 8, marginBottom: 4, lineHeight: 40 }} testID="profile-credits">
               {wallet.credits}
             </Txt>
-            <Txt style={{ color: "#fff", opacity: 0.9 }} variant="small">
+            <Txt style={{ color: "#fff", opacity: 0.9, lineHeight: 16 }} variant="small">
               credits available
             </Txt>
           </View>
