@@ -481,15 +481,30 @@ export default function StudentProfile() {
             <ScreenTitle title="Profile" icon="person-circle" color={colors.primary} />
           </View>
         </View>
-        <View style={styles.photoCtrls}>
-          <TouchableOpacity testID="photo-upload-btn" onPress={pickProfilePhoto} disabled={photoBusy} hitSlop={8}>
-            <Ionicons name={profilePhoto ? "create" : "cloud-upload"} size={18} color={colors.primary} />
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <View style={styles.photoCol}>
+            <Avatar
+              testID="profile-photo-avatar"
+              uri={profilePhoto || null}
+              name={user?.name || user?.email}
+              size={56}
+              ring
+              onPress={profilePhoto ? () => setPhotoPreviewOpen(true) : pickProfilePhoto}
+            />
+            <View style={styles.photoCtrls}>
+              <TouchableOpacity testID="photo-upload-btn" onPress={pickProfilePhoto} disabled={photoBusy} hitSlop={8}>
+                <Ionicons name={profilePhoto ? "create" : "cloud-upload"} size={18} color={colors.primary} />
+              </TouchableOpacity>
+              {profilePhoto ? (
+                <TouchableOpacity testID="photo-remove-btn" onPress={removeProfilePhoto} disabled={photoBusy} hitSlop={8} style={{ marginLeft: 10 }}>
+                  <Ionicons name="trash" size={18} color={colors.error} />
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          </View>
+          <TouchableOpacity testID="logout-btn" onPress={logout} style={{ marginLeft: 4 }}>
+            <Ionicons name="log-out-outline" size={24} color={colors.textPrimary} />
           </TouchableOpacity>
-          {profilePhoto ? (
-            <TouchableOpacity testID="photo-remove-btn" onPress={removeProfilePhoto} disabled={photoBusy} hitSlop={8} style={{ marginLeft: 10 }}>
-              <Ionicons name="trash" size={18} color={colors.error} />
-            </TouchableOpacity>
-          ) : null}
         </View>
       </View>
 
