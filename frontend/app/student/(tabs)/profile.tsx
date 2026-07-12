@@ -967,7 +967,7 @@ export default function StudentProfile() {
       <Card style={{ marginTop: 16, backgroundColor: "#FFF4E0" }}>
         <Txt variant="h3">Need help?</Txt>
         <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 4 }}>Reach out via support if anything looks wrong.</Txt>
-        <Button testID="raise-dispute" title="Raise a dispute" variant="outline" style={{ marginTop: 12 }} onPress={() => router.push("/notifications")} />
+        <Button testID="raise-issue" title="Raise an Issue" variant="outline" style={{ marginTop: 12 }} onPress={() => router.push("/support")} />
       </Card>
 
       <View style={{ marginTop: 24, marginBottom: 32 }}>

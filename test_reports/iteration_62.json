@@ -1,0 +1,35 @@
+{
+  "summary": "Iteration 62 — 'Raise an Issue' support endpoint tested (backend only). 21/21 pytest cases passed against the live preview URL. Verified: (a) POST /api/support/tickets happy-path across student/professional/admin roles persists rows with correct user_id/user_email/user_role/status='open'/has_attachment/created_at and returns {message:'Issue submitted successfully', ticket_id}. (b) Subject <3 chars returns 400 'Subject is mandatory (min 3 characters).' + no row inserted. Description <5 chars (incl. whitespace-only) returns 400 'Issue Description is mandatory (min 5 characters).' + no row inserted. (c) Small base64 attachment stores has_attachment=true + attachment_filename; data-URI prefix is stripped correctly; malformed base64 returns 400 'Attachment is not a valid base64 payload.'; >5MB decoded returns 400 'Attachment exceeds 5 MB limit.'. (d) Missing / invalid token returns 401. (e) Regression smoke: legacy /api/disputes POST+GET, /api/notifications GET, /api/auth/me (student & admin), /api/wallet, /api/jobs, /api/jobs/apply (complete-profile student on verified employer job), /api/interviews/book (student booking pro-seeded slot) all still work.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter62_support_tickets.py",
+    "/app/test_reports/pytest/pytest_iter62.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py POST /support/tickets email path uses raw f-string with user-supplied subject/description in HTML — no HTML escaping. If the support inbox is ever viewed in a browser, a malicious user could inject <script>. Consider html.escape(subject/description) before interpolation. Non-blocking (email body only, not stored HTML).",
+    "server.py already has 1863 lines — well above the 700-line guideline. Iteration 62 adds ~75 more lines. Recommend moving /support + /disputes + /notifications into routers/support.py in a follow-up refactor iteration (mirrors iter53-56 pattern).",
+    "SUPPORT_EMAIL_TO is read at module load — env override works, good. But it is hard-coded as default to 'support@refermejobs.com' (matches spec). OK."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter62_support_tickets.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (21/21)",
+    "frontend": "not tested (backend-only iteration per spec)"
+  },
+  "seed_data_creation": "In-test DB seeding only (support_tickets rows via API, one employer + verified job for /jobs/apply smoke, one pro + interview_slot for /interviews/book smoke). No global seeds added.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "test_iter62_support_tickets.py is idempotent and safe to re-run. It creates fresh users per session (uuid-suffixed emails) so cleanup is not required. MOCK_OTP_MODE currently evaluates to False because RESEND_API_KEY is set in backend/.env — email attempts go to Resend, but failures are swallowed by the try/except in create_support_ticket so tests are unaffected. If Resend rate-limits are hit during parallel runs, add a small sleep between happy-path tests.",
+  "rca_of_issue": "No bug — feature addition verified end-to-end. Two initial test-side assertion failures (test_auth_me_student, test_auth_me_admin) were caused by the test asserting a flat schema; /auth/me actually returns nested {user:{...}, profile:{...}, missing_fields, profile_completion}. Fixed in the test file; the endpoint itself is correct."
+}

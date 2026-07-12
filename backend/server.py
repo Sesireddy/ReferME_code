@@ -699,6 +699,19 @@ class DisputeBody(BaseModel):
     description: str
 
 
+class SupportTicketBody(BaseModel):
+    subject: str
+    description: str
+    # Optional data-URI attachment (e.g. "data:image/png;base64,....") — max 5MB after decoding.
+    attachment_base64: Optional[str] = None
+    attachment_filename: Optional[str] = None
+    attachment_mime: Optional[str] = None
+
+
+# Support inbox destination — hard-coded per spec (Iteration 62).
+SUPPORT_EMAIL_TO = os.environ.get("SUPPORT_EMAIL_TO", "support@refermejobs.com")
+
+
 # ------------------- Auth dependency -------------------
 async def current_user(authorization: Optional[str] = Header(None)) -> dict:
     if not authorization or not authorization.startswith("Bearer "):
@@ -1408,6 +1421,82 @@ async def list_disputes(u: dict = Depends(current_user)):
     q = {} if u["role"] == "admin" else {"user_id": u["id"]}
     disputes = await db.disputes.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
     return disputes
+
+
+# ------------------- Support (Iteration 62 — "Raise an Issue") -------------------
+@api.post("/support/tickets")
+async def create_support_ticket(body: SupportTicketBody, u: dict = Depends(current_user)):
+    """Create a support ticket and email it to SUPPORT_EMAIL_TO (support@refermejobs.com).
+
+    Spec: `Raise an Issue Support Enhancement` — Subject + Description are mandatory,
+    Attachment is optional. Applies to all roles (Job Seekers, Working Professionals, Admins).
+    """
+    subject = (body.subject or "").strip()
+    description = (body.description or "").strip()
+    if len(subject) < 3:
+        raise HTTPException(status_code=400, detail="Subject is mandatory (min 3 characters).")
+    if len(description) < 5:
+        raise HTTPException(status_code=400, detail="Issue Description is mandatory (min 5 characters).")
+
+    # Decode optional attachment (data URI) — cap at 5 MB decoded to keep the mail small.
+    attachments: list[dict] = []
+    if body.attachment_base64:
+        import base64 as _b64
+        raw = body.attachment_base64
+        if "," in raw:
+            raw = raw.split(",", 1)[1]
+        try:
+            content = _b64.b64decode(raw)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Attachment is not a valid base64 payload.")
+        if len(content) > 5 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="Attachment exceeds 5 MB limit.")
+        attachments.append({
+            "filename": body.attachment_filename or "attachment.bin",
+            "content_bytes": content,
+            "mime_type": body.attachment_mime or "application/octet-stream",
+        })
+
+    ticket_id = new_id()
+    doc = {
+        "id": ticket_id,
+        "user_id": u["id"],
+        "user_email": u.get("email"),
+        "user_name": u.get("name") or "",
+        "user_role": u.get("role"),
+        "subject": subject,
+        "description": description,
+        "has_attachment": bool(attachments),
+        "attachment_filename": body.attachment_filename if attachments else None,
+        "status": "open",
+        "created_at": now_iso(),
+    }
+    await db.support_tickets.insert_one(doc)
+
+    # Fire-and-forget email to the support inbox (send_html_email already handles the
+    # mock/provider/attachment logic + throttling).
+    html = f"""
+    <div style='font-family: Arial, sans-serif; color:#111; padding: 20px;'>
+      <h2 style='color:#7C3AED;'>New Support Ticket · {ticket_id}</h2>
+      <p><strong>From:</strong> {u.get('name') or ''} &lt;{u.get('email','')}&gt; ({u.get('role')})</p>
+      <p><strong>Subject:</strong> {subject}</p>
+      <p><strong>Description:</strong></p>
+      <pre style='white-space: pre-wrap; background:#f8f8fa; padding:12px; border-radius:8px;'>{description}</pre>
+      <p style='color:#888; font-size:12px; margin-top:24px;'>Submitted at {doc['created_at']}</p>
+    </div>
+    """
+    try:
+        await send_html_email(
+            SUPPORT_EMAIL_TO,
+            f"[ReferME Support] {subject}",
+            html,
+            mock_purpose="support_ticket",
+            fallback_text=f"From {u.get('email')} — {subject}\n\n{description}",
+            attachments=attachments or None,
+        )
+    except Exception as e:
+        logger.warning("support ticket email failed: %s", e)
+    return {"message": "Issue submitted successfully", "ticket_id": ticket_id}
 
 
 # /admin/disputes/{dispute_id}/resolve moved to routers/admin.py (Phase D).
