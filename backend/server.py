@@ -1508,6 +1508,81 @@ async def create_support_ticket(body: SupportTicketBody, u: dict = Depends(curre
 
 
 # /admin/disputes/{dispute_id}/resolve moved to routers/admin.py (Phase D).
+
+
+# ------------------- Skill Auto-Suggest (Iteration 63) -------------------
+# In-memory cache of the unified skill catalog so the /skills/suggest endpoint
+# doesn't re-scan every collection on each keystroke. Refreshed lazily.
+_SKILL_CACHE: dict = {"skills": [], "loaded_at": 0}
+_SKILL_CACHE_TTL_SEC = 300  # 5 min
+
+
+async def _load_skill_catalog() -> list[str]:
+    """Aggregate the unified skill catalog from all sources: MASTER_SKILLS, user
+    profiles (skills + expertise), job.skills_required, and interview_slots.skill_set.
+    Dedupes case-insensitively, preserves the first-seen casing.
+    """
+    now = int(datetime.now(timezone.utc).timestamp())
+    if _SKILL_CACHE["skills"] and (now - _SKILL_CACHE["loaded_at"]) < _SKILL_CACHE_TTL_SEC:
+        return _SKILL_CACHE["skills"]
+    seen: dict[str, str] = {}
+    def _add(name):
+        if not name:
+            return
+        s = str(name).strip()
+        if not s or len(s) > 60:
+            return
+        key = s.lower()
+        if key not in seen:
+            seen[key] = s
+    for s in MASTER_SKILLS:
+        _add(s)
+    # Mine user profiles
+    async for uu in db.users.find({}, {"_id": 0, "profile.skills": 1, "profile.expertise": 1}):
+        p = uu.get("profile") or {}
+        for s in p.get("skills") or []:
+            _add(s)
+        for s in p.get("expertise") or []:
+            _add(s)
+    # Mine job postings
+    async for j in db.jobs.find({}, {"_id": 0, "skills_required": 1}):
+        for s in j.get("skills_required") or []:
+            _add(s)
+    # Mine interview slots
+    async for slot in db.interview_slots.find({}, {"_id": 0, "skill_set": 1}):
+        for s in slot.get("skill_set") or []:
+            _add(s)
+    skills = sorted(seen.values(), key=lambda x: x.lower())
+    _SKILL_CACHE["skills"] = skills
+    _SKILL_CACHE["loaded_at"] = now
+    return skills
+
+
+@api.get("/skills/suggest")
+async def skills_suggest(q: str = "", limit: int = 30):
+    """Return skill suggestions matching `q`. Public (no auth required — used pre-login too).
+
+    - Case-insensitive.
+    - Matches skills that START WITH `q` first, then skills that CONTAIN `q`.
+    - Empty `q` returns the 'popular' set (first `limit` items alphabetically).
+    """
+    catalog = await _load_skill_catalog()
+    limit = max(1, min(100, int(limit or 30)))
+    query = (q or "").strip().lower()
+    if not query:
+        return {"items": catalog[:limit], "total": len(catalog)}
+    starts: list[str] = []
+    contains: list[str] = []
+    for s in catalog:
+        low = s.lower()
+        if low.startswith(query):
+            starts.append(s)
+        elif query in low:
+            contains.append(s)
+    items = (starts + contains)[:limit]
+    return {"items": items, "total": len(starts) + len(contains)}
+
+
 # ------------------- Notifications -------------------
 @api.get("/notifications")
 async def get_notifications(u: dict = Depends(current_user)):

@@ -6,6 +6,7 @@ import { Txt } from "@/src/components/Txt";
 import { Card } from "@/src/components/Card";
 import { ScreenTitle } from "@/src/components/ScreenTitle";
 import { Button } from "@/src/components/Button";
+import { SkillAutocomplete } from "@/src/components/SkillAutocomplete";
 import { Input } from "@/src/components/Input";
 import { Picker } from "@/src/components/Picker";
 import { DatePickerField } from "@/src/components/DateTimePicker";
@@ -194,14 +195,14 @@ export default function MockInterviews() {
     <Screen refreshing={refreshing} onRefresh={load}>
       <ScreenTitle title="Mock Interviews" icon="mic" color={colors.primary} subtitle={`Practice with vetted professionals. ${actionCost} credits per interview.`} />
 
-      <Input
-        testID="mi-search"
-        label=""
-        placeholder="Filter by skill (e.g. React, System Design)"
-        value={skillFilter}
-        onChangeText={setSkillFilter}
-        style={{ marginTop: 12 }}
-      />
+      <View style={{ marginTop: 12 }}>
+        <SkillAutocomplete
+          testID="mi-search"
+          value={skillFilter}
+          onChange={setSkillFilter}
+          placeholder="Search or Select Skill"
+        />
+      </View>
       <View style={{ flexDirection: "row", gap: 8 }}>
         <View style={{ flex: 1 }}>
           <DatePickerField testID="mi-date" value={dateFilter} onChange={setDateFilter} placeholder="Filter by date" />

@@ -126,5 +126,15 @@ export const GENDER_OPTIONS = [
 ];
 
 export const EDUCATION_OPTIONS = [
-  "High School", "Diploma", "Bachelor's", "Master's", "PhD", "Other",
+  "10th Pass",
+  "12th Pass",
+  "High School",
+  "Diploma",
+  "Associate Degree",
+  "Bachelor's",
+  "Master's",
+  "Postgraduate Diploma",
+  "PhD",
+  "Professional Certification",
+  "Other",
 ].map((v) => ({ value: v, label: v }));

@@ -8,6 +8,7 @@ import { Card } from "@/src/components/Card";
 import { ScreenTitle } from "@/src/components/ScreenTitle";
 import { Button } from "@/src/components/Button";
 import { Picker } from "@/src/components/Picker";
+import { SkillAutocomplete } from "@/src/components/SkillAutocomplete";
 import { ConfirmDialog } from "@/src/components/ConfirmDialog";
 import { colors } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
@@ -214,14 +215,12 @@ export default function StudentJobs() {
             onChange={(v) => setCategory(v as string)}
             placeholder="All"
           />
-          <Picker
+          <SkillAutocomplete
             testID="f-skill"
             label="Skill Set"
-            searchable
-            options={[{ value: "", label: "All skills" }, ...SKILL_OPTIONS]}
-            value={skill}
-            onChange={(v) => setSkill(v as string)}
-            placeholder="All"
+            value={skill || ""}
+            onChange={(v) => setSkill(v)}
+            placeholder="Search or Select Skill"
           />
           <Picker
             testID="f-industry"
