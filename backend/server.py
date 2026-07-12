@@ -1473,15 +1473,23 @@ async def create_support_ticket(body: SupportTicketBody, u: dict = Depends(curre
     }
     await db.support_tickets.insert_one(doc)
 
+    # HTML-escape user-provided content before interpolating into the outbound email.
+    import html as _html
+    e_subject = _html.escape(subject)
+    e_description = _html.escape(description)
+    e_name = _html.escape(u.get("name") or "")
+    e_email = _html.escape(u.get("email") or "")
+    e_role = _html.escape(u.get("role") or "")
+
     # Fire-and-forget email to the support inbox (send_html_email already handles the
     # mock/provider/attachment logic + throttling).
     html = f"""
     <div style='font-family: Arial, sans-serif; color:#111; padding: 20px;'>
       <h2 style='color:#7C3AED;'>New Support Ticket · {ticket_id}</h2>
-      <p><strong>From:</strong> {u.get('name') or ''} &lt;{u.get('email','')}&gt; ({u.get('role')})</p>
-      <p><strong>Subject:</strong> {subject}</p>
+      <p><strong>From:</strong> {e_name} &lt;{e_email}&gt; ({e_role})</p>
+      <p><strong>Subject:</strong> {e_subject}</p>
       <p><strong>Description:</strong></p>
-      <pre style='white-space: pre-wrap; background:#f8f8fa; padding:12px; border-radius:8px;'>{description}</pre>
+      <pre style='white-space: pre-wrap; background:#f8f8fa; padding:12px; border-radius:8px;'>{e_description}</pre>
       <p style='color:#888; font-size:12px; margin-top:24px;'>Submitted at {doc['created_at']}</p>
     </div>
     """
