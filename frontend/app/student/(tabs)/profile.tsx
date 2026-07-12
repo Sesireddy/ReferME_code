@@ -478,7 +478,8 @@ export default function StudentProfile() {
             <Ionicons name="menu" size={22} color={colors.textPrimary} />
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
-            <ScreenTitle title="Profile" icon="person-circle" color={colors.primary} />
+            {/* Iteration 61 — removed the person-circle icon per user request; Sign Out is now in the hamburger menu. */}
+            <ScreenTitle title="Profile" color={colors.primary} />
           </View>
         </View>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
@@ -502,9 +503,6 @@ export default function StudentProfile() {
               ) : null}
             </View>
           </View>
-          <TouchableOpacity testID="logout-btn" onPress={logout} style={{ marginLeft: 4 }}>
-            <Ionicons name="log-out-outline" size={24} color={colors.textPrimary} />
-          </TouchableOpacity>
         </View>
       </View>
 
@@ -1013,6 +1011,8 @@ export default function StudentProfile() {
             { key: "interviews", label: "My Mock Interviews", icon: "mic", color: "#7C3AED", onPress: () => router.push("/student/my-mock-interviews") },
             { key: "leaderboard", label: "My LeaderBoard Score", icon: "trophy", color: colors.accent, onPress: () => router.push("/student/my-leaderboard") },
             { key: "refer", label: "Refer a Friend", icon: "people", color: colors.success, onPress: () => router.push("/student/refer") },
+            // Iteration 61 — Sign Out moved into the hamburger menu; removed from the top header row.
+            { key: "signout", label: "Sign Out", icon: "log-out-outline", color: colors.error, onPress: logout },
           ] as MenuItem[]
         }
       />
