@@ -128,8 +128,9 @@ class TestWalletEndpoints:
         d = r.json()
         assert "free_tier" in d and "paid_tier" in d
         pt = d["paid_tier"]
-        assert pt["first_deposit_inr"] == 199
-        assert pt["first_deposit_credits"] == 398
+        assert pt["first_deposit_inr"] == 200
+        assert pt["first_deposit_bonus_percent"] == 50
+        assert pt["first_deposit_bonus_max_credits"] == 5000
         assert "action_cost" in pt
 
     def test_subscription_plans_unauth_401(self):
@@ -142,11 +143,15 @@ class TestDepositFlow:
     def test_create_order_first_deposit_bonus(self, fresh_student):
         r = requests.post(f"{API}/wallet/deposit/create-order",
                           headers=_hdr(fresh_student["token"]),
-                          json={"amount_inr": 199}, timeout=30)
+                          json={"amount_inr": 200}, timeout=30)
         assert r.status_code == 200, r.text
         d = r.json()
-        assert d["credits_to_grant"] == 398
-        assert d["amount_inr"] == 199
+        # ₹200 first deposit → base 200 + 50% bonus (100) = 300 credits
+        assert d["credits_to_grant"] == 300
+        assert d["base_credits"] == 200
+        assert d["bonus_credits"] == 100
+        assert d["amount_inr"] == 200
+        assert d["is_first_deposit"] is True
         assert d["razorpay_order_id"].startswith("order_")
         assert "order_id" in d
         # Save for confirm test
@@ -166,17 +171,21 @@ class TestDepositFlow:
                           }, timeout=30)
         assert r.status_code == 200, r.text
         body = r.json()
-        assert body.get("added") == 398
-        assert body.get("credits") >= 398
+        assert body.get("added") == 300
+        assert body.get("base_credits") == 200
+        assert body.get("bonus_credits") == 100
+        assert body.get("first_deposit_bonus_applied") is True
+        assert body.get("credits") >= 300
 
         # verify persistence via GET /wallet
         w = requests.get(f"{API}/wallet", headers=_hdr(pytest.deposit_token), timeout=30).json()
-        assert w["credits"] >= 398
+        assert w["credits"] >= 300
         assert w["total_deposits"] >= 1
-        # ledger has 'deposit' entry with +398
+        # ledger has 'deposit' (+200) and 'first_deposit_bonus' (+100) entries
         deposits = [t for t in w["transactions"] if t.get("reason") == "deposit"]
-        assert deposits, f"no deposit txn: {w['transactions']}"
-        assert deposits[0]["delta"] == 398
+        bonuses = [t for t in w["transactions"] if t.get("reason") == "first_deposit_bonus"]
+        assert deposits and deposits[0]["delta"] == 200
+        assert bonuses and bonuses[0]["delta"] == 100
 
     def test_confirm_deposit_invalid_order_404(self, fresh_student):
         r = requests.post(f"{API}/wallet/deposit/confirm",
@@ -194,7 +203,7 @@ class TestDepositFlow:
                           headers=_hdr(s["token"]),
                           json={"amount_inr": 50}, timeout=30)
         assert r.status_code == 400
-        assert "199" in r.text
+        assert "200" in r.text
 
 
 # ------------------- Redemption (pro side) -------------------
