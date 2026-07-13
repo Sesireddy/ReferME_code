@@ -17,7 +17,8 @@ from server import (
     _upi_valid,
     _redemption_inr,
     FIRST_DEPOSIT_MIN_INR,
-    FIRST_DEPOSIT_BONUS_CREDITS,
+    FIRST_DEPOSIT_BONUS_PERCENT,
+    FIRST_DEPOSIT_BONUS_MAX_CREDITS,
     MOCK_PAYMENTS_MODE,
     RAZORPAY_KEY_ID,
     RAZORPAY_KEY_SECRET,
@@ -30,6 +31,19 @@ from server import (
 )
 
 router = APIRouter()
+
+
+def _compute_first_deposit_bonus(amount_inr: int) -> int:
+    """Returns bonus credits for a first-ever deposit.
+
+    Rule: If amount_inr >= FIRST_DEPOSIT_MIN_INR (₹200), award floor(amount_inr * 50%)
+    bonus credits, capped at FIRST_DEPOSIT_BONUS_MAX_CREDITS (5000).
+    Returns 0 if the amount is below the threshold.
+    """
+    if amount_inr < FIRST_DEPOSIT_MIN_INR:
+        return 0
+    bonus = (amount_inr * FIRST_DEPOSIT_BONUS_PERCENT) // 100
+    return min(bonus, FIRST_DEPOSIT_BONUS_MAX_CREDITS)
 
 
 # ------------------- Wallet -------------------
@@ -59,7 +73,8 @@ async def subscription_plans(u: dict = Depends(current_user)):
             "title": "Paid Credits",
             "is_first_deposit": is_first,
             "first_deposit_inr": FIRST_DEPOSIT_MIN_INR,
-            "first_deposit_credits": FIRST_DEPOSIT_BONUS_CREDITS,
+            "first_deposit_bonus_percent": FIRST_DEPOSIT_BONUS_PERCENT,
+            "first_deposit_bonus_max_credits": FIRST_DEPOSIT_BONUS_MAX_CREDITS,
             "subsequent_rate": "1 INR = 1 credit",
             "action_cost": get_action_cost(u),
         },
@@ -75,18 +90,20 @@ async def create_deposit_order(body: DepositBody, u: dict = Depends(require_role
     if is_first and body.amount_inr < FIRST_DEPOSIT_MIN_INR:
         raise HTTPException(status_code=400, detail=f"First deposit must be ≥ ₹{FIRST_DEPOSIT_MIN_INR}")
     order_id = f"order_{new_id()[:18]}"
-    # First-time bonus applies ONLY when the deposit is exactly ₹FIRST_DEPOSIT_MIN_INR (₹199 → 398 credits).
-    # Every other deposit (first or subsequent) is a 1:1 rate: ₹N → N credits.
-    if is_first and body.amount_inr == FIRST_DEPOSIT_MIN_INR:
-        credits = FIRST_DEPOSIT_BONUS_CREDITS
-    else:
-        credits = body.amount_inr
+    # Base credits: 1 INR = 1 credit for every deposit.
+    base_credits = int(body.amount_inr)
+    # First-deposit 50% bonus applies ONLY on the user's first-ever successful
+    # deposit AND when amount ≥ FIRST_DEPOSIT_MIN_INR. Capped at 5000 credits.
+    bonus_credits = _compute_first_deposit_bonus(body.amount_inr) if is_first else 0
+    total_credits = base_credits + bonus_credits
     doc = {
         "id": new_id(),
         "razorpay_order_id": order_id,
         "user_id": u["id"],
         "amount_inr": body.amount_inr,
-        "credits_to_grant": credits,
+        "base_credits": base_credits,
+        "bonus_credits": bonus_credits,
+        "credits_to_grant": total_credits,
         "status": "created",
         "is_first_deposit": is_first,
         "mock": MOCK_PAYMENTS_MODE,
@@ -97,7 +114,10 @@ async def create_deposit_order(body: DepositBody, u: dict = Depends(require_role
         "order_id": doc["id"],
         "razorpay_order_id": order_id,
         "amount_inr": body.amount_inr,
-        "credits_to_grant": credits,
+        "base_credits": base_credits,
+        "bonus_credits": bonus_credits,
+        "credits_to_grant": total_credits,
+        "is_first_deposit": is_first,
         "razorpay_key_id": RAZORPAY_KEY_ID,
         "mock": MOCK_PAYMENTS_MODE,
     }
@@ -132,10 +152,43 @@ async def confirm_deposit(body: VerifyPaymentBody, u: dict = Depends(current_use
         {"id": order["id"]},
         {"$set": {"status": "paid", "razorpay_payment_id": body.razorpay_payment_id, "updated_at": now_iso()}},
     )
-    credits = order["credits_to_grant"]
-    new_balance = await _credit_user(u["id"], credits, "deposit", {"order_id": order["id"], "amount_inr": order["amount_inr"]})
+    # Split credit into base deposit and (optional) first-deposit bonus so users
+    # see two distinct transactions in their history.
+    base_credits = int(order.get("base_credits") or order.get("credits_to_grant") or 0)
+    bonus_credits = int(order.get("bonus_credits") or 0)
+    # Guard against legacy orders where base+bonus was not split.
+    if base_credits == 0 and bonus_credits == 0:
+        base_credits = int(order.get("credits_to_grant") or 0)
+
+    new_balance = await _credit_user(
+        u["id"],
+        base_credits,
+        "deposit",
+        {"order_id": order["id"], "amount_inr": order["amount_inr"], "label": "Top up"},
+    )
+    if bonus_credits > 0:
+        new_balance = await _credit_user(
+            u["id"],
+            bonus_credits,
+            "first_deposit_bonus",
+            {
+                "order_id": order["id"],
+                "amount_inr": order["amount_inr"],
+                "bonus_percent": FIRST_DEPOSIT_BONUS_PERCENT,
+                "label": f"First Deposit Bonus ({FIRST_DEPOSIT_BONUS_PERCENT}%)",
+            },
+        )
+    credits_added = base_credits + bonus_credits
     await db.users.update_one({"id": u["id"]}, {"$inc": {"total_deposits": 1}})
-    await push_notification(u["id"], "Credits added 💰", f"+{credits} credits added to your wallet.", "success")
+    if bonus_credits > 0:
+        await push_notification(
+            u["id"],
+            "First Deposit Bonus 🎉",
+            f"+{credits_added} credits added ({base_credits} + {bonus_credits} bonus).",
+            "success",
+        )
+    else:
+        await push_notification(u["id"], "Credits added 💰", f"+{credits_added} credits added to your wallet.", "success")
 
     # ---------- Referral reward (fires ONCE on the qualifying first successful deposit) ----------
     referral_awarded = False
@@ -198,7 +251,10 @@ async def confirm_deposit(body: VerifyPaymentBody, u: dict = Depends(current_use
     return {
         "message": "Payment confirmed",
         "credits": new_balance,
-        "added": credits,
+        "added": credits_added,
+        "base_credits": base_credits,
+        "bonus_credits": bonus_credits,
+        "first_deposit_bonus_applied": bonus_credits > 0,
         "referral_awarded": referral_awarded,
     }
 

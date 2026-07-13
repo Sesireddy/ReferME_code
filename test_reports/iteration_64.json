@@ -1,0 +1,46 @@
+{
+  "summary": "Iteration 64 — First Wallet Deposit 50% Bonus feature tested backend-only. All 15 new tests PASS (100%). Feature works exactly as specified: base 1 INR=1 credit + 50% bonus on first-ever deposit ≥ ₹200, capped at 5000 bonus credits, split into two ledger transactions (deposit + first_deposit_bonus with meta labels 'Top up' and 'First Deposit Bonus (50%)'). Subsequent deposits are pure 1:1 with no bonus. First deposit < ₹200 correctly rejected with 400. /subscription/plans returns is_first_deposit, first_deposit_inr=200, first_deposit_bonus_percent=50, first_deposit_bonus_max_credits=5000. create-order and confirm responses include base_credits, bonus_credits, credits_to_grant/added, is_first_deposit / first_deposit_bonus_applied. Referral reward (+25) still fires alongside the depositor's first-deposit bonus. deposit_orders collection stores base_credits & bonus_credits and credits_to_grant = base+bonus. Regression: /api/wallet shape, role gates on /redemption/*, /redemption/my for pro all pass.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "N/A (test-file drift, not runtime)",
+        "issue": "test_iter53_wallet_router_refactor.py hard-codes old constants (first_deposit_inr=199, first_deposit_credits=398, credits_to_grant=398, expects 'first_deposit_credits' key on /subscription/plans). 4 tests in TestWalletEndpoints/TestDepositFlow now fail against the new spec. They are pre-existing regression tests that must be rewritten by the main agent for the new (200/50%/5000) rule, or deleted in favor of test_iter64_first_deposit_bonus.py."
+      },
+      {
+        "endpoint": "N/A (test-env issue, pre-existing)",
+        "issue": "test_iter57_referral_policy.py fails with MissingSchema because it reads BASE_URL only from EXPO_PUBLIC_BACKEND_URL/EXPO_BACKEND_URL env vars (no frontend/.env fallback, no load_dotenv). All 22 failures collapse to that single import-time bug — not related to iter64. Consider adding the same fallback logic as test_iter64_first_deposit_bonus.py / test_iter53_wallet_router_refactor.py."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter64_first_deposit_bonus.py",
+    "/app/test_reports/pytest/iter64.xml"
+  ],
+  "action_items": [
+    "Update or delete test_iter53_wallet_router_refactor.py — TestWalletEndpoints.test_subscription_plans_shape and all TestDepositFlow tests assert the OLD constants (₹199 → 398 credits). They fail post-feature-change even though the new behaviour is correct. Recommend deleting the outdated cases (subset now covered by iter64) and keeping only the redemption / adjacent-endpoint checks.",
+    "Fix test_iter57_referral_policy.py BASE_URL resolution — add load_dotenv + frontend/.env fallback (same pattern as iter64). All 22 failures are pre-existing env-loading issues, NOT logic regressions. Referral+first-deposit flow itself is verified working in iter64 (TestReferralPlusFirstDepositBonus)."
+  ],
+  "critical_code_review_comments": [
+    "wallet.py:157-161 — 'legacy order' fallback (base_credits==0 and bonus_credits==0 → treat credits_to_grant as base) is a nice safety net for pre-migration orders, but no test covers it. Optional to add later.",
+    "wallet.py:_compute_first_deposit_bonus uses integer floor via '//', so 201 INR → 100 credits (floor(100.5)). Consistent with the ceil-free spec and validated by the 200/1000/15000 test cases.",
+    "wallet.py:97 — `bonus_credits = _compute_first_deposit_bonus(body.amount_inr) if is_first else 0` correctly gates by is_first; subsequent deposit returns 0 bonus even for large amounts (verified).",
+    "wallet.py:182 — total_deposits increment happens AFTER _credit_user calls; ordering is fine because the referral logic snapshots pre-increment state via a fresh read at L148-149.",
+    "subscription/plans response no longer contains legacy keys 'first_deposit_credits' — any frontend still consuming that key will break. Confirmed only backend contract in this test."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter64_first_deposit_bonus.py (new)"
+  ],
+  "success_rate": {"backend": "100% (15/15 new tests)", "frontend": "N/A — frontend testing skipped per request"},
+  "seed_data_creation": "None. All test users created dynamically via /api/auth/signup + /api/auth/verify-otp with mock_otp. Existing seeded 'redeem.pro@example.com' reused only for regression shape check on /redemption/my.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "test_iter64_first_deposit_bonus.py is the authoritative regression suite for the First Deposit Bonus rules (200 min / 50% / 5000 cap / separate first_deposit_bonus tx). Reuse it for any wallet-adjacent feature. Note: test_iter53 & test_iter57 are stale — iter53 tests assert pre-feature constants and iter57 has an unrelated BASE_URL env-loading bug. Neither indicates a bug in the new feature.",
+  "rca_of_issue": "N/A — no defects found in the new feature. Pre-existing test-suite drift documented under 'minor' issues."
+}

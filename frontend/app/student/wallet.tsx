@@ -20,6 +20,7 @@ function txLabel(t: any): string {
   const map: Record<string, string> = {
     signup_bonus: "Signup Bonus",
     deposit: "Top up",
+    first_deposit_bonus: "First Deposit Bonus (50%)",
     apply: "Job Application",
     book: "Mock Interview Booking",
     refund: "Refund",
@@ -36,7 +37,7 @@ export default function StudentWallet() {
   const router = useRouter();
   const [data, setData] = useState<any>(null);
   const [plans, setPlans] = useState<any>(null);
-  const [amount, setAmount] = useState("199");
+  const [amount, setAmount] = useState("200");
   const [refreshing, setRefreshing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
@@ -53,6 +54,19 @@ export default function StudentWallet() {
   useEffect(() => {
     load();
   }, [load]);
+
+  const isFirstDeposit: boolean = !!plans?.paid_tier?.is_first_deposit;
+  const firstMin: number = plans?.paid_tier?.first_deposit_inr ?? 200;
+  const bonusPct: number = plans?.paid_tier?.first_deposit_bonus_percent ?? 50;
+  const bonusMax: number = plans?.paid_tier?.first_deposit_bonus_max_credits ?? 5000;
+
+  // Preview computation (kept in-sync with backend rule)
+  const previewAmt = parseInt(amount, 10) || 0;
+  const previewEligible = isFirstDeposit && previewAmt >= firstMin;
+  const previewBonus = previewEligible
+    ? Math.min(Math.floor((previewAmt * bonusPct) / 100), bonusMax)
+    : 0;
+  const previewTotal = previewAmt + previewBonus;
 
   async function buyCredits() {
     const amt = parseInt(amount, 10);
@@ -71,10 +85,21 @@ export default function StudentWallet() {
           razorpay_signature: "mock_sig",
         },
       });
-      successAlert.show({
-        title: "Payment Successful",
-        message: `${r.added} credits have been added to your wallet. New balance: ${r.credits}.`,
-      });
+      if (r.first_deposit_bonus_applied) {
+        successAlert.show({
+          title: "🎉 First Deposit Bonus Applied!",
+          message:
+            `Base credits: +${r.base_credits}\n` +
+            `Bonus credits: +${r.bonus_credits} (${bonusPct}% off ₹${amt})\n` +
+            `Total added: +${r.added}\n\n` +
+            `New balance: ${r.credits}`,
+        });
+      } else {
+        successAlert.show({
+          title: "Payment Successful",
+          message: `${r.added} credits have been added to your wallet. New balance: ${r.credits}.`,
+        });
+      }
       load();
     } catch (e: any) {
       Alert.alert("Payment failed", e.message);
@@ -134,14 +159,36 @@ export default function StudentWallet() {
         <Image source={{ uri: COIN }} style={styles.heroCoin} resizeMode="contain" />
       </LinearGradient>
 
+      {/* First deposit promotional banner — only for eligible users */}
+      {isFirstDeposit ? (
+        <LinearGradient
+          colors={["#16A34A", "#22C55E"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.offerBanner}
+        >
+          <View style={styles.offerIcon}>
+            <Txt style={{ fontSize: 22 }}>🎉</Txt>
+          </View>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Txt style={styles.offerTitle} numberOfLines={1}>
+              First Deposit — {bonusPct}% Bonus!
+            </Txt>
+            <Txt style={styles.offerSubtitle}>
+              Deposit ≥ ₹{firstMin} and get {bonusPct}% extra credits (up to +{bonusMax}).
+            </Txt>
+          </View>
+        </LinearGradient>
+      ) : null}
+
       {/* Top up / Buy credits — preserved functionality (Razorpay mock + first-deposit offer) */}
       <Card highlight style={{ marginTop: 16 }}>
         <Txt variant="label" style={{ color: colors.primary }}>
-          {plans?.paid_tier?.is_first_deposit ? "First-time offer 🎉" : "Top up"}
+          {isFirstDeposit ? "First-time offer 🎉" : "Top up"}
         </Txt>
         <Txt variant="h2" style={{ marginTop: 4 }}>
-          {plans?.paid_tier?.is_first_deposit
-            ? `₹${plans?.paid_tier?.first_deposit_inr} → ${plans?.paid_tier?.first_deposit_credits} credits`
+          {isFirstDeposit
+            ? `₹${firstMin}+ → +${bonusPct}% bonus credits`
             : "1 INR = 1 credit"}
         </Txt>
         <Input
@@ -152,6 +199,22 @@ export default function StudentWallet() {
           onChangeText={setAmount}
           style={{ marginTop: 12 }}
         />
+        {/* Live bonus preview for first-time depositors */}
+        {isFirstDeposit && previewAmt > 0 ? (
+          previewEligible ? (
+            <View style={styles.previewBox}>
+              <Txt style={{ fontSize: 12, color: "#065F46", fontWeight: "700" }}>
+                Base: {previewAmt} + Bonus: {previewBonus} = {previewTotal} credits
+              </Txt>
+            </View>
+          ) : (
+            <View style={[styles.previewBox, { backgroundColor: "#FEF3C7", borderColor: "#F59E0B" }]}>
+              <Txt style={{ fontSize: 12, color: "#92400E", fontWeight: "700" }}>
+                Add ₹{firstMin - previewAmt} more to unlock the {bonusPct}% bonus.
+              </Txt>
+            </View>
+          )
+        ) : null}
         <Button
           testID="buy-credits"
           title={`Buy credits — ₹${amount || 0}`}
@@ -212,5 +275,41 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "900",
     marginTop: 6,
+  },
+  offerBanner: {
+    marginTop: 12,
+    padding: 14,
+    borderRadius: radius.xxl,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  offerIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(255,255,255,0.25)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  offerTitle: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  offerSubtitle: {
+    color: "#fff",
+    opacity: 0.95,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  previewBox: {
+    marginTop: 10,
+    marginBottom: 4,
+    padding: 10,
+    borderRadius: 10,
+    backgroundColor: "#D1FAE5",
+    borderWidth: 1,
+    borderColor: "#10B981",
   },
 });

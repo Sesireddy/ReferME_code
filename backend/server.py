@@ -164,8 +164,12 @@ REFERRAL_HIRED_REWARD = 500
 HIRING_REWARD = 1500  # credits awarded to job poster on admin-approved hire
 INTERVIEW_MIN_DURATION_MIN = 15  # minimum minutes interview must run before it qualifies for the reward
 PAYOUT_MIN = 500
-FIRST_DEPOSIT_MIN_INR = 199
-FIRST_DEPOSIT_BONUS_CREDITS = 398  # ₹199 → 398 credits
+FIRST_DEPOSIT_MIN_INR = 200
+# First-ever successful deposit of ≥ FIRST_DEPOSIT_MIN_INR earns a 50% bonus on
+# purchased credits (base credits = amount_inr, at 1 INR = 1 credit), capped at
+# FIRST_DEPOSIT_BONUS_MAX_CREDITS additional credits.
+FIRST_DEPOSIT_BONUS_PERCENT = 50
+FIRST_DEPOSIT_BONUS_MAX_CREDITS = 5000
 FREE_TIER_ACTIONS = 1  # 1 referral + 1 mock interview free
 
 # Personal email domains NOT allowed for professional signup
