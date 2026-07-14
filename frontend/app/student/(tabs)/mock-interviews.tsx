@@ -7,8 +7,6 @@ import { Card } from "@/src/components/Card";
 import { ScreenTitle } from "@/src/components/ScreenTitle";
 import { Button } from "@/src/components/Button";
 import { SkillAutocomplete } from "@/src/components/SkillAutocomplete";
-import { Input } from "@/src/components/Input";
-import { Picker } from "@/src/components/Picker";
 import { DatePickerField } from "@/src/components/DateTimePicker";
 import { ConfirmDialog } from "@/src/components/ConfirmDialog";
 import { colors, radius } from "@/src/theme/tokens";
@@ -41,7 +39,6 @@ export default function MockInterviews() {
   const [bookSuccessOpen, setBookSuccessOpen] = useState(false);
   const [skillFilter, setSkillFilter] = useState("");
   const [dateFilter, setDateFilter] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState<string | null>("");
   const [refreshing, setRefreshing] = useState(false);
   const [actionCost, setActionCost] = useState<number>(99);
 
@@ -87,7 +84,6 @@ export default function MockInterviews() {
       const params = new URLSearchParams({ has_available_slots: "true" });
       if (skillFilter.trim()) params.set("skill", skillFilter.trim());
       if (dateFilter) params.set("date", dateFilter);
-      if (categoryFilter) params.set("category", categoryFilter);
       const [p] = await Promise.all([
         api<any[]>(`/professionals?${params.toString()}`),
         loadMyBookings(),
@@ -97,7 +93,7 @@ export default function MockInterviews() {
       setPros([]);
     }
     setRefreshing(false);
-  }, [skillFilter, dateFilter, categoryFilter, loadMyBookings]);
+  }, [skillFilter, dateFilter, loadMyBookings]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -108,7 +104,6 @@ export default function MockInterviews() {
       const params = new URLSearchParams({ pro_id: pro.id });
       if (skillFilter) params.set("skill", skillFilter);
       if (dateFilter) params.set("date", dateFilter);
-      if (categoryFilter) params.set("category", categoryFilter);
       const s = await api<any[]>(`/interviews/slots?${params.toString()}`);
       // Backend already excludes expired & cancelled for students drilling into a pro.
       setSlots(s);
@@ -206,19 +201,6 @@ export default function MockInterviews() {
       <View style={{ flexDirection: "row", gap: 8 }}>
         <View style={{ flex: 1 }}>
           <DatePickerField testID="mi-date" value={dateFilter} onChange={setDateFilter} placeholder="Filter by date" />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Picker
-            testID="mi-category"
-            options={[
-              { value: "", label: "All categories" },
-              { value: "fresher", label: "Fresher" },
-              { value: "experienced", label: "Experienced" },
-            ]}
-            value={categoryFilter}
-            onChange={(v) => setCategoryFilter(v as string)}
-            placeholder="Category"
-          />
         </View>
       </View>
       {dateFilter ? (
