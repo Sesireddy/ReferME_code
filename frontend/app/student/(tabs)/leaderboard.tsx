@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { View, StyleSheet, Image, TouchableOpacity } from "react-native";
+import { View, StyleSheet, Image, TouchableOpacity, ActivityIndicator } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { Screen } from "@/src/components/Screen";
@@ -37,6 +37,7 @@ export default function StudentLeaderboard() {
   const [filteredTotal, setFilteredTotal] = useState<number>(0);
   const [baseTotal, setBaseTotal] = useState<number>(0);
   const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true); // initial spinner (also true while filters reload)
   const [showFilters, setShowFilters] = useState(false);
 
   const [category, setCategory] = useState<string>("");
@@ -70,6 +71,7 @@ export default function StudentLeaderboard() {
       }
     } catch {}
     setRefreshing(false);
+    setLoading(false); // hide initial spinner once first fetch completes
   }, [category, skill, location]);
 
   useEffect(() => { load(); }, [load]);
@@ -162,21 +164,30 @@ export default function StudentLeaderboard() {
         </Card>
       ) : null}
 
-      <View style={styles.podium}>
-        {board[1] ? <PodiumCol entry={board[1]} rank={2} height={90} /> : <View style={{ flex: 1 }} />}
-        {board[0] ? <PodiumCol entry={board[0]} rank={1} height={120} crown /> : <View style={{ flex: 1 }} />}
-        {board[2] ? <PodiumCol entry={board[2]} rank={3} height={70} /> : <View style={{ flex: 1 }} />}
-      </View>
+      {loading ? (
+        <View style={styles.loadingWrap} testID="leaderboard-loading">
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Txt variant="muted" style={{ marginTop: 10 }}>Loading leaderboard…</Txt>
+        </View>
+      ) : (
+        <>
+          <View style={styles.podium}>
+            {board[1] ? <PodiumCol entry={board[1]} rank={2} height={90} /> : <View style={{ flex: 1 }} />}
+            {board[0] ? <PodiumCol entry={board[0]} rank={1} height={120} crown /> : <View style={{ flex: 1 }} />}
+            {board[2] ? <PodiumCol entry={board[2]} rank={3} height={70} /> : <View style={{ flex: 1 }} />}
+          </View>
 
-      <View style={{ marginTop: 16, gap: 10 }}>
-        {board.length === 0 ? <Txt variant="muted">No matches — try adjusting filters.</Txt> : null}
-        {board.map((e) => (
-          <LeaderRow key={e.id} entry={e} />
-        ))}
-      </View>
-      <Txt variant="small" style={{ color: colors.textSecondary, textAlign: "center", marginTop: 16, paddingHorizontal: 20 }}>
-        Ranked by Talent Potential Score (TPS) = 60% Resume + 20% Interviews + 20% Avg Rating.
-      </Txt>
+          <View style={{ marginTop: 16, gap: 10 }}>
+            {board.length === 0 ? <Txt variant="muted">No matches — try adjusting filters.</Txt> : null}
+            {board.map((e) => (
+              <LeaderRow key={e.id} entry={e} />
+            ))}
+          </View>
+          <Txt variant="small" style={{ color: colors.textSecondary, textAlign: "center", marginTop: 16, paddingHorizontal: 20 }}>
+            Ranked by Talent Potential Score (TPS) = 60% Resume + 20% Interviews + 20% Avg Rating.
+          </Txt>
+        </>
+      )}
     </Screen>
   );
 }
@@ -373,4 +384,5 @@ const styles = StyleSheet.create({
   applyBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: colors.primary, paddingHorizontal: 18, paddingVertical: 12, borderRadius: 12 },
   applyBtnText: { color: "#fff", fontWeight: "700", fontSize: 14 },
   clearBtn: { paddingHorizontal: 14, paddingVertical: 10 },
+  loadingWrap: { paddingVertical: 60, alignItems: "center", justifyContent: "center" },
 });
