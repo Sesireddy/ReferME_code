@@ -55,6 +55,16 @@ MOCK_PAYMENTS_MODE = not (RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET)
 # so backend test suites can complete the verify-otp step without a real inbox.
 TEST_RETURN_OTP = os.environ.get("TEST_RETURN_OTP", "").strip() in ("1", "true", "yes")
 
+# --- MSG91 (SMS OTP via Flow API) ---
+MSG91_AUTHKEY = os.environ.get("MSG91_AUTHKEY", "").strip()
+MSG91_FLOW_ID = os.environ.get("MSG91_FLOW_ID", "").strip()
+MSG91_SENDER_ID = os.environ.get("MSG91_SENDER_ID", "").strip()
+# Variable name inside the DLT-approved MSG91 flow template that maps to the
+# 6-digit OTP. Common values: "otp", "OTP", or "VAR1". Configurable per account.
+MSG91_OTP_VAR = os.environ.get("MSG91_OTP_VAR", "otp").strip() or "otp"
+MSG91_FLOW_ENDPOINT = "https://control.msg91.com/api/v5/flow/"
+MOCK_SMS_MODE = not (MSG91_AUTHKEY and MSG91_FLOW_ID and MSG91_SENDER_ID)
+
 CITY_SYNONYMS = {
     "bangalore": ["bangalore", "bengaluru", "bglr"],
     "bengaluru": ["bengaluru", "bangalore", "bglr"],
@@ -285,6 +295,50 @@ async def send_otp_email(email: str, otp: str, purpose: str) -> bool:
         </div>
     """
     return await send_html_email(email, subject, html, mock_purpose=purpose, fallback_text=f"Your OTP is {otp}")
+
+
+async def send_otp_sms_msg91(phone_e164: str, otp: str) -> tuple[bool, str]:
+    """Send a 6-digit OTP to an Indian mobile number via MSG91 Flow API.
+
+    Returns (success, message_or_error). On mock mode (missing credentials) logs and returns False.
+    `phone_e164` is expected to be `+91XXXXXXXXXX`; we strip the leading '+' for MSG91.
+    """
+    if MOCK_SMS_MODE:
+        logger.info("[MOCK-SMS] to=%s otp=%s (MSG91 credentials not configured)", phone_e164, otp)
+        return False, "MSG91 not configured — mock mode"
+
+    mobiles = (phone_e164 or "").lstrip("+").strip()
+    if not mobiles:
+        return False, "Missing mobile number"
+
+    payload = {
+        "flow_id": MSG91_FLOW_ID,
+        "sender": MSG91_SENDER_ID,
+        "mobiles": mobiles,
+        MSG91_OTP_VAR: otp,
+    }
+    headers = {
+        "authkey": MSG91_AUTHKEY,
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.post(MSG91_FLOW_ENDPOINT, json=payload, headers=headers)
+        try:
+            data = r.json()
+        except Exception:
+            data = {"raw": r.text}
+        if r.status_code // 100 == 2 and (
+            (isinstance(data, dict) and data.get("type") == "success") or r.status_code == 200
+        ):
+            logger.info("[MSG91-SMS] sent to=%s resp=%s", phone_e164, data)
+            return True, str(data.get("message") if isinstance(data, dict) else data)
+        logger.warning("[MSG91-SMS] failed to=%s status=%s resp=%s", phone_e164, r.status_code, data)
+        return False, f"MSG91 error {r.status_code}: {data}"
+    except Exception as e:  # noqa: BLE001
+        logger.exception("[MSG91-SMS] exception to=%s: %s", phone_e164, e)
+        return False, f"MSG91 exception: {e}"
 
 
 async def send_html_email(

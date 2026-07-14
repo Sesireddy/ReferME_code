@@ -27,6 +27,7 @@ from server import (
     student_missing_fields,
     student_profile_completion,
     send_otp_email,
+    send_otp_sms_msg91,
     user_public,
     compute_pro_profile_completion,
     pro_missing_fields,
@@ -35,6 +36,7 @@ from server import (
     FREE_TIER_ACTIONS,
     REFERRAL_REWARD,
     MOCK_OTP_MODE,
+    MOCK_SMS_MODE,
     TEST_RETURN_OTP,
     EMERGENT_AUTH_URL,
     SignupBody,
@@ -234,8 +236,23 @@ async def phone_send_otp(body: PhoneOtpSendBody, u: dict = Depends(current_user)
         "consumed": False,
         "created_at": now_iso(),
     })
-    # Mock SMS: always include OTP in response.
-    return {"message": "Mock SMS sent", "phone": phone, "mock_otp": otp_code}
+    # Try MSG91 SMS first. On failure, fall back to mock-log so signup flows
+    # in dev/CI keep working (they can still read `mock_otp` when TEST_RETURN_OTP=1).
+    sent, provider_msg = await send_otp_sms_msg91(phone, otp_code)
+    resp: dict = {"phone": phone}
+    if sent:
+        resp["message"] = "OTP sent via SMS"
+        resp["provider"] = "msg91"
+    else:
+        resp["message"] = "Mock SMS sent" if MOCK_SMS_MODE else "SMS provider failed — mock fallback"
+        resp["provider"] = "mock"
+        if not MOCK_SMS_MODE:
+            resp["provider_error"] = provider_msg
+    # Expose OTP in response ONLY when explicitly enabled (dev/CI), or as a
+    # safety net when SMS could not be delivered so users aren't locked out.
+    if TEST_RETURN_OTP or not sent:
+        resp["mock_otp"] = otp_code
+    return resp
 
 
 @router.post("/profile/phone/verify-otp")
