@@ -8,7 +8,6 @@ import { Txt } from "@/src/components/Txt";
 import { Card } from "@/src/components/Card";
 import { Button } from "@/src/components/Button";
 import { Input } from "@/src/components/Input";
-import { Picker } from "@/src/components/Picker";
 import { ScreenTitle } from "@/src/components/ScreenTitle";
 import { DatePickerField, TimePickerField } from "@/src/components/DateTimePicker";
 import { ConfirmDialog } from "@/src/components/ConfirmDialog";
@@ -16,7 +15,6 @@ import { colors, radius } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
 import { successAlert } from "@/src/lib/successAlert";
 import { useRouter } from "expo-router";
-import { EXPERIENCE_OPTIONS } from "@/src/lib/constants";
 
 function tomorrowDateStr() {
   const d = new Date();
@@ -42,7 +40,9 @@ export default function ProSlots() {
   const [toTime, setToTime] = useState("12:00");
   const [topic, setTopic] = useState("");
   const [skillSet, setSkillSet] = useState("");
-  const [expYears, setExpYears] = useState("0");
+  // Slot creation now silently uses the professional's own experience from their
+  // profile (auto-populated from /auth/me). No UI field exposed.
+  const [myExpYears, setMyExpYears] = useState<number>(0);
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -66,6 +66,9 @@ export default function ProSlots() {
       try {
         const me = await api<any>("/auth/me");
         setGmailVerified(!!me?.user?.gmail_verified);
+        const p = me?.user?.profile || {};
+        const yrs = Number(p.experience_years ?? p.years_of_experience ?? 0) || 0;
+        setMyExpYears(yrs);
       } catch {}
     } catch {}
     setRefreshing(false);
@@ -109,7 +112,7 @@ export default function ProSlots() {
           end_at: end.toISOString(),
           topic,
           skill_set: skillArr,
-          experience_years: parseInt(expYears || "0", 10),
+          experience_years: myExpYears,
         },
       });
       setTopic("");
@@ -243,14 +246,6 @@ export default function ProSlots() {
         </View>
         <Input testID="slot-topic" label="Topic (optional)" placeholder="System design / Behavioral" value={topic} onChangeText={setTopic} />
         <Input testID="slot-skills" label="Skill Set (comma-separated) *" placeholder="React, System Design" value={skillSet} onChangeText={setSkillSet} />
-        <Picker
-          testID="slot-exp"
-          label="Your Total Experience"
-          options={EXPERIENCE_OPTIONS}
-          value={expYears}
-          onChange={(v) => setExpYears(v as string)}
-          placeholder="Select experience"
-        />
         <Txt variant="small" style={{ color: colors.textSecondary, marginBottom: 8 }}>
           Slots use 12-hour AM/PM in IST. Min 1 hour, max 5 hours/day per professional.
         </Txt>
