@@ -353,11 +353,8 @@ export default function ProSlots() {
             <View style={{ height: 8 }} />
             <View style={{ flexDirection: "row", gap: 8 }}>
               <Button title="Cancel" variant="secondary" onPress={() => setCompletingSlot(null)} style={{ flex: 1 }} />
-              <Button testID="submit-complete" title={`Mark Done · +35`} onPress={clickMarkDone} loading={submittingComplete} style={{ flex: 1 }} />
+              <Button testID="submit-complete" title="Mark Done" onPress={clickMarkDone} loading={submittingComplete} style={{ flex: 1 }} />
             </View>
-            <Txt variant="small" style={{ marginTop: 8, color: colors.textSecondary, textAlign: "center" }}>
-              Allowed once the scheduled start time has passed.
-            </Txt>
           </View>
         </View>
       </Modal>
