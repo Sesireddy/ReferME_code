@@ -91,6 +91,59 @@ def expand_city(term: str) -> list[str]:
     return CITY_SYNONYMS.get(key, [key])
 
 
+# -------------------- Job helpers: multi-location + deadline (Iter 66) --------------------
+def job_locations(job: dict) -> list[str]:
+    """Normalise both new (`locations`) and legacy (`location`) shape to a list of strings."""
+    locs = job.get("locations")
+    if isinstance(locs, list) and locs:
+        return [str(x).strip() for x in locs if str(x).strip()]
+    single = (job.get("location") or "").strip()
+    return [single] if single else []
+
+
+def is_job_closed(job: dict) -> bool:
+    """True when the job has a last_date_to_apply that is strictly before today's date (IST-agnostic,
+    uses server-local date). Missing deadline → NEVER closed (legacy safe default)."""
+    from datetime import date as _date
+    raw = (job.get("last_date_to_apply") or "").strip()
+    if not raw:
+        return False
+    try:
+        y, m, d = raw[:10].split("-")
+        deadline = _date(int(y), int(m), int(d))
+    except Exception:
+        return False
+    return deadline < _date.today()
+
+
+def annotate_job_for_response(job: dict) -> dict:
+    """Ensure API responses always carry `locations` (list) and `is_closed` (bool)."""
+    if "_id" in job:
+        job = {k: v for k, v in job.items() if k != "_id"}
+    job["locations"] = job_locations(job)
+    job["is_closed"] = is_job_closed(job)
+    return job
+
+
+def validate_last_date_to_apply(raw: str | None, *, required: bool = True) -> str:
+    """Validate an ISO date string. Returns the normalised YYYY-MM-DD or raises HTTPException(400)."""
+    from datetime import date as _date
+    from fastapi import HTTPException as _HTTPExc
+    s = (raw or "").strip()
+    if not s:
+        if required:
+            raise _HTTPExc(status_code=400, detail="Please select the Last Date to Apply.")
+        return ""
+    try:
+        y, m, d = s[:10].split("-")
+        parsed = _date(int(y), int(m), int(d))
+    except Exception:
+        raise _HTTPExc(status_code=400, detail="Please select a valid Last Date to Apply.")
+    if parsed < _date.today():
+        raise _HTTPExc(status_code=400, detail="Last Date to Apply cannot be earlier than today's date.")
+    return f"{parsed.year:04d}-{parsed.month:02d}-{parsed.day:02d}"
+
+
 # Business rules
 # Credit costs are now per Job Seeker category (see get_action_cost()):
 #   Fresher / Intern  → 99 credits per action (book interview / apply pro job)
@@ -657,8 +710,10 @@ class JobPostBody(BaseModel):
     title: str
     company: Optional[str] = None
     description: str
-    location: str  # canonical city string OR "__OTHER__"
-    location_other: Optional[str] = None  # used only when location == "__OTHER__"
+    location: Optional[str] = None  # legacy single-location (kept for back-compat)
+    location_other: Optional[str] = None  # legacy: used only when location == "__OTHER__"
+    locations: Optional[list[str]] = None  # NEW — multi-location list (preferred)
+    last_date_to_apply: Optional[str] = None  # NEW — ISO YYYY-MM-DD, required for new posts
     salary_range: Optional[str] = ""  # legacy/free-text fallback
     salary_range_label: Optional[Literal["Not disclosed","0-3", "3-5", "5-10", "10-20", "20-50", "50+"]] = "Not disclosed"
     industry_type: Optional[str] = None  # one of INDUSTRY_OPTIONS values incl. "__OTHER__"
@@ -683,6 +738,8 @@ class JobPatchBody(BaseModel):
     description: Optional[str] = None
     location: Optional[str] = None
     location_other: Optional[str] = None
+    locations: Optional[list[str]] = None
+    last_date_to_apply: Optional[str] = None
     salary_range: Optional[str] = None
     salary_range_label: Optional[Literal["Not disclosed", "0-3", "3-5", "5-10", "10-20", "20-50", "50+"]] = "Not disclosed"
     industry_type: Optional[str] = None

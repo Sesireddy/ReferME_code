@@ -20,6 +20,10 @@ from server import (
     push_notification,
     write_audit,
     expand_city,
+    job_locations,
+    is_job_closed,
+    annotate_job_for_response,
+    validate_last_date_to_apply,
     _credit_user,
     _can_use_free,
     get_action_cost,
@@ -116,8 +120,33 @@ async def post_job(body: JobPostBody, u: dict = Depends(require_role(["employer"
         raise HTTPException(status_code=400, detail="Job Title is required.")
     if not body.description or len(body.description.strip()) < 2:
         raise HTTPException(status_code=400, detail="Job Description is required.")
-    if not body.location or len(body.location.strip()) < 2:
-        raise HTTPException(status_code=400, detail="Location is required.")
+
+    # ---------- Multi-location normalisation (Iter 66) ----------
+    # Accept BOTH the new `locations` list AND the legacy single `location` field.
+    raw_locs: list[str] = []
+    if body.locations:
+        raw_locs = [str(x).strip() for x in body.locations if str(x).strip()]
+    elif body.location:
+        loc_val = body.location.strip()
+        if loc_val == "__OTHER__":
+            if not (body.location_other or "").strip():
+                raise HTTPException(status_code=400, detail="Please specify the location (Other).")
+            loc_val = body.location_other.strip()
+        raw_locs = [loc_val]
+    # Dedupe (case-insensitive) while preserving first-seen order
+    seen: set[str] = set()
+    locations_resolved: list[str] = []
+    for x in raw_locs:
+        k = x.lower()
+        if k and k not in seen:
+            seen.add(k)
+            locations_resolved.append(x)
+    if not locations_resolved:
+        raise HTTPException(status_code=400, detail="Please select at least one Location.")
+
+    # ---------- Last date to apply (Iter 66) ----------
+    last_date_normalized = validate_last_date_to_apply(body.last_date_to_apply, required=True)
+
     if not body.skills_required or len([s for s in body.skills_required if s.strip()]) == 0:
         raise HTTPException(status_code=400, detail="Skill Set is required.")
     profile = u.get("profile", {}) or {}
@@ -141,11 +170,6 @@ async def post_job(body: JobPostBody, u: dict = Depends(require_role(["employer"
         if not (body.industry_other or "").strip():
             raise HTTPException(status_code=400, detail="Please specify the industry (Other).")
         industry_resolved = body.industry_other.strip()
-    location_resolved = body.location.strip()
-    if location_resolved == "__OTHER__":
-        if not (body.location_other or "").strip():
-            raise HTTPException(status_code=400, detail="Please specify the location (Other).")
-        location_resolved = body.location_other.strip()
     exp_min = body.experience_min if body.experience_min is not None else exp_req
     exp_max = body.experience_max if body.experience_max is not None else max(exp_req, exp_min or 0)
     if exp_min is not None and exp_max is not None and exp_max < exp_min:
@@ -174,7 +198,9 @@ async def post_job(body: JobPostBody, u: dict = Depends(require_role(["employer"
         "title": body.title.strip(),
         "company": company_resolved,
         "description": body.description.strip(),
-        "location": location_resolved,
+        "location": locations_resolved[0],  # legacy single-location alias (first entry)
+        "locations": locations_resolved,     # NEW: multi-location list
+        "last_date_to_apply": last_date_normalized,  # NEW: ISO date YYYY-MM-DD
         "salary_range": body.salary_range or "",
         "salary_range_label": body.salary_range_label or "",
         "industry_type": industry_resolved,
@@ -198,7 +224,7 @@ async def post_job(body: JobPostBody, u: dict = Depends(require_role(["employer"
         "updated_at": now_iso(),
     }
     await db.jobs.insert_one(job)
-    return {k: v for k, v in job.items() if k != "_id"}
+    return annotate_job_for_response({k: v for k, v in job.items() if k != "_id"})
 
 
 @router.get("/jobs")
@@ -240,7 +266,14 @@ async def list_jobs(
     if location:
         synonyms = expand_city(location)
         pattern = "|".join(re.escape(s) for s in synonyms)
-        q["location"] = {"$regex": pattern, "$options": "i"}
+        # Match against BOTH legacy single-string `location` and new `locations[]` array
+        loc_regex = {"$regex": pattern, "$options": "i"}
+        loc_or_clauses = [{"location": loc_regex}, {"locations": loc_regex}]
+        # Merge with any existing $or already on `q` (e.g. role-based visibility filter)
+        if "$or" in q:
+            q = {"$and": [{"$or": q.pop("$or")}, {"$or": loc_or_clauses}, q]}
+        else:
+            q["$or"] = loc_or_clauses
     if category in ("fresher", "experienced", "intern"):
         q["category"] = category
     if company:
@@ -315,7 +348,8 @@ async def list_jobs(
         for j in jobs:
             if j.get("employer_id") == u["id"]:
                 j["applications_count"] = j.get("applied_count", 0)
-    return jobs
+    # Iter 66: attach `locations` (list) + `is_closed` (bool) to every job in the response.
+    return [annotate_job_for_response(j) for j in jobs]
 
 
 @router.get("/jobs/{job_id}")
@@ -327,7 +361,7 @@ async def get_job(job_id: str, u: dict = Depends(current_user)):
         app = await db.applications.find_one({"student_id": u["id"], "job_id": job_id}, {"_id": 0})
         job["applied"] = bool(app)
         job["application_status"] = app["status"] if app else None
-    return job
+    return annotate_job_for_response(job)
 
 
 @router.patch("/jobs/{job_id}")
@@ -338,12 +372,29 @@ async def edit_job(job_id: str, body: JobPatchBody, u: dict = Depends(require_ro
     if u["role"] != "admin" and job["employer_id"] != u["id"]:
         raise HTTPException(status_code=403, detail="Only owner can edit")
     updates = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
+    # Normalise locations if provided on the patch payload
+    if "locations" in updates and isinstance(updates["locations"], list):
+        clean: list[str] = []
+        seen: set[str] = set()
+        for x in updates["locations"]:
+            v = str(x).strip()
+            k = v.lower()
+            if v and k not in seen:
+                seen.add(k)
+                clean.append(v)
+        if clean:
+            updates["locations"] = clean
+            updates.setdefault("location", clean[0])
+    if "last_date_to_apply" in updates:
+        updates["last_date_to_apply"] = validate_last_date_to_apply(
+            updates["last_date_to_apply"], required=False
+        )
     if "open_positions" in updates:
         updates["bulk_openings"] = updates["open_positions"]
     updates["updated_at"] = now_iso()
     await db.jobs.update_one({"id": job_id}, {"$set": updates})
     out = await db.jobs.find_one({"id": job_id}, {"_id": 0})
-    return out
+    return annotate_job_for_response(out)
 
 
 @router.post("/jobs/{job_id}/close")
@@ -446,6 +497,9 @@ async def apply_job(body: ApplyJobBody, u: dict = Depends(require_role(["student
     job = await db.jobs.find_one({"id": body.job_id}, {"_id": 0})
     if not job or job["status"] != "open":
         raise HTTPException(status_code=400, detail="Job not available")
+    # Iter 66 — Applications Closed gate
+    if is_job_closed(job):
+        raise HTTPException(status_code=400, detail="Applications Closed. The last date to apply has passed.")
     if (job.get("source") or "").lower() == "admin":
         raise HTTPException(
             status_code=400,

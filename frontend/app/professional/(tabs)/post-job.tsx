@@ -9,10 +9,11 @@ import { Card } from "@/src/components/Card";
 import { Input } from "@/src/components/Input";
 import { Button } from "@/src/components/Button";
 import { Picker } from "@/src/components/Picker";
+import { LocationMultiSelect } from "@/src/components/LocationMultiSelect";
+import { DatePickerField } from "@/src/components/DateTimePicker";
 import { ConfirmDialog } from "@/src/components/ConfirmDialog";
 import { ScreenTitle } from "@/src/components/ScreenTitle";
 import {
-  LOCATION_OPTIONS,
   SALARY_RANGE_OPTIONS,
   INDUSTRY_OPTIONS,
   EXP_FILTER_OPTIONS,
@@ -36,7 +37,7 @@ const OPEN_POSITIONS_OPTIONS = [
 ];
 
 type Errors = Partial<Record<
-  "title" | "company" | "desc" | "location" | "locationOther" | "salary" | "industry" |
+  "title" | "company" | "desc" | "locations" | "lastDate" | "salary" | "industry" |
   "industryOther" | "category" | "skills" | "openings" | "expMin" | "expMax" | "proof",
   string
 >>;
@@ -45,12 +46,20 @@ function isValidUrl(u: string): boolean {
   return /^https?:\/\/[^\s]+\.[^\s]+/i.test((u || "").trim());
 }
 
+function todayIso(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`;
+}
+
 export default function ProPostJob() {
   const [title, setTitle] = useState("");
   const [company, setCompany] = useState("");
   const [desc, setDesc] = useState("");
-  const [location, setLocation] = useState<string | null>(null);
-  const [locationOther, setLocationOther] = useState("");
+  const [locations, setLocations] = useState<string[]>([]);
+  const [lastDate, setLastDate] = useState<string>("");
   const [salaryRange, setSalaryRange] = useState<string | null>(null);
   const [industry, setIndustry] = useState<string | null>(null);
   const [industryOther, setIndustryOther] = useState("");
@@ -117,7 +126,6 @@ export default function ProPostJob() {
   }
 
   const isExperienced = category === "experienced";
-  const isOtherLoc = location === "__OTHER__";
   const isOtherInd = industry === "__OTHER__";
 
   function parseExp(v: string | null): number | null {
@@ -132,8 +140,12 @@ export default function ProPostJob() {
     if (!title.trim()) e.title = "Job Title is required.";
     if (!company.trim()) e.company = "Company Name is required.";
     if (!desc.trim()) e.desc = "Job Description is required.";
-    if (!location) e.location = "Location is required.";
-    if (isOtherLoc && !locationOther.trim()) e.locationOther = "Please specify the city.";
+    if (locations.length === 0) e.locations = "Please select at least one Location.";
+    if (!lastDate) {
+      e.lastDate = "Please select the Last Date to Apply.";
+    } else if (lastDate < todayIso()) {
+      e.lastDate = "Last Date to Apply cannot be earlier than today's date.";
+    }
     if (!salaryRange) e.salary = "Salary Range is required.";
     if (!industry) e.industry = "Industry Type is required.";
     if (isOtherInd && !industryOther.trim()) e.industryOther = "Please specify the industry.";
@@ -171,8 +183,8 @@ export default function ProPostJob() {
           title: title.trim(),
           company: company.trim(),
           description: desc.trim(),
-          location,
-          location_other: isOtherLoc ? locationOther.trim() : null,
+          locations,
+          last_date_to_apply: lastDate,
           salary_range_label: salaryRange,
           industry_type: industry,
           industry_other: isOtherInd ? industryOther.trim() : null,
@@ -189,7 +201,7 @@ export default function ProPostJob() {
       });
       setSuccess(true);
       // Reset
-      setTitle(""); setCompany(""); setDesc(""); setLocation(null); setLocationOther("");
+      setTitle(""); setCompany(""); setDesc(""); setLocations([]); setLastDate("");
       setSalaryRange(null); setIndustry(null); setIndustryOther("");
       setCategory("fresher"); setExpMin(null); setExpMax(null);
       setSkills(""); setOpenings(null);
@@ -227,21 +239,24 @@ export default function ProPostJob() {
         <Input testID="pj-desc" label="Job Description *" value={desc} onChangeText={(v) => { setDesc(v); setErrors((e) => ({ ...e, desc: undefined })); }} multiline placeholder="Role, responsibilities, etc." />
         {errors.desc ? <Txt style={styles.err}>{errors.desc}</Txt> : null}
 
-        <Picker
+        <LocationMultiSelect
           testID="pj-loc"
-          label="Location *"
-          options={LOCATION_OPTIONS}
-          value={location}
-          onChange={(v) => { setLocation(v as string); setErrors((e) => ({ ...e, location: undefined })); }}
-          placeholder="Select city"
+          label="Location * (select one or more)"
+          value={locations}
+          onChange={(v) => { setLocations(v); setErrors((e) => ({ ...e, locations: undefined })); }}
+          placeholder="Search Location…"
         />
-        {errors.location ? <Txt style={styles.err}>{errors.location}</Txt> : null}
-        {isOtherLoc ? (
-          <>
-            <Input testID="pj-loc-other" label="Specify Location *" value={locationOther} onChangeText={(v) => { setLocationOther(v); setErrors((e) => ({ ...e, locationOther: undefined })); }} placeholder="City name" />
-            {errors.locationOther ? <Txt style={styles.err}>{errors.locationOther}</Txt> : null}
-          </>
-        ) : null}
+        {errors.locations ? <Txt style={styles.err}>{errors.locations}</Txt> : null}
+
+        <DatePickerField
+          testID="pj-last-date"
+          label="Last Date to Apply *"
+          value={lastDate}
+          onChange={(v) => { setLastDate(v); setErrors((e) => ({ ...e, lastDate: undefined })); }}
+          placeholder="Select Last Date to Apply"
+          maxDate={new Date(Date.now() + 365 * 86400000)}
+        />
+        {errors.lastDate ? <Txt style={styles.err}>{errors.lastDate}</Txt> : null}
 
         <Picker
           testID="pj-salary"

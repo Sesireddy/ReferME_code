@@ -11,6 +11,8 @@ import { Txt } from "@/src/components/Txt";
 import { Card } from "@/src/components/Card";
 import { Input } from "@/src/components/Input";
 import { Button } from "@/src/components/Button";
+import { LocationMultiSelect } from "@/src/components/LocationMultiSelect";
+import { DatePickerField } from "@/src/components/DateTimePicker";
 import { colors, radius } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
 import { successAlert } from "@/src/lib/successAlert";
@@ -22,7 +24,8 @@ type FormState = {
   company: string;
   title: string;
   description: string;
-  location: string;
+  locations: string[];
+  last_date_to_apply: string; // yyyy-mm-dd (mandatory when publishing)
   experience_min: string;
   experience_max: string;
   skills: string; // comma separated
@@ -42,7 +45,8 @@ type FormState = {
 };
 
 const EMPTY: FormState = {
-  company: "", title: "", description: "", location: "",
+  company: "", title: "", description: "", locations: [],
+  last_date_to_apply: "",
   experience_min: "0", experience_max: "", skills: "",
   open_positions: "1", employment_type: "Full-time", salary_range: "",
   walk_in_date: "", walk_in_time: "", venue: "",
@@ -72,7 +76,10 @@ export default function AdminPostJob() {
           company: j.company || "",
           title: j.title || "",
           description: j.description || "",
-          location: j.location || "",
+          locations: Array.isArray(j.locations) && j.locations.length > 0
+            ? j.locations
+            : (j.location ? [j.location] : []),
+          last_date_to_apply: j.last_date_to_apply || "",
           experience_min: String(j.experience_min ?? 0),
           experience_max: j.experience_max != null ? String(j.experience_max) : "",
           skills: (j.skills_required || []).join(", "),
@@ -115,14 +122,20 @@ export default function AdminPostJob() {
     if (!f.company.trim() || f.company.trim().length < 2) return "Company Name is required.";
     if (!f.title.trim() || f.title.trim().length < 2) return "Job Title is required.";
     if (!f.description.trim() || f.description.trim().length < 10) return "Job Description must be at least 10 characters.";
-    if (!f.location.trim()) return "Location is required.";
+    if (f.locations.length === 0) return "Please select at least one Location.";
+    const today = new Date().toISOString().slice(0, 10);
+    if (!isDraft) {
+      if (!f.last_date_to_apply) return "Please select the Last Date to Apply.";
+      if (f.last_date_to_apply < today) return "Last Date to Apply cannot be earlier than today's date.";
+    } else if (f.last_date_to_apply && f.last_date_to_apply < today) {
+      return "Last Date to Apply cannot be earlier than today's date.";
+    }
     const skills = f.skills.split(",").map((s) => s.trim()).filter(Boolean);
     if (skills.length === 0) return "At least one Skill is required.";
     const positions = parseInt(f.open_positions || "0", 10);
     if (!positions || positions < 1) return "Open Positions must be a positive integer.";
     if (f.contact_number.trim() && !/^[6-9]\d{9}$/.test(f.contact_number.trim())) return "Contact Number must be a valid 10-digit Indian mobile.";
     if (f.contact_email.trim() && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(f.contact_email.trim())) return "Contact Email is not valid.";
-    const today = new Date().toISOString().slice(0, 10);
     if (!isDraft) {
       for (const [k, v] of [["walk_in_date", f.walk_in_date], ["application_deadline", f.application_deadline]] as const) {
         if (v && v < today) return `${k.replace("_", " ")} must be today or a future date.`;
@@ -142,7 +155,8 @@ export default function AdminPostJob() {
         company: f.company.trim(),
         title: f.title.trim(),
         description: f.description.trim(),
-        location: f.location.trim(),
+        locations: f.locations,
+        last_date_to_apply: f.last_date_to_apply || null,
         skills_required: f.skills.split(",").map((s) => s.trim()).filter(Boolean),
         experience_min: parseInt(f.experience_min || "0", 10),
         experience_max: f.experience_max ? parseInt(f.experience_max, 10) : null,
@@ -196,7 +210,21 @@ export default function AdminPostJob() {
           <Input label="Company Name *" value={f.company} onChangeText={(v) => setField("company", v)} placeholder="e.g. TCS" testID="admin-job-company" />
           <Input label="Job Title *" value={f.title} onChangeText={(v) => setField("title", v)} placeholder="e.g. Software Engineer" testID="admin-job-title" />
           <Input label="Job Description *" value={f.description} onChangeText={(v) => setField("description", v)} placeholder="Role, responsibilities, must-haves…" multiline numberOfLines={4} testID="admin-job-description" />
-          <Input label="Location *" value={f.location} onChangeText={(v) => setField("location", v)} placeholder="City / Remote" testID="admin-job-location" />
+          <LocationMultiSelect
+            testID="admin-job-location"
+            label="Location * (select one or more)"
+            value={f.locations}
+            onChange={(v) => setField("locations", v)}
+            placeholder="Search Location…"
+          />
+          <DatePickerField
+            testID="admin-job-last-date"
+            label="Last Date to Apply *"
+            value={f.last_date_to_apply}
+            onChange={(v) => setField("last_date_to_apply", v)}
+            placeholder="Select Last Date to Apply"
+            maxDate={new Date(Date.now() + 365 * 86400000)}
+          />
         </Card>
 
         <Card style={{ marginTop: 12 }}>

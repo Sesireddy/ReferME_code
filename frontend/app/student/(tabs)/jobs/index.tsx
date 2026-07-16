@@ -303,7 +303,12 @@ export default function StudentJobs() {
 
                 {/* Meta rows with icons */}
                 <View style={styles.metaGrid}>
-                  <View style={{ flex: 1 }}><MetaRow icon="location" label={j.location || "—"} /></View>
+                  <View style={{ flex: 1 }}>
+                    <MetaRow
+                      icon="location"
+                      label={(Array.isArray(j.locations) && j.locations.length > 0 ? j.locations : (j.location ? [j.location] : ["—"])).join(" • ")}
+                    />
+                  </View>
                   <View style={{ flex: 1 }}><MetaRow icon="person" label={categoryLabelOf(j)} /></View>
                 </View>
                 <View style={styles.metaGrid}>
@@ -311,6 +316,12 @@ export default function StudentJobs() {
                   <View style={{ flex: 1 }}><MetaRow icon="briefcase" label={experienceLabelOf(j)} /></View>
                 </View>
                 <MetaRow icon="business" label={j.industry_type || "—"} />
+                {j.last_date_to_apply ? (
+                  <MetaRow
+                    icon="time"
+                    label={`Apply by ${new Date(j.last_date_to_apply).toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" })}`}
+                  />
+                ) : null}
 
                 {j.description ? (
                   <Txt variant="small" style={{ marginTop: 8, color: colors.textSecondary }} numberOfLines={2}>{j.description}</Txt>
@@ -323,7 +334,14 @@ export default function StudentJobs() {
                   </View>
                 ) : null}
 
-                {j.applied ? (
+                {j.is_closed ? (
+                  <View style={[styles.closedPill, { marginTop: 12 }]}>
+                    <Ionicons name="lock-closed" size={16} color={colors.error} />
+                    <Txt style={{ color: colors.error, fontWeight: "800", marginLeft: 6 }}>
+                      🔴 Applications Closed
+                    </Txt>
+                  </View>
+                ) : j.applied ? (
                   <View style={[styles.appliedPill, { marginTop: 12 }]}>
                     <Ionicons name="checkmark-circle" size={18} color={colors.success} />
                     <Txt style={{ color: colors.success, fontWeight: "700", marginLeft: 6, textTransform: "capitalize" }}>
@@ -417,6 +435,7 @@ const styles = StyleSheet.create({
   tabActive: { backgroundColor: colors.primary },
   chip: { backgroundColor: colors.surfaceAlt, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
   appliedPill: { flexDirection: "row", alignItems: "center", backgroundColor: "#E6F9F0", paddingHorizontal: 14, paddingVertical: 10, borderRadius: 999, alignSelf: "flex-start" },
+  closedPill: { flexDirection: "row", alignItems: "center", backgroundColor: "#FEE2E2", borderWidth: 1, borderColor: "#DC2626", paddingHorizontal: 14, paddingVertical: 10, borderRadius: 999, alignSelf: "flex-start" },
   statusPill: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
   statsBox: { alignItems: "flex-end", gap: 2 },
   statRow: { flexDirection: "row", alignItems: "center" },

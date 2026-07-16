@@ -1,0 +1,49 @@
+{
+  "summary": "Iteration 66 backend verification — Multi-Location + Last Date to Apply on Job Posting. All 12 spec cases PASS on pytest (12/12 = 100%). Multi-location list accepted alongside legacy `location`, case-insensitive dedupe works, `last_date_to_apply` validation (required + not past) enforced on pro POST and admin publish, admin drafts allowed without deadline. `GET /api/jobs?location=X` matches both new `locations[]` and legacy `location` fields (legacy jobs without `locations` still surface). Applications-Closed 400 gate fires on backdated deadline; `is_closed=true` reported in `GET /api/jobs/{id}`. Admin multi-location publish visible under `source=admin`. Backend-only run — no frontend testing this iteration as requested.",
+  "test_matrix": [
+    {"case": 1,  "title": "Pro creates job with locations=[BLR,HYD,CHN] + last_date_to_apply=today+7",         "result": "PASS", "notes": "200; response.locations=[BLR,HYD,CHN], location==Bangalore, is_closed=false"},
+    {"case": 2,  "title": "Pro creates job with legacy location='Pune' only",                                    "result": "PASS", "notes": "200; response.locations==['Pune']"},
+    {"case": 3,  "title": "Pro creates job with locations=[]",                                                   "result": "PASS", "notes": "400; detail contains 'at least one Location'"},
+    {"case": 4,  "title": "Pro creates job without last_date_to_apply",                                          "result": "PASS", "notes": "400; detail mentions 'Last Date to Apply'"},
+    {"case": 5,  "title": "Pro creates job with last_date_to_apply=yesterday",                                   "result": "PASS", "notes": "400; detail contains 'earlier than today'"},
+    {"case": 6,  "title": "Duplicate locations case-insensitive dedupe",                                         "result": "PASS", "notes": "200; response.locations length==1 (=Bangalore)"},
+    {"case": 7,  "title": "GET /api/jobs?location=Hyderabad returns multi-loc + legacy-only jobs",               "result": "PASS", "notes": "Both surface (case #1 multi-loc job admin-verified in test, legacy-only job with no `locations` array also surfaces with locations=['Hyderabad'] & is_closed=false)"},
+    {"case": 8,  "title": "Apply to job with backdated deadline yesterday",                                      "result": "PASS", "notes": "GET /jobs/{id}.is_closed=true; POST /jobs/apply → 400 'Applications Closed. The last date to apply has passed.'"},
+    {"case": 9,  "title": "Apply to job with deadline tomorrow",                                                 "result": "PASS", "notes": "200; message='Applied'"},
+    {"case": 10, "title": "Admin creates job with locations=[Mumbai,Pune] + last_date_to_apply=today+30",        "result": "PASS", "notes": "200; source=admin, locations reflected. Visible via GET /api/jobs?source=admin"},
+    {"case": 11, "title": "Admin creates status='draft' with no last_date_to_apply",                             "result": "PASS", "notes": "200; deadline optional in draft mode"},
+    {"case": 12, "title": "Admin publishes status='open' without deadline",                                      "result": "PASS", "notes": "400; detail mentions 'Last Date to Apply'"}
+  ],
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter66_multi_location_deadline.py",
+    "/app/test_reports/pytest/iter65_iter66.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py `is_job_closed` uses server-local `date.today()` (UTC in container). If deadlines are intended to be interpreted in IST (India Standard Time), a job set to close on 2026-01-15 will flip to closed at 00:00 UTC on Jan 15 = 05:30 IST — 5.5 hours earlier than the user's calendar date. Consider parsing today() in Asia/Kolkata TZ for consistency with the audience.",
+    "jobs.py list_jobs: when both a role-based visibility `$or` (line 251) AND a location filter are present, the merge uses `{'$and': [{'$or': prev_or}, {'$or': loc_clauses}, q]}` which is correct — verified working via case #7. No action needed.",
+    "admin_jobs.py `_validate_common` still validates `application_deadline` future-only. That field is now legacy-parallel to `last_date_to_apply`. Consider deprecating one to avoid two separate deadline concepts on admin jobs.",
+    "JobPatchBody has NO `locations`/`last_date_to_apply` in server.py's model on line 735 — the field WAS added (line 741, 742) — verified present. However patching a job to `locations=[]` (empty list) would silently be ignored in jobs.py:376 (only truthy non-empty lists overwrite). Consider whether that's desired UX.",
+    "annotate_job_for_response is called on POST/GET/PATCH but NOT on /admin/jobs create response (admin_jobs.py:218 returns raw dict). The `locations` + `is_closed` fields are populated because they're written directly into the doc, but a defensive `annotate_job_for_response()` wrapper here would future-proof.",
+    "Pro-posted jobs default to verification_status='pending' — students won't see them until admin verifies. Test case #7 in the spec assumes the multi-location pro job surfaces to students; had to manually verify it in DB to make case #7 pass. This is EXISTING behavior, not a regression, but the spec wording is slightly ambiguous about that dependency."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter66_multi_location_deadline.py (new)"
+  ],
+  "success_rate": {"backend": "100% (12/12)", "frontend": "N/A - not in scope"},
+  "seed_data_creation": "Ephemeral test user (pro + student) created + one legacy 'Hyderabad' job inserted directly in DB for case #7. All cleaned up in autouse teardown fixture (users, their jobs, applications, and admin Iter66 test jobs).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter 66 multi-location + deadline feature is green end-to-end on backend. Test file at /app/backend/tests/test_iter66_multi_location_deadline.py — reusable regression. For case #7 the pro-posted multi-location job needs verification_status='verified' bumped in DB to be visible to students; that reflects the admin-approval reality. Deadline logic is UTC-date based; if IST-date behavior is desired, expect a follow-up.",
+  "rca_of_issue": "N/A — no failing scenarios."
+}

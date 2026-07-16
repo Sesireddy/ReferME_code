@@ -38,7 +38,11 @@ class AdminJobBody(BaseModel):
     company: str = Field(..., min_length=2, max_length=120)
     title: str = Field(..., min_length=2, max_length=140)
     description: str = Field(..., min_length=10)
-    location: str = Field(..., min_length=2, max_length=120)
+    # Legacy single location — still accepted for backward compatibility. New callers
+    # should send `locations` (list) instead. At least one location is required.
+    location: Optional[str] = Field(default=None, min_length=2, max_length=120)
+    locations: Optional[List[str]] = Field(default=None)
+    last_date_to_apply: Optional[str] = None  # ISO YYYY-MM-DD (mandatory for published admin jobs)
     skills_required: List[str] = Field(..., min_length=1)
     # Optional experience
     experience_min: Optional[int] = Field(default=0, ge=0, le=50)
@@ -67,6 +71,8 @@ class AdminJobPatchBody(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
     location: Optional[str] = None
+    locations: Optional[List[str]] = None
+    last_date_to_apply: Optional[str] = None
     skills_required: Optional[List[str]] = None
     experience_min: Optional[int] = None
     experience_max: Optional[int] = None
@@ -139,6 +145,27 @@ async def admin_create_job(body: AdminJobBody, u: dict = Depends(admin_only)):
     payload = body.model_dump()
     is_draft = (body.status or "").lower() == "draft"
     extras = _validate_common(payload, is_draft)
+
+    # ---------- Multi-location + Last Date to Apply (Iter 66) ----------
+    raw_locs: List[str] = []
+    if body.locations:
+        raw_locs = [str(x).strip() for x in body.locations if str(x).strip()]
+    elif body.location:
+        raw_locs = [body.location.strip()]
+    seen: set[str] = set()
+    locations_resolved: List[str] = []
+    for x in raw_locs:
+        k = x.lower()
+        if k and k not in seen:
+            seen.add(k)
+            locations_resolved.append(x)
+    if not locations_resolved:
+        raise HTTPException(400, "Please select at least one Location.")
+
+    # Import lazily to avoid circular import at module load.
+    from server import validate_last_date_to_apply as _validate_ldta
+    last_date_normalized = _validate_ldta(body.last_date_to_apply, required=not is_draft)
+
     # Fallback baseline experience_required for legacy filters
     exp_req = extras.get("experience_min") or 0
     category = payload.get("category") or ("experienced" if exp_req > 0 else "fresher")
@@ -152,7 +179,9 @@ async def admin_create_job(body: AdminJobBody, u: dict = Depends(admin_only)):
         "title": body.title.strip(),
         "company": body.company.strip(),
         "description": body.description.strip(),
-        "location": body.location.strip(),
+        "location": locations_resolved[0],
+        "locations": locations_resolved,
+        "last_date_to_apply": last_date_normalized,
         "skills_required": [s.strip() for s in body.skills_required if s.strip()],
         "employment_type": (body.employment_type or "Full-time").strip(),
         "salary_range": (body.salary_range or "").strip(),

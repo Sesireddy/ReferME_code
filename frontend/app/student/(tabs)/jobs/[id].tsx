@@ -114,7 +114,7 @@ export default function JobDetail() {
     try {
       await Share.share({
         title: `${job?.title} @ ${job?.company || job?.employer_name}`,
-        message: `Check out this role on ReferME:\n\n${job?.title} — ${job?.company || job?.employer_name}\n${job?.location || ""}\n\n${(job?.description || "").slice(0, 200)}…`,
+        message: `Check out this role on ReferME:\n\n${job?.title} — ${job?.company || job?.employer_name}\n${(Array.isArray(job?.locations) && job.locations.length > 0 ? job.locations.join(" • ") : (job?.location || ""))}\n\n${(job?.description || "").slice(0, 200)}…`,
       });
     } catch {}
   }
@@ -157,12 +157,39 @@ export default function JobDetail() {
           <Txt variant="h1">{job.title}</Txt>
           <Txt variant="muted" style={{ marginTop: 4 }}>{job.company || job.employer_name}</Txt>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
-            {job.location ? <InfoChip icon="location" text={job.location} /> : null}
+            {(Array.isArray(job.locations) && job.locations.length > 0
+              ? job.locations
+              : (job.location ? [job.location] : [])
+            ).map((loc: string) => (
+              <InfoChip key={loc} icon="location" text={loc} />
+            ))}
             <InfoChip icon="briefcase" text={(job.category || "fresher").toString()} />
             {job.experience_required ? <InfoChip icon="time" text={`${job.experience_required}y+`} /> : null}
             <InfoChip icon="people" text={`${openings} opening${openings > 1 ? "s" : ""}`} />
             {job.salary_range ? <InfoChip icon="cash" text={job.salary_range} /> : null}
           </View>
+
+          {job.is_closed ? (
+            <View style={styles.closedBanner}>
+              <Ionicons name="lock-closed" size={18} color="#DC2626" />
+              <View style={{ marginLeft: 8, flex: 1 }}>
+                <Txt style={{ color: "#991B1B", fontWeight: "800" }}>🔴 Applications Closed</Txt>
+                {job.last_date_to_apply ? (
+                  <Txt variant="small" style={{ color: "#991B1B", marginTop: 2 }}>
+                    Deadline was {new Date(job.last_date_to_apply).toLocaleDateString([], { day: "numeric", month: "long", year: "numeric" })}
+                  </Txt>
+                ) : null}
+              </View>
+            </View>
+          ) : job.last_date_to_apply ? (
+            <View style={styles.deadlineBanner}>
+              <Ionicons name="time" size={16} color="#7C3AED" />
+              <Txt style={{ marginLeft: 6, color: "#7C3AED", fontWeight: "700" }}>
+                Last Date to Apply:{" "}
+                {new Date(job.last_date_to_apply).toLocaleDateString([], { day: "numeric", month: "long", year: "numeric" })}
+              </Txt>
+            </View>
+          ) : null}
 
           {job.skills_required?.length ? (
             <Card style={{ marginTop: 16 }}>
@@ -195,7 +222,16 @@ export default function JobDetail() {
       </Screen>
 
       {/* Sticky bottom action bar */}
-      {!job.applied ? (
+      {job.is_closed ? (
+        <View style={styles.bottomBar}>
+          <View style={[styles.closedActionPill, { flex: 1 }]}>
+            <Ionicons name="lock-closed" size={20} color="#DC2626" />
+            <Txt style={{ color: "#991B1B", fontWeight: "800", marginLeft: 6 }}>
+              🔴 Applications Closed
+            </Txt>
+          </View>
+        </View>
+      ) : !job.applied ? (
         <View style={styles.bottomBar}>
           <Button testID="apply-now" title="Apply now" loading={busy} onPress={apply} style={{ flex: 1 }} />
         </View>
@@ -237,4 +273,7 @@ const styles = StyleSheet.create({
   infoChip: { flexDirection: "row", alignItems: "center", backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999 },
   bottomBar: { position: "absolute", left: 0, right: 0, bottom: 0, padding: 16, paddingBottom: 24, backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.border, flexDirection: "row" },
   appliedPill: { flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: "#E6F9F0", padding: 14, borderRadius: 999 },
+  closedActionPill: { flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: "#FEE2E2", borderWidth: 1, borderColor: "#DC2626", padding: 14, borderRadius: 999 },
+  closedBanner: { flexDirection: "row", alignItems: "center", marginTop: 12, padding: 12, borderRadius: 12, backgroundColor: "#FEE2E2", borderWidth: 1, borderColor: "#DC2626" },
+  deadlineBanner: { flexDirection: "row", alignItems: "center", marginTop: 12, padding: 10, borderRadius: 10, backgroundColor: "#F5F3FF", borderWidth: 1, borderColor: "#7C3AED40" },
 });
