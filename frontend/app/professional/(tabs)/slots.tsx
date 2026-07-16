@@ -46,6 +46,11 @@ export default function ProSlots() {
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
+  // Filters + date-group expand state (Iteration 65: date-grouped slots view)
+  const [statusFilter, setStatusFilter] = useState<"all" | "available" | "booked" | "completed" | "cancelled">("all");
+  const [skillQuery, setSkillQuery] = useState("");
+  const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
+
   const [completingSlot, setCompletingSlot] = useState<any | null>(null);
   const [ratingValue, setRatingValue] = useState<number>(8);
   const [feedback, setFeedback] = useState("");
@@ -227,6 +232,108 @@ export default function ProSlots() {
     return `${datePart} · ${startTime}`;
   }
 
+  // Time-range only (used inside expanded date group)
+  function fmtTimeRange(s: any): string {
+    const start = s.start_at || s.scheduled_at;
+    if (!start) return "";
+    const sd = new Date(start);
+    const opts: Intl.DateTimeFormatOptions = { hour: "numeric", minute: "2-digit", hour12: true };
+    const startTime = sd.toLocaleTimeString([], opts);
+    if (s.end_at) {
+      const ed = new Date(s.end_at);
+      const endTime = ed.toLocaleTimeString([], opts);
+      return `${startTime} – ${endTime}`;
+    }
+    return startTime;
+  }
+
+  function dateKey(iso: string): string {
+    const d = new Date(iso);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${dd}`;
+  }
+
+  function fmtDateHeader(iso: string): string {
+    const d = new Date(iso);
+    return d.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+  }
+
+  function toggleDate(k: string) {
+    setExpandedDates((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k); else next.add(k);
+      return next;
+    });
+  }
+
+  // Filter → group by date → sort chronologically
+  const groupedSlots: {
+    key: string;
+    dateLabel: string;
+    firstStart: number;
+    total: number;
+    available: number;
+    booked: number;
+    completed: number;
+    cancelled: number;
+    items: any[];
+  }[] = (() => {
+    const q = skillQuery.trim().toLowerCase();
+    const filtered = slots.filter((s) => {
+      if (statusFilter !== "all" && s.status !== statusFilter) return false;
+      if (q) {
+        const skills = (Array.isArray(s.skill_set) ? s.skill_set : [])
+          .map((x: string) => (x || "").toLowerCase()).join(",");
+        const topicL = (s.topic || "").toLowerCase();
+        if (!skills.includes(q) && !topicL.includes(q)) return false;
+      }
+      return true;
+    });
+    const buckets: Record<string, any[]> = {};
+    for (const s of filtered) {
+      const iso = s.start_at || s.scheduled_at;
+      if (!iso) continue;
+      const k = dateKey(iso);
+      (buckets[k] ||= []).push(s);
+    }
+    const groups = Object.entries(buckets).map(([k, items]) => {
+      items.sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime());
+      const firstStart = new Date(items[0].start_at).getTime();
+      return {
+        key: k,
+        dateLabel: fmtDateHeader(items[0].start_at),
+        firstStart,
+        total: items.length,
+        available: items.filter((x) => x.status === "available").length,
+        booked: items.filter((x) => x.status === "booked").length,
+        completed: items.filter((x) => x.status === "completed").length,
+        cancelled: items.filter((x) => x.status === "cancelled").length,
+        items,
+      };
+    });
+    groups.sort((a, b) => a.firstStart - b.firstStart);
+    return groups;
+  })();
+
+  // Auto-expand the nearest upcoming date on first load / after refresh
+  useEffect(() => {
+    if (expandedDates.size !== 0 || groupedSlots.length === 0) return;
+    const now = Date.now();
+    const upcoming = groupedSlots.find((g) => g.firstStart >= now) || groupedSlots[0];
+    if (upcoming) setExpandedDates(new Set([upcoming.key]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slots.length]);
+
+  function statusMeta(status: string) {
+    if (status === "available") return { color: "#16A34A", bg: "#DCFCE7", label: "Available" };
+    if (status === "booked") return { color: "#2563EB", bg: "#DBEAFE", label: "Booked" };
+    if (status === "completed") return { color: "#059669", bg: "#D1FAE5", label: "Completed" };
+    if (status === "cancelled") return { color: "#DC2626", bg: "#FEE2E2", label: "Cancelled" };
+    return { color: colors.textSecondary, bg: colors.surfaceAlt, label: status };
+  }
+
   return (
     <Screen refreshing={refreshing} onRefresh={load}>
       <ScreenTitle title="My Interviews" icon="mic" color="#7C3AED" />
@@ -252,29 +359,145 @@ export default function ProSlots() {
         <Button testID="create-slot" title="Create slot" onPress={createSlot} loading={busy} />
       </Card>
 
-      <Txt variant="h3" style={{ marginTop: 24, marginBottom: 8 }}>Your slots</Txt>
-      <View style={{ gap: 8 }}>
-        {slots.length === 0 ? <Txt variant="muted">No slots yet.</Txt> : null}
-        {slots.map((s) => (
-          <Card key={s.id}>
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-              <View style={{ flex: 1 }}>
-                <Txt variant="h3">{fmtRange(s)}</Txt>
-                <Txt variant="small" style={{ color: colors.textSecondary }}>{s.topic || "—"}</Txt>
-                <Txt variant="small" style={{ marginTop: 2 }}>
-                  {s.status === "available" ? "Awaiting booking" : s.status === "booked" ? `Booked by ${s.student_name}` : "Completed"}
-                </Txt>
-              </View>
-              {s.status === "booked" ? (
-                <Button testID={`complete-${s.id}`} title="Done" onPress={() => complete(s)} style={{ height: 40, paddingHorizontal: 14 }} />
-              ) : (
-                <View style={[styles.pill, { backgroundColor: s.status === "completed" ? colors.success : colors.surfaceAlt }]}>
-                  <Txt variant="small" style={{ color: s.status === "completed" ? "#fff" : colors.textSecondary, fontWeight: "700" }}>{s.status}</Txt>
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 24, marginBottom: 8 }}>
+        <Txt variant="h3">Your slots</Txt>
+        <Txt variant="small" style={{ color: colors.textSecondary }}>
+          {slots.length} total
+        </Txt>
+      </View>
+
+      {/* Skill / topic search */}
+      <Input
+        testID="slot-search"
+        placeholder="Search by skill or topic"
+        value={skillQuery}
+        onChangeText={setSkillQuery}
+        style={{ marginBottom: 4 }}
+      />
+
+      {/* Status filter chips */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 4, paddingBottom: 12 }}>
+        {[
+          { v: "all", label: "All" },
+          { v: "available", label: "🟢 Available" },
+          { v: "booked", label: "🔵 Booked" },
+          { v: "completed", label: "✅ Completed" },
+          { v: "cancelled", label: "🔴 Cancelled" },
+        ].map((f) => {
+          const active = statusFilter === f.v;
+          return (
+            <TouchableOpacity
+              key={f.v}
+              testID={`filter-${f.v}`}
+              onPress={() => setStatusFilter(f.v as any)}
+              style={[styles.filterChip, active && styles.filterChipActive]}
+              activeOpacity={0.7}
+            >
+              <Txt style={[styles.filterChipTxt, active && styles.filterChipTxtActive]}>{f.label}</Txt>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+
+      <View style={{ gap: 10 }}>
+        {groupedSlots.length === 0 ? (
+          <Txt variant="muted">
+            {slots.length === 0 ? "No slots yet." : "No slots match your filters."}
+          </Txt>
+        ) : null}
+        {groupedSlots.map((g) => {
+          const isOpen = expandedDates.has(g.key);
+          return (
+            <Card key={g.key} padding={0}>
+              <TouchableOpacity
+                testID={`date-toggle-${g.key}`}
+                onPress={() => toggleDate(g.key)}
+                activeOpacity={0.7}
+                style={styles.dateHeader}
+              >
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Ionicons name="calendar" size={16} color="#7C3AED" />
+                    <Txt variant="h3" numberOfLines={1}>{g.dateLabel}</Txt>
+                  </View>
+                  <View style={styles.countsRow}>
+                    <View style={[styles.countPill, { backgroundColor: colors.surfaceAlt }]}>
+                      <Txt style={styles.countPillTxt}>Total {g.total}</Txt>
+                    </View>
+                    {g.available > 0 ? (
+                      <View style={[styles.countPill, { backgroundColor: "#DCFCE7" }]}>
+                        <Txt style={[styles.countPillTxt, { color: "#166534" }]}>🟢 {g.available}</Txt>
+                      </View>
+                    ) : null}
+                    {g.booked > 0 ? (
+                      <View style={[styles.countPill, { backgroundColor: "#DBEAFE" }]}>
+                        <Txt style={[styles.countPillTxt, { color: "#1E40AF" }]}>🔵 {g.booked}</Txt>
+                      </View>
+                    ) : null}
+                    {g.completed > 0 ? (
+                      <View style={[styles.countPill, { backgroundColor: "#D1FAE5" }]}>
+                        <Txt style={[styles.countPillTxt, { color: "#065F46" }]}>✅ {g.completed}</Txt>
+                      </View>
+                    ) : null}
+                    {g.cancelled > 0 ? (
+                      <View style={[styles.countPill, { backgroundColor: "#FEE2E2" }]}>
+                        <Txt style={[styles.countPillTxt, { color: "#991B1B" }]}>🔴 {g.cancelled}</Txt>
+                      </View>
+                    ) : null}
+                  </View>
                 </View>
-              )}
-            </View>
-          </Card>
-        ))}
+                <Ionicons name={isOpen ? "chevron-up" : "chevron-down"} size={22} color={colors.textSecondary} />
+              </TouchableOpacity>
+
+              {isOpen ? (
+                <View style={{ paddingHorizontal: 14, paddingBottom: 14, gap: 8 }}>
+                  {g.items.map((s) => {
+                    const meta = statusMeta(s.status);
+                    const skills = Array.isArray(s.skill_set) ? s.skill_set.join(", ") : (s.skill_set || s.topic || "—");
+                    return (
+                      <View key={s.id} style={styles.slotRow}>
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <Txt style={{ fontWeight: "700" }}>{fmtTimeRange(s)}</Txt>
+                          <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 2 }} numberOfLines={2}>
+                            {skills}
+                          </Txt>
+                          <View style={{ flexDirection: "row", alignItems: "center", marginTop: 4, gap: 8, flexWrap: "wrap" }}>
+                            <View style={[styles.statusPill, { backgroundColor: meta.bg }]}>
+                              <Txt style={[styles.statusPillTxt, { color: meta.color }]}>{meta.label}</Txt>
+                            </View>
+                            {s.status === "booked" && s.student_name ? (
+                              <Txt variant="small" style={{ color: colors.textSecondary }}>
+                                Candidate: {s.student_name}
+                              </Txt>
+                            ) : null}
+                            {s.status === "completed" && s.student_name ? (
+                              <Txt variant="small" style={{ color: colors.textSecondary }}>
+                                Candidate: {s.student_name}
+                              </Txt>
+                            ) : null}
+                            {s.status === "completed" && s.rating ? (
+                              <Txt variant="small" style={{ color: "#F59E0B", fontWeight: "700" }}>
+                                ⭐ {s.rating}/10
+                              </Txt>
+                            ) : null}
+                          </View>
+                        </View>
+                        {s.status === "booked" ? (
+                          <Button
+                            testID={`complete-${s.id}`}
+                            title="Done"
+                            onPress={() => complete(s)}
+                            style={{ height: 38, paddingHorizontal: 14 }}
+                          />
+                        ) : null}
+                      </View>
+                    );
+                  })}
+                </View>
+              ) : null}
+            </Card>
+          );
+        })}
       </View>
 
       <Modal visible={!!completingSlot} transparent animationType="slide" onRequestClose={() => setCompletingSlot(null)}>
@@ -391,4 +614,59 @@ const styles = StyleSheet.create({
   proofBox: { position: "relative", marginBottom: 8 },
   proofImg: { width: "100%", height: 160, borderRadius: radius.lg, backgroundColor: colors.surfaceAlt },
   proofRemove: { position: "absolute", top: 8, right: 8, width: 28, height: 28, borderRadius: 14, backgroundColor: "rgba(0,0,0,0.6)", alignItems: "center", justifyContent: "center" },
+
+  // Iteration 65 — date-grouped slots
+  filterChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  filterChipActive: {
+    backgroundColor: "#7C3AED",
+    borderColor: "#7C3AED",
+  },
+  filterChipTxt: { fontSize: 12, fontWeight: "700", color: colors.textPrimary },
+  filterChipTxtActive: { color: "#fff" },
+  dateHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 14,
+  },
+  countsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 8,
+    flexWrap: "wrap",
+  },
+  countPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  countPillTxt: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: colors.textSecondary,
+  },
+  slotRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 10,
+    borderRadius: 12,
+    backgroundColor: colors.surfaceAlt,
+    gap: 10,
+  },
+  statusPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  statusPillTxt: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
 });
