@@ -215,7 +215,8 @@ async def admin_create_job(body: AdminJobBody, u: dict = Depends(admin_only)):
     await db.jobs.insert_one(job)
     await write_audit(u, "admin_job_create", "job", job["id"], before={}, after={"status": job["status"], "title": job["title"]})
     logger.info("Admin job %s created status=%s source=admin", job["id"], job["status"])
-    return {k: v for k, v in job.items() if k != "_id"}
+    from server import annotate_job_for_response as _annotate
+    return _annotate({k: v for k, v in job.items() if k != "_id"})
 
 
 @router.get("/admin/jobs/mine")
@@ -246,6 +247,23 @@ async def admin_edit_job(job_id: str, body: AdminJobPatchBody, u: dict = Depends
             if isinstance(v, str):
                 v = v.strip()
             update[field] = v
+    # Multi-location patch — Iter 66
+    if "locations" in payload and isinstance(payload["locations"], list):
+        clean: list[str] = []
+        seen: set[str] = set()
+        for x in payload["locations"]:
+            v = str(x).strip()
+            k = v.lower()
+            if v and k not in seen:
+                seen.add(k)
+                clean.append(v)
+        if clean:
+            update["locations"] = clean
+            update.setdefault("location", clean[0])
+    # Last date to apply
+    if "last_date_to_apply" in payload and payload["last_date_to_apply"] is not None:
+        from server import validate_last_date_to_apply as _vldta
+        update["last_date_to_apply"] = _vldta(payload["last_date_to_apply"], required=False)
     # Validated / coerced fields
     for field in [
         "experience_min", "experience_max", "open_positions",
