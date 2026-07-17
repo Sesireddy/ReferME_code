@@ -42,8 +42,9 @@ export default function MockInterviews() {
   const [refreshing, setRefreshing] = useState(false);
   const [actionCost, setActionCost] = useState<number>(99);
 
-  // Fetch the current user's per-action credit cost (99 for Fresher/Intern,
-  // 199 for Experienced) — used in the subtitle + confirm dialogs.
+  // Fetch the current user's per-action credit cost. Iter 67: standardized 99
+  // credits for ALL Job Seekers (fresher & experienced). Backend still returns
+  // the value via `/auth/me.user.action_cost` so we read it dynamically.
   useEffect(() => {
     (async () => {
       try {

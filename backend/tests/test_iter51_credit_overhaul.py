@@ -1,20 +1,13 @@
-"""Iter51 — Credit System Overhaul backend tests.
+"""Iter51 — Credit System (updated for Iter 67 standardized policy).
 
-Verifies the new per-category credit economy:
-  Fresher/Intern     -> 99 credits per action
-  Experienced        -> 199 credits per action
-  Interview reward   -> +110 credits per completed mock interview
-  Job-post reward    -> +200 one-time when a pro-posted job reaches 4 valid apps
-  Admin Walk-in jobs -> FREE (no deduction; apply endpoint rejects with 400)
+As of Iter 67, ALL Job Seekers pay the same 99 credits per action regardless of
+category. The `EXPERIENCED_COST` constant is retained for legacy references but now
+equals `FRESHER_COST` (both 99).
 
-Test strategy:
-- Sign up disposable Fresher / Experienced / Pro accounts through the normal
-  auth flow (OTP mock enabled).
-- Seed credits + free_uses_left + preferred_role directly in Mongo (safer + faster
-  than driving profile/PUT which has heavy required-field validation).
-- Insert pro-posted jobs and interview slots directly in Mongo so we skip
-  gmail/phone verification & proof-of-opening gates that are irrelevant to
-  the credit-economy assertions under test.
+  All Job Seekers     -> 99 credits per action
+  Interview reward    -> +110 credits per completed mock interview
+  Job-post reward     -> +200 one-time when a pro-posted job reaches 4 valid apps
+  Admin Walk-in jobs  -> FREE (no deduction; apply endpoint rejects with 400)
 """
 import os
 import uuid
@@ -32,7 +25,7 @@ MONGO_URL = os.environ["MONGO_URL"]
 DB_NAME = os.environ["DB_NAME"]
 
 FRESHER_COST = 99
-EXPERIENCED_COST = 199
+EXPERIENCED_COST = 99  # Iter 67: unified with fresher cost
 INTERVIEW_REWARD = 110
 JOB_POST_REWARD = 200
 
