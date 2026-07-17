@@ -1,0 +1,56 @@
+{
+  "summary": "Iter67 Standardized Credit Policy backend delta verification — 15/15 pytest cases PASS (100%). Confirmed: `ACTION_COST=99` in server.py; `get_action_cost()` returns 99 for BOTH fresher and experienced students (previously 199 for experienced). /api/subscription/plans.paid_tier.action_cost=99 and /api/wallet.action_cost=99 for both categories. Fresher & Experienced job-application on a pro-posted job each deduct 99 credits; applications.credits_charged persisted as 99. Fresher & Experienced mock interview booking each deduct 99 credits; interview_slots.credits_charged=99. Insufficient credits gate (98 credits) blocks both apply (402) and book (400) with 'Insufficient credits' message; no rows written, no deduction. Free-use pass still consumed first (no deduction, free_uses_left decrements). Admin walk-in job apply rejected with 400 for both categories — zero credit deduction, no application row. Pro job_post_reward=+200 fires exactly once at the 4th valid application (no double-payment on 5th). Note: /api/jobs/apply returns HTTP 402 for insufficient credits (spec allows 'or equivalent'); /api/interviews/book returns 400 — both surface the same 'Insufficient credits' detail message.",
+  "test_matrix": [
+    {"case": 1, "title": "GET /subscription/plans (fresher) → paid_tier.action_cost == 99", "result": "PASS"},
+    {"case": 2, "title": "GET /subscription/plans (experienced) → paid_tier.action_cost == 99 (NOT 199)", "result": "PASS", "notes": "Delta from prior iters where experienced was 199"},
+    {"case": 3, "title": "Fresher apply to pro job → wallet -99; applications.credits_charged=99", "result": "PASS"},
+    {"case": 4, "title": "Experienced apply to pro job → wallet -99 (NOT -199); applications.credits_charged=99", "result": "PASS"},
+    {"case": "5a", "title": "Fresher with 98 credits → apply blocked (402) 'Insufficient credits'; no app row", "result": "PASS"},
+    {"case": "5b", "title": "Experienced with 98 credits → apply blocked (402) 'Insufficient credits'; no app row", "result": "PASS"},
+    {"case": "5c", "title": "Fresher with 98 credits → book blocked (400) 'Insufficient credits'; slot rolled back", "result": "PASS"},
+    {"case": "5d", "title": "Experienced with 98 credits → book blocked (400) 'Insufficient credits'", "result": "PASS"},
+    {"case": 6, "title": "Fresher book slot → wallet -99; slot.credits_charged=99", "result": "PASS"},
+    {"case": "6b", "title": "Fresher with free_uses_left=1 → free consumed first, credits unchanged, slot.credits_charged=0", "result": "PASS"},
+    {"case": 7, "title": "Experienced book slot → wallet -99 (NOT -199); slot.credits_charged=99", "result": "PASS"},
+    {"case": "8a", "title": "Fresher applies to admin walk-in → 400 'Admin Walk-in…'; no deduction, no app row", "result": "PASS"},
+    {"case": "8b", "title": "Experienced applies to admin walk-in → 400; no deduction, no app row", "result": "PASS"},
+    {"case": 9, "title": "Pro +200 job_post_reward fires exactly once at 4th application (not on 5th); reason='job_post_reward' tx present", "result": "PASS"},
+    {"case": "wallet-parity", "title": "/api/wallet.action_cost == 99 for both fresher & experienced", "result": "PASS"}
+  ],
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/jobs/apply", "issue": "Returns HTTP 402 for insufficient credits while POST /api/interviews/book returns HTTP 400 for the same condition. Both share the identical detail 'Insufficient credits. Please add credits…'. Not a spec violation (spec says 400 or equivalent), but the inconsistency is worth harmonising for a cleaner API contract."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter67_standardized_credits.py",
+    "/app/test_reports/pytest/iter67.xml"
+  ],
+  "action_items": [
+    "Optional: consider aligning HTTP status for 'Insufficient credits' between /jobs/apply (402) and /interviews/book (400) for API consistency.",
+    "Stale test file `/app/backend/tests/test_iter51_credit_overhaul.py` still hard-codes EXPERIENCED_COST=199 and JOB_POST_REWARD assertions against pre-Iter67 behaviour — will FAIL as regression when re-run. Recommend either (a) update its EXPERIENCED_COST constant to 99, or (b) delete it in favour of the new Iter67 file."
+  ],
+  "critical_code_review_comments": [
+    "server.py:155-156 keeps ACTION_COST_FRESHER / ACTION_COST_EXPERIENCED as backward-compat aliases both pointing to 99 — good defensive shim so existing imports (e.g., analytics) don't break. Recommend a follow-up cleanup pass to delete the aliases and inline ACTION_COST everywhere to eliminate confusion.",
+    "server.py:170-171 get_action_cost() returns 0 for non-students. Confirmed still correct — pros/employers/admin do not consume credits on booking/applying (they never can, but the code path is safe).",
+    "server.py:257 REVENUE_PER_ACTION_INR now == 99. Downstream analytics computing revenue per action should update their assumptions if they cached the old 199. No blocker.",
+    "routers/jobs.py:513 uses `<` comparator (correct — 98<99 blocks, 99>=99 allows). routers/interviews.py:278 identical. Both consistent.",
+    "routers/jobs.py:514 raises 402 (Payment Required) while interviews.py:284 raises 400. Consider unifying to 402 across the wallet-gated actions."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter67_standardized_credits.py (new)"
+  ],
+  "success_rate": {"backend": "100% (15/15)", "frontend": "N/A - skipped per request"},
+  "seed_data_creation": "Ephemeral: signed up fresh students (T67_FR, T67_EX, T67_LOW_*, T67_FREE, T67_APP0..4) and one professional (T67_PRO) per test class through /api/auth/signup + verify-otp; profile completed via direct Mongo update; pro-posted jobs and interview_slots inserted directly in mongo with last_date_to_apply=today+30. Module-scoped autouse teardown cleans up t67_* users, T67 jobs, applications, and TEST interview_slots.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter67 standardization is green end-to-end on backend. Reusable regression suite at /app/backend/tests/test_iter67_standardized_credits.py (15 tests, ~38s). Note: pre-existing test file /app/backend/tests/test_iter51_credit_overhaul.py still asserts EXPERIENCED_COST=199 — it WILL fail post-Iter67 and should be updated or retired. /api/jobs/apply returns 402 for insufficient credits (spec-tolerant equivalent to 400). Profile-complete gate (Iter58) is real — any test needing to hit /jobs/apply or /interviews/book must fully populate profile fields, not just profile_complete=True; the helper `_set_profile_role` in this test file demonstrates the required set (name, phone+phone_verified, gender, dob, education, passed_out_year, skills[], current_location, resume_link).",
+  "rca_of_issue": "N/A — no failing scenarios; the standardization holds across all 9 spec matrix rows and additional wallet-parity/free-use coverage."
+}

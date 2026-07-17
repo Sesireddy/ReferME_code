@@ -118,6 +118,7 @@ def student_exp(mongo):
 
 
 def _valid_job_body(**overrides):
+    from datetime import date, timedelta
     body = {
         "title": "Iter55 Backend Engineer",
         "description": "Build APIs and stuff",
@@ -130,6 +131,8 @@ def _valid_job_body(**overrides):
         "open_positions_label": "1",
         "category": "experienced",
         "proof_link": "https://example.com/job",
+        # Iter 66: last_date_to_apply now required for new posts
+        "last_date_to_apply": (date.today() + timedelta(days=30)).isoformat(),
     }
     body.update(overrides)
     return body
@@ -407,7 +410,9 @@ class TestApply:
         appdoc = mongo.applications.find_one({"job_id": jid, "student_id": stu["id"]}, {"_id": 0})
         assert appdoc["credits_charged"] == 99
 
-    def test_apply_credit_deduction_experienced_199(self, mongo, pro_a):
+    def test_apply_credit_deduction_experienced_99(self, mongo, pro_a):
+        # Iter 67: standardized credit cost — experienced students pay the same
+        # 99 credits as freshers now.
         stu = _signup_verified_student("iter55ae", mongo, mark_experienced=True)
         mongo.users.update_one({"id": stu["id"]}, {"$set": {"credits": 500, "free_uses_left": 0}})
         b = _valid_job_body(title=f"iter55_ape_{uuid.uuid4().hex[:6]}")
@@ -419,9 +424,9 @@ class TestApply:
                            json={"job_id": jid}, timeout=30)
         assert ap.status_code == 200, ap.text
         u = mongo.users.find_one({"id": stu["id"]}, {"_id": 0, "credits": 1})
-        assert u["credits"] == 500 - 199
+        assert u["credits"] == 500 - 99
         appdoc = mongo.applications.find_one({"job_id": jid, "student_id": stu["id"]}, {"_id": 0})
-        assert appdoc["credits_charged"] == 199
+        assert appdoc["credits_charged"] == 99
 
     def test_apply_dup_rejected(self, student_fresher, pro_a, mongo):
         b = _valid_job_body(title=f"iter55_apd_{uuid.uuid4().hex[:6]}")
@@ -744,7 +749,7 @@ class TestAdjacent:
     def test_wallet_deposit_order_ok(self, student_fresher):
         r = requests.post(f"{API}/wallet/deposit/create-order",
                           headers=_hdr(student_fresher["token"]),
-                          json={"amount_inr": 199}, timeout=30)
+                          json={"amount_inr": 200}, timeout=30)  # Iter 64: min first deposit is ₹200
         assert r.status_code == 200
 
     def test_auth_me_ok(self, student_fresher):

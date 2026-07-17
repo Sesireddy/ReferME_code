@@ -145,30 +145,30 @@ def validate_last_date_to_apply(raw: str | None, *, required: bool = True) -> st
 
 
 # Business rules
-# Credit costs are now per Job Seeker category (see get_action_cost()):
-#   Fresher / Intern  → 99 credits per action (book interview / apply pro job)
-#   Experienced       → 199 credits per action
+# Credit costs are now STANDARDIZED for ALL Job Seekers (Freshers & Experienced):
+#   Job Application (professional-posted)  → 99 credits
+#   Mock Interview Booking                  → 99 credits
 # Admin Walk-in & Direct Jobs stay FREE (no credit deduction — enforced separately).
-ACTION_COST_FRESHER = 99
-ACTION_COST_EXPERIENCED = 199
-ACTION_COST = ACTION_COST_FRESHER  # legacy default (used for admin refunds when category is unknown)
+ACTION_COST = 99
+# Legacy aliases kept so existing imports keep working. Both point to the same
+# standard cost.
+ACTION_COST_FRESHER = ACTION_COST
+ACTION_COST_EXPERIENCED = ACTION_COST
 INTERVIEW_PRO_REWARD = 110  # credits awarded to pro for a completed mock interview
 JOB_POST_REWARD = 200  # one-time credits awarded when a posted job gets >= JOB_POST_REWARD_MIN_APPS valid applications
 JOB_POST_REWARD_MIN_APPS = 4
 
 
 def get_action_cost(u: dict) -> int:
-    """Credit cost per Job Seeker action based on the profile category.
+    """Standardized credit cost for every Job Seeker action.
 
-    - Student with `preferred_role == "experienced"`  → 199
-    - Student with `preferred_role in ("fresher","intern")` (or missing) → 99
-    - Non-students → 0 (they never pay to book/apply)
+    Freshers & Experienced both pay ACTION_COST (99) per booking / application.
+    Non-students (professionals, employers, admin) never pay from their wallet
+    to book / apply, so they return 0.
     """
     if not u or u.get("role") != "student":
         return 0
-    profile = u.get("profile") or {}
-    role = (profile.get("preferred_role") or "fresher").strip().lower()
-    return ACTION_COST_EXPERIENCED if role == "experienced" else ACTION_COST_FRESHER
+    return ACTION_COST
 
 # ------------------- Referral Program -------------------
 REFERRAL_REWARD = 25  # credits awarded to the referrer for each successful Job Seeker signup
@@ -1923,7 +1923,7 @@ class AdminCreditAdjustBody(BaseModel):
 # retained by some old admin UIs, use PATCH /api/admin/jobs/{id} with the newer schema —
 # the router accepts partial payloads via AdminJobPatchBody.
 
-# ---- Cancel Booking (Admin) — auto-refund credits to student (99 or 199, per stored credits_charged) ----
+# ---- Cancel Booking (Admin) — auto-refund credits to student per stored credits_charged (typically 99) ----
 class AdminCancelBookingBody(BaseModel):
     reason: str = Field(min_length=2, max_length=400)
     refund: Optional[bool] = True

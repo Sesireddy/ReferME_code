@@ -231,6 +231,8 @@ def _make_admin_job(admin_token: str):
         "contact_number": "9876543210",
         "contact_email": "hr@example.com",
         "status": "open",
+        # Iter 66: last_date_to_apply required for admin publish
+        "last_date_to_apply": "2030-06-30",
     }
     r = requests.post(f"{API}/admin/jobs", headers=_hdr(admin_token), json=body, timeout=30)
     assert r.status_code == 200, r.text
@@ -361,17 +363,18 @@ class TestApplyGate:
         assert app is not None
         assert app["status"] == "applied"
 
-    def test_apply_complete_profile_succeeds_experienced_199(self, mongo, admin_token):
+    def test_apply_complete_profile_succeeds_experienced_99(self, mongo, admin_token):
+        # Iter 67: unified 99-credit charge for all Job Seekers (including experienced).
         s = _signup_student("iter58_ok_exp", name="Test Student")
         _complete_student_profile(s["token"], s["id"], mongo, category="experienced")
-        # Ensure sufficient credits (experienced=199, welcome=100 → top up via DB write for test isolation).
+        # Ensure sufficient credits (standardized=99, welcome=100 → top up via DB write for test isolation).
         mongo.users.update_one({"id": s["id"]}, {"$set": {"credits": 500, "free_uses_left": 0}})
         job_id, _ = _make_employer_job(mongo, admin_token)
         r = requests.post(f"{API}/jobs/apply", headers=_hdr(s["token"]),
                           json={"job_id": job_id}, timeout=30)
         assert r.status_code == 200, r.text
         u2 = mongo.users.find_one({"id": s["id"]})
-        assert u2["credits"] == 500 - 199, f"Expected 301, got {u2['credits']}"
+        assert u2["credits"] == 500 - 99, f"Expected 401, got {u2['credits']}"
 
 
 # ============================================================
