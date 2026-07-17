@@ -17,6 +17,7 @@ import { colors, radius } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
 import { successAlert } from "@/src/lib/successAlert";
 import { webSafeAlert } from "@/src/lib/webSafeAlert";
+import { useUnsavedChangesGuard } from "@/src/hooks/useUnsavedChangesGuard";
 
 const EMPLOYMENT_TYPES = ["Full-time", "Part-time", "Contract", "Internship", "Walk-in Drive"];
 
@@ -61,6 +62,12 @@ export default function AdminPostJob() {
   const isEdit = !!editId;
   const [f, setF] = useState<FormState>(EMPTY);
   const [busy, setBusy] = useState<"" | "publish" | "draft">("");
+  const [initialForm, setInitialForm] = useState<FormState>(EMPTY);
+
+  // Iter 68 — Unsaved Changes guard. In edit mode we compare against the
+  // hydrated form; in create mode we compare against EMPTY.
+  const isDirty = !busy && JSON.stringify(f) !== JSON.stringify(initialForm);
+  useUnsavedChangesGuard(isDirty);
   const [loading, setLoading] = useState<boolean>(isEdit);
 
   // In edit mode, hydrate the form from the existing job.
@@ -72,7 +79,7 @@ export default function AdminPostJob() {
         const rows: any[] = await api("/admin/jobs/mine");
         const j = (rows || []).find((r) => r.id === editId);
         if (!j) { webSafeAlert("Job not found", "This job could not be loaded for editing."); router.back(); return; }
-        setF({
+        const hydrated: FormState = {
           company: j.company || "",
           title: j.title || "",
           description: j.description || "",
@@ -96,7 +103,9 @@ export default function AdminPostJob() {
           company_logo_b64: j.company_logo_b64 || "",
           company_logo_mime: j.company_logo_mime || "",
           company_logo_uri: j.company_logo_b64 || "",
-        });
+        };
+        setF(hydrated);
+        setInitialForm(hydrated); // baseline for dirty-check
       } catch (e: any) { webSafeAlert("Load failed", e?.message || "Could not load job."); }
       finally { setLoading(false); }
     })();
@@ -188,6 +197,7 @@ export default function AdminPostJob() {
           : "This job is now visible under Walk-in & Direct Jobs.",
       });
       setF(EMPTY);
+      setInitialForm(EMPTY); // clear dirty state so the leave-guard does not trigger
       router.replace("/admin/my-posted-jobs");
     } catch (e: any) {
       Alert.alert("Error", e?.message || "Could not save job.");

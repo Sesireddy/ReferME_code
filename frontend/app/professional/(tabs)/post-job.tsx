@@ -20,6 +20,7 @@ import {
 } from "@/src/lib/constants";
 import { colors } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
+import { useUnsavedChangesGuard } from "@/src/hooks/useUnsavedChangesGuard";
 
 const CATEGORY_OPTIONS = [
   { value: "fresher", label: "Fresher" },
@@ -76,6 +77,18 @@ export default function ProPostJob() {
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<Errors>({});
   const [success, setSuccess] = useState(false);
+
+  // Iter 68 — Unsaved Changes guard. Any of these fields being non-empty means
+  // the user has typed something. Skip while a submit is in-flight or after
+  // the success dialog is shown (the form was reset in the submit handler).
+  const isDirty =
+    !busy && !success && (
+      !!title || !!company || !!desc || locations.length > 0 || !!lastDate ||
+      !!salaryRange || !!industry || !!industryOther || (!!category && category !== "fresher") ||
+      !!expMin || !!expMax || !!skills || !!openings ||
+      !!proofLink || !!proofDataUri
+    );
+  useUnsavedChangesGuard(isDirty);
 
   async function pickImage() {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
