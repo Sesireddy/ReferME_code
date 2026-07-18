@@ -33,8 +33,15 @@ export default function VideoCallScreen() {
         const found = list.find((x) => x.id === slotId);
         if (!found) {
           setErr("Session not found or you don't have access to it.");
+        } else if (!found.join_enabled || !found.meeting_url) {
+          // Iter 69 — server hides meeting_url outside the 10-min join window.
+          // Client also enforces so users cannot deep-link into /video/{id} early.
+          setErr("Join Meeting Not Available. You can join the meeting only 10 minutes before the scheduled interview time. Please try again later.");
+          setSlot(found);
         } else {
           setSlot(found);
+          // Fire-and-forget: record that this user joined (for both-joined tracking).
+          api("/interviews/" + slotId + "/joined", { method: "POST" }).catch(() => {});
         }
       } catch (e: any) {
         setErr(e.message || "Failed to load session.");

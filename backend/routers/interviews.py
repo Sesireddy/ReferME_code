@@ -385,10 +385,11 @@ async def my_bookings(
             s["counterparty_name"] = s.get("pro_name")
         else:
             s["counterparty_name"] = s.get("student_name")
-        # Join window: enabled 30 min before start until slot end_at
+        # Iter 69 — Join window: enabled starting 10 minutes before the
+        # scheduled start_at, and stays enabled until slot end_at.
         s["join_enabled"] = False
         if sd and ed:
-            window_start = sd - timedelta(minutes=30)
+            window_start = sd - timedelta(minutes=10)
             window_end = ed
             s["join_enabled"] = window_start <= now_dt <= window_end
         # Has the scheduled session ended (used by Pro 'My Mock Interviews' to swap CTAs)?
@@ -399,6 +400,11 @@ async def my_bookings(
         s["both_joined"] = bool(student_id) and (s["pro_id"] in joined_by) and (student_id in joined_by)
         # Strip the internal joined_by list from the response (not needed by clients)
         s.pop("joined_by", None)
+        # Iter 69 — Redact meeting_url outside the 10-min join window so users
+        # cannot bypass the client-side gate by grabbing the URL early.
+        if not s["join_enabled"]:
+            s["meeting_url_hidden"] = True
+            s.pop("meeting_url", None)
         # Alias the candidate_feedback field to `feedback` so existing student/pro
         # clients (which read b.feedback) display the written feedback in their
         # "View feedback" panels. Backwards-compatible: we keep the original key too.
@@ -554,12 +560,36 @@ async def complete_interview(
 async def mark_interview_joined(slot_id: str, u: dict = Depends(current_user)):
     """Frontend hits this when the user actually opens the Jitsi room.
     Used by complete_interview to verify both parties showed up.
+
+    Iter 69: Server-side enforcement — a user CANNOT join more than 10 minutes
+    before the scheduled start time nor after the slot end.
     """
     slot = await db.interview_slots.find_one({"id": slot_id}, {"_id": 0})
     if not slot:
         raise HTTPException(status_code=404, detail="Slot not found")
     if u["id"] not in (slot["pro_id"], slot.get("student_id")):
         raise HTTPException(status_code=403, detail="Not your session")
+    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+    now_dt = _dt.now(_tz.utc)
+    sd_raw = slot.get("start_at")
+    ed_raw = slot.get("end_at")
+    try:
+        sd = _dt.fromisoformat(sd_raw.replace("Z", "+00:00")) if sd_raw else None
+        ed = _dt.fromisoformat(ed_raw.replace("Z", "+00:00")) if ed_raw else None
+    except Exception:
+        sd = ed = None
+    if sd and ed:
+        window_start = sd - _td(minutes=10)
+        if now_dt < window_start:
+            raise HTTPException(
+                status_code=403,
+                detail="Join Meeting Not Available. You can join the meeting only 10 minutes before the scheduled interview time. Please try again later.",
+            )
+        if now_dt > ed:
+            raise HTTPException(
+                status_code=403,
+                detail="This interview session has ended.",
+            )
     await db.interview_slots.update_one(
         {"id": slot_id},
         {"$addToSet": {"joined_by": u["id"]}},

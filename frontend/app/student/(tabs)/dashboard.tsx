@@ -7,10 +7,10 @@ import { Screen } from "@/src/components/Screen";
 import { Txt } from "@/src/components/Txt";
 import { Card } from "@/src/components/Card";
 import { Button } from "@/src/components/Button";
-import { ConfirmDialog } from "@/src/components/ConfirmDialog";
 import { colors, radius } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
 import { successAlert } from "@/src/lib/successAlert";
+import { tryJoinMeeting } from "@/src/lib/joinMeeting";
 
 export default function StudentDashboard() {
   const router = useRouter();
@@ -22,15 +22,6 @@ export default function StudentDashboard() {
   const [ranks, setRanks] = useState<{ overall_rank?: number; category_rank?: number | null; skill_rank?: number | null; primary_skill?: string | null; category_label?: string | null } | null>(null);
   const [bookings, setBookings] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
-  const [tooEarlyOpen, setTooEarlyOpen] = useState(false);
-
-  function tryJoin(b: any) {
-    if (b.join_enabled) {
-      router.push(`/video/${b.id}`);
-    } else {
-      setTooEarlyOpen(true);
-    }
-  }
 
   const load = useCallback(async () => {
     setRefreshing(true);
@@ -272,9 +263,9 @@ export default function StudentDashboard() {
                   </View>
                   <Button
                     testID={`join-${b.id}`}
-                    title={b.join_enabled ? "Join Meeting" : "Join Meeting"}
+                    title="Join Meeting"
                     variant={b.join_enabled ? "primary" : "secondary"}
-                    onPress={() => router.push(`/video/${b.id}`)}
+                    onPress={() => tryJoinMeeting(b, router)}
                     style={{ height: 38, paddingHorizontal: 16 }}
                   />
                 </View>

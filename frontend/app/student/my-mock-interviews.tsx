@@ -115,8 +115,8 @@ export default function MyMockInterviews() {
                 // and show the exact popup wording for premature taps.
                 if (!b.join_enabled) {
                   webSafeAlert(
-                    "Not yet available",
-                    "You can join the interview only within 30 minutes of the scheduled interview time.",
+                    "Join Meeting Not Available",
+                    "You can join the meeting only 10 minutes before the scheduled interview time. Please try again later.",
                   );
                   return;
                 }

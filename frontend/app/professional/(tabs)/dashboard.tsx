@@ -9,6 +9,7 @@ import { Card } from "@/src/components/Card";
 import { Button } from "@/src/components/Button";
 import { colors, radius } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
+import { tryJoinMeeting } from "@/src/lib/joinMeeting";
 
 export default function ProDashboard() {
   const router = useRouter();
@@ -149,9 +150,9 @@ export default function ProDashboard() {
                   </View>
                   <Button
                     testID={`pro-join-${b.id}`}
-                    title={b.join_enabled ? "Join" : "Details"}
+                    title="Join Meeting"
                     variant={b.join_enabled ? "primary" : "secondary"}
-                    onPress={() => router.push(`/video/${b.id}`)}
+                    onPress={() => tryJoinMeeting(b, router)}
                     style={{ height: 38, paddingHorizontal: 16 }}
                   />
                 </View>

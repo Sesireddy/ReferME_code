@@ -82,12 +82,12 @@ export default function ProMyMockInterviews() {
               key={b.id}
               b={b}
               onJoin={() => {
-                // Spec: Join is allowed only within 30 min before start until slot end.
-                // Backend's `join_enabled` already encodes that window.
+                // Iter 69: Join is allowed only within 10 min before start until slot end.
+                // Backend's `join_enabled` encodes the window.
                 if (!b.join_enabled) {
                   webSafeAlert(
-                    "Not yet available",
-                    "You can join the interview only within 30 minutes of the scheduled interview time.",
+                    "Join Meeting Not Available",
+                    "You can join the meeting only 10 minutes before the scheduled interview time. Please try again later.",
                   );
                   return;
                 }
