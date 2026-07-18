@@ -1,38 +1,22 @@
-// Icon font loader for Expo apps. Fonts are loaded from a CDN only under
-// Expo Go (StoreClient) — that's where @expo/vector-icons' .ttf files come
-// back as 0 bytes from Metro's asset resolver on Android. Native dev/prod
-// builds and web pass an empty map, so useFonts resolves to [true, null]
-// immediately via react-native-vector-icons autolinking / web stubs.
-// ICON_VECTOR_VERSION must match @expo/vector-icons in package.json.
-// Usage: const [loaded, error] = useIconFonts();
+// Icon font loader for Expo apps.
+//
+// Iter 70 — Load @expo/vector-icons .ttf files from a jsdelivr CDN on ALL
+// native platforms (iOS + Android, incl. Expo Go). Web is intentionally a
+// no-op because react-native-web serves the bundled font via CSS `@font-face`
+// through Metro without any JS font loading (that path always works). This
+// avoids the Metro asset-resolver bug where local `require`d .ttf files come
+// back with 0 bytes under Expo Go / native dev servers.
+//
+// ICON_VECTOR_VERSION must match `@expo/vector-icons` in package.json.
 
-import Constants, { ExecutionEnvironment } from "expo-constants";
+import { Platform } from "react-native";
 import { useFonts } from "expo-font";
 
 const ICON_VECTOR_VERSION = "15.0.3";
 
-const ICON_FAMILIES = [
-  "AntDesign",
-  "Entypo",
-  "EvilIcons",
-  "Feather",
-  "FontAwesome",
-  "FontAwesome5_Brands",
-  "FontAwesome5_Regular",
-  "FontAwesome5_Solid",
-  "FontAwesome6_Brands",
-  "FontAwesome6_Regular",
-  "FontAwesome6_Solid",
-  "Fontisto",
-  "Foundation",
-  "Ionicons",
-  "MaterialCommunityIcons",
-  "MaterialIcons",
-  "Octicons",
-  "SimpleLineIcons",
-  "Zocial",
-] as const;
-
+// Only the icon families actually referenced by the app (verified via
+// grep across `/app/*`). Adding a family here loads it at boot.
+const ICON_FAMILIES = ["Ionicons", "FontAwesome5_Solid", "FontAwesome5_Brands", "FontAwesome5_Regular"] as const;
 type IconFamily = (typeof ICON_FAMILIES)[number];
 
 const iconFontMap = (): Record<IconFamily, string> =>
@@ -44,8 +28,4 @@ const iconFontMap = (): Record<IconFamily, string> =>
   ) as Record<IconFamily, string>;
 
 export const useIconFonts = (): readonly [boolean, Error | null] =>
-  useFonts(
-    Constants.executionEnvironment === ExecutionEnvironment.StoreClient
-      ? iconFontMap()
-      : {},
-  );
+  useFonts(Platform.OS === "web" ? {} : iconFontMap());
