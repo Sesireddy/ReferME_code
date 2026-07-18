@@ -1,34 +1,32 @@
 // Icon font loader for Expo apps.
 //
-// Iter 70 v3 — Bundles the @expo/vector-icons .ttf files INSIDE this app's
-// own `assets/fonts/` folder and loads them via `require()`.
+// Iter 70 v4 — Loads .ttf files from a jsdelivr CDN as **URL strings**.
+// This deliberately bypasses Metro's asset resolver, which on some Expo Go
+// clients hands back 0-byte responses when we require() a .ttf file (even
+// one bundled inside our own /assets/fonts/). `expo-font.useFonts` supports
+// URL strings natively and will download + register the font via the OS
+// runtime, so this works regardless of the Metro quirk.
 //
-// Why: On several Expo Go devices, `require`ing from `node_modules/@expo/vector-icons/...`
-// returns 0-byte payloads from the Metro asset resolver (long-standing bug).
-// Copying the .ttf files under our own `assets/` folder side-steps that
-// entirely — Metro treats them like any other app asset.
+// Web is a no-op — react-native-web serves the icon fonts via CSS
+// `@font-face` through Metro directly (never affected by the JS asset bug).
 //
-// Web is intentionally a no-op — react-native-web serves the bundled font
-// via CSS `@font-face` through Metro directly, so no JS-level loading needed.
-//
-// The font-family names below MUST match what `@expo/vector-icons` uses
-// internally, otherwise `<Ionicons>` / `<FontAwesome5>` glyphs render as
-// empty boxes. Verified against the library source in
-// `node_modules/@expo/vector-icons/build/`:
-//   * Ionicons.js               → 'ionicons'
-//   * createIconSetFromFontAwesome5.js → `FontAwesome5Free-Regular`, `-Solid`,
-//                                       `-Brand`, `-Light` (Light aliases Regular)
+// `ICON_VECTOR_VERSION` MUST match `@expo/vector-icons` in package.json so
+// the CDN glyph maps align with what the JS side expects.
 
 import { Platform } from "react-native";
 import { useFonts } from "expo-font";
 
-const nativeIconFontMap = () => ({
-  ionicons: require("../../assets/fonts/Ionicons.ttf"),
-  "FontAwesome5Free-Regular": require("../../assets/fonts/FontAwesome5_Regular.ttf"),
-  "FontAwesome5Free-Solid": require("../../assets/fonts/FontAwesome5_Solid.ttf"),
-  "FontAwesome5Free-Brand": require("../../assets/fonts/FontAwesome5_Brands.ttf"),
-  "FontAwesome5Free-Light": require("../../assets/fonts/FontAwesome5_Regular.ttf"),
-});
+const ICON_VECTOR_VERSION = "15.0.3";
+
+const FONT_URLS = {
+  // Ionicons — @expo/vector-icons registers this under lowercase `ionicons`.
+  ionicons: `https://cdn.jsdelivr.net/npm/@expo/vector-icons@${ICON_VECTOR_VERSION}/build/vendor/react-native-vector-icons/Fonts/Ionicons.ttf`,
+  // FontAwesome5 — family suffixes come from createIconSetFromFontAwesome5.js.
+  "FontAwesome5Free-Regular": `https://cdn.jsdelivr.net/npm/@expo/vector-icons@${ICON_VECTOR_VERSION}/build/vendor/react-native-vector-icons/Fonts/FontAwesome5_Regular.ttf`,
+  "FontAwesome5Free-Solid":   `https://cdn.jsdelivr.net/npm/@expo/vector-icons@${ICON_VECTOR_VERSION}/build/vendor/react-native-vector-icons/Fonts/FontAwesome5_Solid.ttf`,
+  "FontAwesome5Free-Brand":   `https://cdn.jsdelivr.net/npm/@expo/vector-icons@${ICON_VECTOR_VERSION}/build/vendor/react-native-vector-icons/Fonts/FontAwesome5_Brands.ttf`,
+  "FontAwesome5Free-Light":   `https://cdn.jsdelivr.net/npm/@expo/vector-icons@${ICON_VECTOR_VERSION}/build/vendor/react-native-vector-icons/Fonts/FontAwesome5_Regular.ttf`,
+};
 
 export const useIconFonts = (): readonly [boolean, Error | null] =>
-  useFonts(Platform.OS === "web" ? {} : nativeIconFontMap());
+  useFonts(Platform.OS === "web" ? {} : FONT_URLS);
