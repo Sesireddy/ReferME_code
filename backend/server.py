@@ -684,8 +684,10 @@ class InterviewSlotBody(BaseModel):
     end_at: str
     skill_set: Optional[list[str]] = []
     experience_years: Optional[int] = 0  # years of experience required from the candidate
-    # Iter 71 — Topic is now MANDATORY and constrained to three values.
-    topic: Optional[Literal["Career Guidance", "Technical Discussion", "HR Discussion"]] = None
+    # Iter 71 — Topic is MANDATORY. We accept a plain string so custom values
+    # produce a clean 400 from our own validator (instead of a Pydantic 422),
+    # and normalise/validate inside the route handler.
+    topic: Optional[str] = None
 
 
 class DepositBody(BaseModel):
