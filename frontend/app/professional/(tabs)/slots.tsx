@@ -11,6 +11,8 @@ import { Input } from "@/src/components/Input";
 import { ScreenTitle } from "@/src/components/ScreenTitle";
 import { DatePickerField, TimePickerField } from "@/src/components/DateTimePicker";
 import { ConfirmDialog } from "@/src/components/ConfirmDialog";
+import { Picker } from "@/src/components/Picker";
+import { SkillMultiSelect } from "@/src/components/SkillMultiSelect";
 import { colors, radius } from "@/src/theme/tokens";
 import { api } from "@/src/lib/api";
 import { successAlert } from "@/src/lib/successAlert";
@@ -38,8 +40,9 @@ export default function ProSlots() {
   const [date, setDate] = useState(tomorrowDateStr());
   const [fromTime, setFromTime] = useState("11:00");
   const [toTime, setToTime] = useState("12:00");
-  const [topic, setTopic] = useState("");
-  const [skillSet, setSkillSet] = useState("");
+  const [topic, setTopic] = useState<string | null>(null); // Iter 71 — mandatory dropdown
+  const [techSkills, setTechSkills] = useState<string[]>([]);
+  const [skillSet, setSkillSet] = useState(""); // legacy string; kept in sync when non-Technical
   // Slot creation now silently uses the professional's own experience from their
   // profile (auto-populated from /auth/me). No UI field exposed.
   const [myExpYears, setMyExpYears] = useState<number>(0);
@@ -87,9 +90,21 @@ export default function ProSlots() {
       setGmailGateOpen(true);
       return;
     }
-    const skillArr = skillSet.split(",").map((s) => s.trim()).filter(Boolean);
-    if (skillArr.length === 0) {
-      return Alert.alert("Skill Set is required.");
+    // ---------- Iter 71: Topic + Skill Set business rules ----------
+    if (!topic) {
+      return Alert.alert("Please select an interview topic.");
+    }
+    let skillArr: string[];
+    if (topic === "Career Guidance") {
+      skillArr = ["Career Guidance"];
+    } else if (topic === "HR Discussion") {
+      skillArr = ["HR Discussion"];
+    } else {
+      // Technical Discussion — require at least one technical skill from the autocomplete
+      skillArr = (techSkills || []).map((s) => s.trim()).filter(Boolean);
+      if (skillArr.length === 0) {
+        return Alert.alert("Please select at least one technical skill.");
+      }
     }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       return Alert.alert("Invalid date", "Use YYYY-MM-DD");
@@ -120,7 +135,9 @@ export default function ProSlots() {
           experience_years: myExpYears,
         },
       });
-      setTopic("");
+      setTopic(null);
+      setTechSkills([]);
+      setSkillSet("");
       successAlert.show({ title: "Slot Created", message: `${fromTime} – ${toTime} on ${date}` });
       load();
     } catch (e: any) {
@@ -351,8 +368,53 @@ export default function ProSlots() {
             <TimePickerField testID="slot-to" label="To" value={toTime} onChange={setToTime} />
           </View>
         </View>
-        <Input testID="slot-topic" label="Topic (optional)" placeholder="System design / Behavioral" value={topic} onChangeText={setTopic} />
-        <Input testID="slot-skills" label="Skill Set (comma-separated) *" placeholder="React, System Design" value={skillSet} onChangeText={setSkillSet} />
+        <Picker
+          testID="slot-topic"
+          label="Topic *"
+          options={[
+            { value: "Career Guidance", label: "Career Guidance" },
+            { value: "Technical Discussion", label: "Technical Discussion" },
+            { value: "HR Discussion", label: "HR Discussion" },
+          ]}
+          value={topic}
+          onChange={(v) => {
+            const val = (v as string) || null;
+            setTopic(val);
+            // Auto-fill skill set on non-technical topics per Iter 71 rules.
+            if (val === "Career Guidance") {
+              setTechSkills([]);
+              setSkillSet("Career Guidance");
+            } else if (val === "HR Discussion") {
+              setTechSkills([]);
+              setSkillSet("HR Discussion");
+            } else if (val === "Technical Discussion") {
+              setSkillSet(""); // cleared — user must select skills
+            }
+          }}
+          placeholder="Select interview topic"
+        />
+        {/* Conditional Skill Set: auto-filled read-only for Career/HR, autocomplete for Technical */}
+        {topic === "Career Guidance" || topic === "HR Discussion" ? (
+          <Input
+            testID="slot-skills"
+            label="Skill Set *"
+            value={skillSet}
+            onChangeText={() => {}}
+            editable={false}
+          />
+        ) : topic === "Technical Discussion" ? (
+          <SkillMultiSelect
+            testID="slot-skills"
+            label="Skill Set * (select one or more technical skills)"
+            value={techSkills}
+            onChange={setTechSkills}
+            placeholder="Type to search skills e.g. Java, SQL, React…"
+          />
+        ) : (
+          <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 4, marginBottom: 12 }}>
+            Select a topic above to unlock the Skill Set field.
+          </Txt>
+        )}
         <Txt variant="small" style={{ color: colors.textSecondary, marginBottom: 8 }}>
           Slots use 12-hour AM/PM in IST. Min 1 hour, max 5 hours/day per professional.
         </Txt>

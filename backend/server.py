@@ -544,6 +544,7 @@ def _booking_email_html(role: str, slot: dict, candidate: dict, pro: dict, meeti
     pro_name = slot.get("pro_name") or (pro or {}).get("name") or "(pro)"
     student_name = candidate.get("name") or candidate.get("email", "").split("@")[0]
     skills = ", ".join(slot.get("skill_set", []) or []) or "—"
+    topic = slot.get("topic") or "—"  # Iter 71
     accent = "#FF5A5F" if role == "student" else "#7C3AED"
     title = "Interview confirmed 🎉" if role == "student" else "New Mock Interview booking"
     intro = (
@@ -561,6 +562,7 @@ def _booking_email_html(role: str, slot: dict, candidate: dict, pro: dict, meeti
         <ul style="line-height:1.6">
           <li><b>Candidate:</b> {student_name}</li>
           <li><b>Working Professional:</b> {pro_name}</li>
+          <li><b>Interview Topic:</b> {topic}</li>
           <li><b>Skill Set:</b> {skills}</li>
           <li><b>Interview Date / Time:</b> {when} – {end_when} <span style="color:#6B7280">(IST)</span></li>
           <li><b>Meeting Link:</b> <a href="{meeting}">{meeting}</a></li>
@@ -682,7 +684,8 @@ class InterviewSlotBody(BaseModel):
     end_at: str
     skill_set: Optional[list[str]] = []
     experience_years: Optional[int] = 0  # years of experience required from the candidate
-    topic: Optional[str] = ""
+    # Iter 71 — Topic is now MANDATORY and constrained to three values.
+    topic: Optional[Literal["Career Guidance", "Technical Discussion", "HR Discussion"]] = None
 
 
 class DepositBody(BaseModel):

@@ -39,6 +39,7 @@ export default function MockInterviews() {
   const [bookSuccessOpen, setBookSuccessOpen] = useState(false);
   const [skillFilter, setSkillFilter] = useState("");
   const [dateFilter, setDateFilter] = useState("");
+  const [topicFilter, setTopicFilter] = useState<string | null>(null); // Iter 71
   const [refreshing, setRefreshing] = useState(false);
   const [actionCost, setActionCost] = useState<number>(99);
 
@@ -85,6 +86,7 @@ export default function MockInterviews() {
       const params = new URLSearchParams({ has_available_slots: "true" });
       if (skillFilter.trim()) params.set("skill", skillFilter.trim());
       if (dateFilter) params.set("date", dateFilter);
+      if (topicFilter) params.set("topic", topicFilter);
       const [p] = await Promise.all([
         api<any[]>(`/professionals?${params.toString()}`),
         loadMyBookings(),
@@ -94,7 +96,7 @@ export default function MockInterviews() {
       setPros([]);
     }
     setRefreshing(false);
-  }, [skillFilter, dateFilter, loadMyBookings]);
+  }, [skillFilter, dateFilter, topicFilter, loadMyBookings]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -105,6 +107,7 @@ export default function MockInterviews() {
       const params = new URLSearchParams({ pro_id: pro.id });
       if (skillFilter) params.set("skill", skillFilter);
       if (dateFilter) params.set("date", dateFilter);
+      if (topicFilter) params.set("topic", topicFilter);
       const s = await api<any[]>(`/interviews/slots?${params.toString()}`);
       // Backend already excludes expired & cancelled for students drilling into a pro.
       setSlots(s);
@@ -210,6 +213,29 @@ export default function MockInterviews() {
         </TouchableOpacity>
       ) : null}
 
+      {/* Iter 71 — Topic filter chips */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 4 }}>
+        {[
+          { v: null, label: "All Topics" },
+          { v: "Career Guidance", label: "🧭 Career Guidance" },
+          { v: "Technical Discussion", label: "💻 Technical" },
+          { v: "HR Discussion", label: "👥 HR" },
+        ].map((f) => {
+          const active = topicFilter === f.v;
+          return (
+            <TouchableOpacity
+              key={String(f.v)}
+              onPress={() => setTopicFilter(f.v)}
+              style={[styles.topicFilterChip, active && styles.topicFilterChipActive]}
+              testID={`mi-topic-${f.v ?? "all"}`}
+              activeOpacity={0.7}
+            >
+              <Txt style={[styles.topicFilterChipTxt, active && { color: "#fff" }]}>{f.label}</Txt>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+
       <View style={{ gap: 12, marginTop: 12 }}>
         {pros.length === 0 ? (
           <Card>
@@ -290,6 +316,24 @@ export default function MockInterviews() {
                       <Card key={s.id} style={styles.slotRow}>
                         <View style={{ flex: 1 }}>
                           <Txt variant="h3" style={{ fontSize: 16 }}>{fmtSlotRange(s.start_at, s.end_at)}</Txt>
+                          {s.topic ? (
+                            <View style={styles.topicPill}>
+                              <Ionicons
+                                name={
+                                  s.topic === "Technical Discussion"
+                                    ? "code-slash"
+                                    : s.topic === "HR Discussion"
+                                    ? "people-circle"
+                                    : "compass"
+                                }
+                                size={12}
+                                color="#7C3AED"
+                              />
+                              <Txt style={{ marginLeft: 4, color: "#7C3AED", fontWeight: "700", fontSize: 11 }}>
+                                {s.topic}
+                              </Txt>
+                            </View>
+                          ) : null}
                           {(s.skill_set || []).length ? (
                             <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 2 }}>
                               {(s.skill_set || []).join(", ")}
@@ -354,4 +398,26 @@ const styles = StyleSheet.create({
   bookedTag: { flexDirection: "row", alignItems: "center", backgroundColor: "#F3F4F6", borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: "#E5E7EB" },
   conflictTag: { flexDirection: "row", alignItems: "center", backgroundColor: "#FEF3C7", borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: "#FDE68A" },
   slotRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  topicPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    backgroundColor: "#F5F3FF",
+    borderWidth: 1,
+    borderColor: "#7C3AED40",
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    marginTop: 4,
+  },
+  topicFilterChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  topicFilterChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  topicFilterChipTxt: { fontSize: 12, fontWeight: "700", color: colors.textPrimary },
 });

@@ -51,8 +51,27 @@ async def create_slot(body: InterviewSlotBody, u: dict = Depends(require_role(["
             status_code=403,
             detail="Gmail verification is required before creating a Mock Interview slot.",
         )
-    if not (body.skill_set or []):
-        raise HTTPException(status_code=400, detail="Skill Set is required.")
+    # ---------- Iter 71: Topic + Skill Set business rules ----------
+    topic = (body.topic or "").strip()
+    if topic not in ("Career Guidance", "Technical Discussion", "HR Discussion"):
+        raise HTTPException(status_code=400, detail="Please select an interview topic.")
+    if topic == "Career Guidance":
+        skills_resolved = ["Career Guidance"]
+    elif topic == "HR Discussion":
+        skills_resolved = ["HR Discussion"]
+    else:  # Technical Discussion
+        skills_resolved = [s.strip() for s in (body.skill_set or []) if str(s).strip()]
+        if not skills_resolved:
+            raise HTTPException(status_code=400, detail="Please select at least one technical skill.")
+        # Dedupe case-insensitively, preserving first occurrence
+        seen: set[str] = set()
+        deduped: list[str] = []
+        for s in skills_resolved:
+            k = s.lower()
+            if k not in seen:
+                seen.add(k)
+                deduped.append(s)
+        skills_resolved = deduped
     try:
         start = datetime.fromisoformat(body.start_at.replace("Z", "+00:00"))
         end = datetime.fromisoformat(body.end_at.replace("Z", "+00:00"))
@@ -122,9 +141,9 @@ async def create_slot(body: InterviewSlotBody, u: dict = Depends(require_role(["
             "start_at": cursor.isoformat().replace("+00:00", "Z"),
             "end_at": sub_end.isoformat().replace("+00:00", "Z"),
             "scheduled_at": cursor.isoformat().replace("+00:00", "Z"),  # legacy alias
-            "skill_set": body.skill_set or [],
+            "skill_set": skills_resolved,
             "experience_years": body.experience_years or 0,
-            "topic": body.topic or "",
+            "topic": topic,
             "status": "available",
             "student_id": None,
             "student_name": None,
@@ -164,6 +183,7 @@ async def list_slots(
     skill: Optional[str] = Query(None),
     date: Optional[str] = Query(None),  # YYYY-MM-DD — only slots starting on this date
     category: Optional[str] = Query(None),  # fresher | experienced
+    topic: Optional[str] = Query(None),  # Iter 71 — Career Guidance | Technical Discussion | HR Discussion
     u: dict = Depends(current_user),
 ):
     q: dict = {}
@@ -175,6 +195,8 @@ async def list_slots(
         q["status"] = "available"
     if skill:
         q["skill_set"] = {"$regex": skill, "$options": "i"}
+    if topic:
+        q["topic"] = topic
     slots = await db.interview_slots.find(q, {"_id": 0}).sort("start_at", 1).to_list(500)
     # Apply date / category / future-only filters (students never see expired slots).
     out = []

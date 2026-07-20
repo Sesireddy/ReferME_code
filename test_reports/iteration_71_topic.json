@@ -1,0 +1,38 @@
+{
+  "summary": "Iter 71 backend topic + skill_set rules verified. 8/9 test cases PASS. Career Guidance and HR Discussion correctly force server-side skill_set; Technical Discussion honors client skills with case-insensitive dedupe preserving first-seen casing; empty/missing topic returns 400 with friendly message; empty technical skill_set returns 400; GET /api/interviews/slots?topic=... filter works; /api/interviews/my-bookings surfaces topic. ONE FAILURE: invalid topic value ('Random') returns 422 (Pydantic Literal validation error) instead of the specified 400 'Please select an interview topic.' — because InterviewSlotBody declares topic as Optional[Literal[...]], Pydantic rejects the value before the endpoint's manual validator ever runs.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/interviews/slots",
+        "issue": "Invalid topic (e.g. 'Random') returns HTTP 422 (Pydantic Literal validation) with technical detail array instead of the specified HTTP 400 with detail 'Please select an interview topic.'. Root cause: server.py line 688 uses `topic: Optional[Literal['Career Guidance', 'Technical Discussion', 'HR Discussion']]` which triggers 422 before routers/interviews.py:56-57 manual check can run. Fix: change field type to `Optional[str]` (or `str`) and rely solely on the manual validator at routers/interviews.py:55-57 so invalid strings produce the friendly 400 message. Missing topic already yields 400 correctly (Optional accepts None, then manual check catches empty string)."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter71_topic.py",
+    "/app/test_reports/pytest/iter71_topic.xml"
+  ],
+  "action_items": [
+    "In /app/backend/server.py line 688, change `topic: Optional[Literal['Career Guidance','Technical Discussion','HR Discussion']] = None` to `topic: Optional[str] = None` so invalid values fall through to the manual validator in routers/interviews.py which raises HTTPException(400, 'Please select an interview topic.') per the Iter 71 spec."
+  ],
+  "critical_code_review_comments": [
+    "server.py:688 uses Pydantic Literal for topic which bypasses the 400 error contract defined in routers/interviews.py:56-57. Either drop Literal to Optional[str], or update the spec to allow 422 for invalid topic values.",
+    "routers/interviews.py:56 — `topic = (body.topic or '').strip()` correctly handles None + trailing whitespace; skill dedupe logic (lines 66-74) is correct and preserves first-seen casing."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter71_topic.py (new)"
+  ],
+  "success_rate": {"backend": "88.9% (8/9)", "frontend": "skipped"},
+  "seed_data_creation": "Created disposable pro (iter71_pro_<uuid>@acmecorp.io) and student (iter71_stu_<uuid>@example.com). Pro flagged in Mongo with profile.phone_verified=true, is_email_verified=true, gmail_verified=true.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "After main-agent changes server.py topic field type from Literal to Optional[str], rerun pytest /app/backend/tests/test_iter71_topic.py::TestSlotCreateTopicRules::test_6_invalid_topic_400 to confirm 400 status.",
+  "rca_of_issue": "Iter 71 spec requires invalid topic → HTTP 400 with human-readable message. server.py defines InterviewSlotBody.topic as Optional[Literal[...]] which triggers Pydantic pre-endpoint validation returning 422 with a nested `detail` array. FastAPI never reaches the endpoint code that raises the friendly 400. Reproduction: `POST /api/interviews/slots` with body `{topic:'Random', skill_set:['Java'], start_at, end_at}` → 422. Mitigation: relax the Pydantic type to `Optional[str]` and let the manual `if topic not in (...)` branch at routers/interviews.py:56-57 return the spec-mandated 400 message."
+}
