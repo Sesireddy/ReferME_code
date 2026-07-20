@@ -35,6 +35,9 @@ export default function MockInterviews() {
   const [slots, setSlots] = useState<any[]>([]);
   const [myBookings, setMyBookings] = useState<{ start_at: string; end_at: string }[]>([]);
   const [selectedPro, setSelectedPro] = useState<any | null>(null);
+  // Iter 72 — inside the pro's slot modal, first pick a date, then see slots
+  // for that date (mirrors the pro-side date-grouped view for symmetry).
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [pendingBookSlotId, setPendingBookSlotId] = useState<string | null>(null);
   const [bookSuccessOpen, setBookSuccessOpen] = useState(false);
   const [skillFilter, setSkillFilter] = useState("");
@@ -103,6 +106,7 @@ export default function MockInterviews() {
   async function openPro(pro: any) {
     if (pro.fully_booked) return; // disabled
     setSelectedPro(pro);
+    setSelectedDate(null); // Iter 72 — start at the date list, drill into a date on tap
     try {
       const params = new URLSearchParams({ pro_id: pro.id });
       if (skillFilter) params.set("skill", skillFilter);
@@ -195,12 +199,15 @@ export default function MockInterviews() {
       <ScreenTitle title="Mock Interviews" icon="mic" color={colors.primary} subtitle={`Practice with vetted professionals. ${actionCost} credits per interview.`} />
 
       <View style={{ marginTop: 12 }}>
-        <SkillAutocomplete
-          testID="mi-search"
-          value={skillFilter}
-          onChange={setSkillFilter}
-          placeholder="Search or Select Skill"
-        />
+        {/* Iter 72 — Skill Set filter only for Technical Discussion (and default no-topic) */}
+        {topicFilter !== "Career Guidance" && topicFilter !== "HR Discussion" ? (
+          <SkillAutocomplete
+            testID="mi-search"
+            value={skillFilter}
+            onChange={setSkillFilter}
+            placeholder="Search or Select Skill"
+          />
+        ) : null}
       </View>
       <View style={{ flexDirection: "row", gap: 8 }}>
         <View style={{ flex: 1 }}>
@@ -225,7 +232,14 @@ export default function MockInterviews() {
           return (
             <TouchableOpacity
               key={String(f.v)}
-              onPress={() => setTopicFilter(f.v)}
+              onPress={() => {
+                setTopicFilter(f.v);
+                // Iter 72 — Clear skill filter when switching to a non-technical
+                // topic; the skill filter only makes sense for Technical Discussion.
+                if (f.v === "Career Guidance" || f.v === "HR Discussion") {
+                  setSkillFilter("");
+                }
+              }}
               style={[styles.topicFilterChip, active && styles.topicFilterChipActive]}
               testID={`mi-topic-${f.v ?? "all"}`}
               activeOpacity={0.7}
@@ -287,82 +301,138 @@ export default function MockInterviews() {
         })}
       </View>
 
-      <Modal visible={!!selectedPro} animationType="slide" transparent onRequestClose={() => setSelectedPro(null)}>
+      <Modal
+        visible={!!selectedPro}
+        animationType="slide"
+        transparent
+        onRequestClose={() => {
+          // Iter 72 — one-step back inside modal: if on the slots view, go
+          // back to the dates view first; otherwise close the modal.
+          if (selectedDate) setSelectedDate(null);
+          else setSelectedPro(null);
+        }}
+      >
         <View style={styles.modalBg}>
           <View style={styles.modal}>
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+              <TouchableOpacity
+                onPress={() => (selectedDate ? setSelectedDate(null) : setSelectedPro(null))}
+                hitSlop={10}
+                style={{ paddingRight: 8 }}
+                testID="modal-back"
+              >
+                <Ionicons
+                  name={selectedDate ? "chevron-back" : "close"}
+                  size={26}
+                  color={colors.textPrimary}
+                />
+              </TouchableOpacity>
               <View style={{ flex: 1 }}>
                 <Txt variant="h2">{selectedPro?.name}</Txt>
                 <Txt variant="small" style={{ color: colors.textSecondary }}>
-                  {selectedPro?.designation || ""}{selectedPro?.company ? ` @ ${selectedPro.company}` : ""}
+                  {selectedDate
+                    ? fmtDateHeader(groupedSlots.find((g) => g.date === selectedDate)?.items[0]?.start_at || selectedDate)
+                    : `${selectedPro?.designation || ""}${selectedPro?.company ? ` @ ${selectedPro.company}` : ""}`}
                 </Txt>
               </View>
-              <TouchableOpacity onPress={() => setSelectedPro(null)} hitSlop={10}>
-                <Ionicons name="close" size={26} color={colors.textPrimary} />
-              </TouchableOpacity>
             </View>
-            <Txt variant="muted" style={{ marginTop: 4 }}>Available slots</Txt>
+            <Txt variant="muted" style={{ marginTop: 4 }}>
+              {selectedDate ? "Available time slots" : "Pick a date to see available slots"}
+            </Txt>
+
             <ScrollView style={{ marginTop: 12 }} contentContainerStyle={{ gap: 8 }}>
-              {slots.length === 0 ? <Txt variant="muted">No slots available right now.</Txt> : null}
-              {groupedSlots.map((g) => (
-                <View key={g.date} style={{ marginBottom: 8 }}>
-                  <Txt variant="label" style={{ marginBottom: 6, color: colors.primary }}>
-                    {fmtDateHeader(g.items[0]?.start_at || g.date)}
-                  </Txt>
-                  {g.items.map((s) => {
-                    const isBooked = s.status === "booked";
-                    const conflict = !isBooked && hasOverlap(s.start_at, s.end_at);
+              {slots.length === 0 ? (
+                <Txt variant="muted">No slots available right now.</Txt>
+              ) : null}
+
+              {/* Level 1 — date summary cards */}
+              {!selectedDate
+                ? groupedSlots.map((g) => {
+                    const available = g.items.filter((x) => x.status !== "booked" && x.status !== "completed").length;
+                    if (available === 0) return null; // hide dates with no availability
                     return (
-                      <Card key={s.id} style={styles.slotRow}>
-                        <View style={{ flex: 1 }}>
-                          <Txt variant="h3" style={{ fontSize: 16 }}>{fmtSlotRange(s.start_at, s.end_at)}</Txt>
-                          {s.topic ? (
-                            <View style={styles.topicPill}>
-                              <Ionicons
-                                name={
-                                  s.topic === "Technical Discussion"
-                                    ? "code-slash"
-                                    : s.topic === "HR Discussion"
-                                    ? "people-circle"
-                                    : "compass"
-                                }
-                                size={12}
-                                color="#7C3AED"
-                              />
-                              <Txt style={{ marginLeft: 4, color: "#7C3AED", fontWeight: "700", fontSize: 11 }}>
-                                {s.topic}
+                      <Card key={g.date} style={{ padding: 14 }}>
+                        <TouchableOpacity
+                          testID={`date-${g.date}`}
+                          onPress={() => setSelectedDate(g.date)}
+                          activeOpacity={0.7}
+                          style={{ flexDirection: "row", alignItems: "center" }}
+                        >
+                          <View style={{ flex: 1 }}>
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                              <Ionicons name="calendar" size={16} color="#7C3AED" />
+                              <Txt variant="h3" style={{ fontSize: 15 }}>
+                                {fmtDateHeader(g.items[0]?.start_at || g.date)}
                               </Txt>
                             </View>
-                          ) : null}
-                          {(s.skill_set || []).length ? (
-                            <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 2 }}>
-                              {(s.skill_set || []).join(", ")}
+                            <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 4 }}>
+                              Available Slots: {available}
                             </Txt>
-                          ) : null}
-                        </View>
-                        {isBooked ? (
-                          <View testID={`slot-${s.id}-booked`} style={styles.bookedTag}>
-                            <Ionicons name="lock-closed" size={14} color="#9CA3AF" />
-                            <Txt style={{ marginLeft: 4, color: "#9CA3AF", fontWeight: "700" }}>Booked</Txt>
                           </View>
-                        ) : conflict ? (
-                          <View testID={`slot-${s.id}-conflict`} style={styles.conflictTag}>
-                            <Ionicons name="warning" size={14} color={colors.warning} />
-                            <Txt style={{ marginLeft: 4, color: colors.warning, fontWeight: "700", fontSize: 12 }}>Time Conflict</Txt>
+                          <View style={styles.viewSlotsBtn}>
+                            <Txt style={{ color: "#fff", fontWeight: "700", fontSize: 13 }}>View Slots</Txt>
+                            <Ionicons name="chevron-forward" size={16} color="#fff" />
                           </View>
-                        ) : (
-                          <Button
-                            testID={`slot-${s.id}-book`}
-                            title="Book"
-                            onPress={() => bookSlot(s.id)}
-                            style={{ height: 36, paddingHorizontal: 18 }}
-                          />
-                        )}
+                        </TouchableOpacity>
                       </Card>
                     );
-                  })}
-                </View>
-              ))}
+                  })
+                : null}
+
+              {/* Level 2 — actual time slots for the selected date */}
+              {selectedDate
+                ? (groupedSlots.find((g) => g.date === selectedDate)?.items || [])
+                    .filter((s) => s.status !== "booked" && s.status !== "completed")
+                    .map((s) => {
+                      const conflict = hasOverlap(s.start_at, s.end_at);
+                      return (
+                        <Card key={s.id} style={styles.slotRow}>
+                          <View style={{ flex: 1 }}>
+                            <Txt variant="h3" style={{ fontSize: 16 }}>{fmtSlotRange(s.start_at, s.end_at)}</Txt>
+                            {s.topic ? (
+                              <View style={styles.topicPill}>
+                                <Ionicons
+                                  name={
+                                    s.topic === "Technical Discussion"
+                                      ? "code-slash"
+                                      : s.topic === "HR Discussion"
+                                      ? "people-circle"
+                                      : "compass"
+                                  }
+                                  size={12}
+                                  color="#7C3AED"
+                                />
+                                <Txt style={{ marginLeft: 4, color: "#7C3AED", fontWeight: "700", fontSize: 11 }}>
+                                  {s.topic}
+                                </Txt>
+                              </View>
+                            ) : null}
+                            {(s.skill_set || []).length ? (
+                              <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 2 }}>
+                                {(s.skill_set || []).join(", ")}
+                              </Txt>
+                            ) : null}
+                            <Txt variant="small" style={{ color: colors.textSecondary, marginTop: 2 }}>
+                              With {selectedPro?.name}
+                            </Txt>
+                          </View>
+                          {conflict ? (
+                            <View testID={`slot-${s.id}-conflict`} style={styles.conflictTag}>
+                              <Ionicons name="warning" size={14} color={colors.warning} />
+                              <Txt style={{ marginLeft: 4, color: colors.warning, fontWeight: "700", fontSize: 12 }}>Time Conflict</Txt>
+                            </View>
+                          ) : (
+                            <Button
+                              testID={`slot-${s.id}-book`}
+                              title="Book Now"
+                              onPress={() => bookSlot(s.id)}
+                              style={{ height: 36, paddingHorizontal: 18 }}
+                            />
+                          )}
+                        </Card>
+                      );
+                    })
+                : null}
             </ScrollView>
           </View>
         </View>
@@ -420,4 +490,13 @@ const styles = StyleSheet.create({
   },
   topicFilterChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   topicFilterChipTxt: { fontSize: 12, fontWeight: "700", color: colors.textPrimary },
+  viewSlotsBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#7C3AED",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+  },
 });
