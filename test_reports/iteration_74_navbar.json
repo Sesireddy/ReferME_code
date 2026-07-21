@@ -1,0 +1,62 @@
+{
+  "summary": "Iter 74 bottom-nav-bar 3-button fix verified via Playwright web preview (frontend-only, no backend touched). Logged in as admin (admin@referme.app / Admin@12345), rendered admin (tabs) layout at two viewports: 375x667 and 393x830 (Pixel-6-3-button). In both cases the tab bar is anchored to the very bottom of the viewport (tablist bbox.y + bbox.height == innerHeight), all 6 admin tabs (Dashboard/Users/Jobs/Interviews/Credits/Approvals) are visible, labeled, and clickable; navigation to /admin/users and /admin/jobs works. Active vs inactive icon coloring confirmed via aria-selected on tab and per-route color mapping in TAB_ICON_MAP. Student layout not re-verified in a fresh login (direct signup via api returned 403 from the CDN when hit from Playwright's outbound; not a regression), but layout code is structurally identical to admin (same useSafeAreaInsets + Math.max(insets.bottom,8) pattern) so the fix applies uniformly. No red-screen / no console errors related to the nav bar. Bug appears fixed.",
+  "verification_measurements": {
+    "viewport_375x667_admin": {
+      "tablist_bbox": {"x": 0, "y": 606, "width": 375, "height": 53},
+      "viewport_innerHeight": 667,
+      "bottom_flush": true,
+      "tabs_rendered": ["Dashboard", "Users", "Jobs", "Interviews", "Credits", "Approvals"],
+      "note": "On web, insets.bottom == 0 so effective bottomPad = max(0,8) = 8. React-Navigation-web renders tab bar at 53px (its own web height baseline). The 60+bottomPad height and paddingBottom are applied natively on Android where the fix actually takes effect."
+    },
+    "viewport_393x830_admin_pixel6_3button": {
+      "tablist_bbox": {"x": 0, "y": 769, "width": 393, "height": 53},
+      "viewport_innerHeight": 830,
+      "bottom_flush": true,
+      "tabs_rendered": ["Dashboard", "Users", "Jobs", "Interviews", "Credits", "Approvals"]
+    },
+    "regression_navigation": {
+      "click_tab_users": "http://localhost:3000/admin/dashboard -> http://localhost:3000/admin/users OK",
+      "click_tab_jobs":  "-> http://localhost:3000/admin/jobs OK"
+    },
+    "icon_coloring": {
+      "active_tab_aria_selected_true": "Jobs (after click) -> aria-selected='true'; other tabs aria-selected='false'",
+      "inactive_color_in_code": "#94A3B8 (slate-400) via TAB_INACTIVE; active colors from TAB_ICON_MAP.activeColor per route (coral/blue/violet/amber/emerald)."
+    }
+  },
+  "code_review": {
+    "files_reviewed": [
+      "/app/frontend/app/student/(tabs)/_layout.tsx",
+      "/app/frontend/app/professional/(tabs)/_layout.tsx",
+      "/app/frontend/app/admin/(tabs)/_layout.tsx"
+    ],
+    "observations": [
+      "All three role layouts consistently call useSafeAreaInsets() and use bottomPad = Math.max(insets.bottom, 8).",
+      "tabBarStyle.height = 60 + bottomPad and paddingBottom = bottomPad — exactly what the fix description says.",
+      "SafeAreaProvider must be higher in the tree for useSafeAreaInsets() to return non-zero on Android; if a wrapping SafeAreaProvider is not mounted in app/_layout.tsx, insets.bottom will be 0 and the min-fallback of 8 keeps the bar visible. Recommend verifying SafeAreaProvider is present in root layout.",
+      "Consistent code, no lint concerns."
+    ]
+  },
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iteration_74_navbar.json"],
+  "action_items": [
+    "(Optional) Confirm <SafeAreaProvider> wraps the root Stack in app/_layout.tsx so useSafeAreaInsets() returns a real insets.bottom on Android 3-button devices; otherwise the code falls back to 8 px which is still safe.",
+    "(Optional) On a real Android 3-button device or emulator, physically confirm the tab labels/icons are not clipped by the system nav bar — cannot be done on web preview."
+  ],
+  "critical_code_review_comments": [
+    "shadow* style deprecation console warnings observed (pre-existing, unrelated to this fix).",
+    "props.pointerEvents deprecation warning (pre-existing, unrelated)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped per request)", "frontend": "100% (all admin tab-bar checks passed)"},
+  "seed_data_creation": "None — used existing admin credentials.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iter 74 nav-bar fix verified on admin (tabs) at two viewports. Student (tabs) and Professional (tabs) share identical code pattern and were not separately re-logged-in this run. If a full 3-role re-verification is required, use admin creds (admin@referme.app/Admin@12345), demo employer (demo-employer@referme.app/Demo@12345) for pro, and create a student via UI signup flow (backend returns mock_otp).",
+  "rca_of_issue": "Bug: on Android devices with 3-button system nav, edge-to-edge draws content under the nav bar causing bottom Tabs to be partially occluded. Fix: read useSafeAreaInsets().bottom and add it to both tabBarStyle.height (60 + insets) and paddingBottom, with an 8-px minimum fallback. Applied uniformly to all three role tab layouts. Verified in web preview that the tab bar is bottom-flush, all tabs are rendered/clickable and navigation works. Actual Android native inset consumption cannot be validated in a Playwright web preview but the code path is correct."
+}

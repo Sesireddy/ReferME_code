@@ -1,6 +1,7 @@
 import React from "react";
 import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors } from "@/src/theme/tokens";
 import { TAB_ICON_MAP, TAB_INACTIVE } from "@/src/theme/tabIcons";
 
@@ -12,7 +13,13 @@ import { TAB_ICON_MAP, TAB_INACTIVE } from "@/src/theme/tabIcons";
 // Iter 73 — Nav icons render in a distinct pastel hue when active (per-route
 // palette from `tabIcons.ts`) and muted slate-400 when inactive, for a modern
 // LinkedIn/Naukri feel while staying visually calm.
+// Iter 74 — Reserve extra bottom padding (via safe-area insets) so the tab bar
+// is fully clickable on Android devices that still use 3-button navigation.
+// `edgeToEdgeEnabled` in app.json draws under the system nav, so we must
+// account for it manually.
 export default function StudentTabsLayout() {
+  const insets = useSafeAreaInsets();
+  const bottomPad = Math.max(insets.bottom, 8);
   const iconFor = (route: keyof typeof TAB_ICON_MAP) => {
     const TabIcon = ({ focused, size }: { focused: boolean; size: number }) => {
       const cfg = TAB_ICON_MAP[route];
@@ -34,7 +41,13 @@ export default function StudentTabsLayout() {
         headerShown: false,
         tabBarActiveTintColor: colors.textPrimary,
         tabBarInactiveTintColor: TAB_INACTIVE,
-        tabBarStyle: { backgroundColor: colors.surface, borderTopColor: colors.border, height: 64, paddingBottom: 8, paddingTop: 6 },
+        tabBarStyle: {
+          backgroundColor: colors.surface,
+          borderTopColor: colors.border,
+          height: 60 + bottomPad,
+          paddingBottom: bottomPad,
+          paddingTop: 6,
+        },
         tabBarLabelStyle: { fontSize: 9, fontWeight: "600" },
         tabBarItemStyle: { paddingHorizontal: 0 },
       }}
