@@ -158,12 +158,18 @@ export default function StudentJobs() {
       } else if (/insufficient credit/i.test(msg)) {
         Alert.alert(
           "Insufficient Credits",
-          "You don't have enough credits to continue. Please purchase additional credits.",
+          "You don't have enough credits to apply for this job. Please add credits to your wallet to continue.",
           [
-            { text: "Buy Credits", onPress: () => router.push("/student/wallet") },
             { text: "Cancel", style: "cancel" },
+            { text: "Add Credits", onPress: () => router.push("/student/wallet") },
           ],
         );
+      } else if (/already applied/i.test(msg)) {
+        Alert.alert("Already Applied", "You have already applied for this job.", [{ text: "OK" }]);
+      } else if (/applications closed|no longer accepting|job not available|not open|closed/i.test(msg)) {
+        Alert.alert("Job Unavailable", "This job is no longer accepting applications.", [
+          { text: "OK", onPress: () => load() },
+        ]);
       } else {
         Alert.alert("Cannot apply", msg);
       }
@@ -393,11 +399,12 @@ export default function StudentJobs() {
 
       <ConfirmDialog
         visible={!!applyTarget}
-        title={applyTarget?.applied
-          ? "Already applied"
+        title="Apply for Job"
+        message={applyTarget?.applied
+          ? "You have already applied for this job."
           : (((user?.free_uses_left ?? 0) > 0)
-              ? "Free pass available! Apply to this job using your free pass?"
-              : `This application will use ${user?.action_cost ?? 99} credits. Do you want to continue?`)}
+              ? "You have a free pass available! Apply to this job using your free pass?"
+              : `Applying for this job will deduct ${user?.action_cost ?? 99} credits from your wallet. Do you want to continue?`)}
         confirmLabel="Apply"
         cancelLabel="Cancel"
         onCancel={() => setApplyTarget(null)}
@@ -407,7 +414,7 @@ export default function StudentJobs() {
       <ConfirmDialog
         visible={appliedOk}
         title="Application Submitted"
-        message="Your job application has been submitted successfully."
+        message={`Your application has been submitted successfully. ${user?.action_cost ?? 99} credits have been deducted from your wallet.`}
         confirmLabel="OK"
         cancelLabel=""
         onCancel={() => setAppliedOk(false)}

@@ -63,15 +63,28 @@ export default function JobDetail() {
       showCompleteProfilePopup();
       return;
     }
+    // Iter 75 — Confirmation popup before deducting credits. Backend still
+    // enforces every rule (profile / balance / duplicate / closed) as the
+    // source of truth; this dialog is UX only.
+    Alert.alert(
+      "Apply for Job",
+      "Applying for this job will deduct 99 credits from your wallet. Do you want to continue?",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Apply", onPress: () => submitApplication() },
+      ],
+    );
+  }
+
+  async function submitApplication() {
     setBusy(true);
     try {
       await api<{ used_free?: boolean }>("/jobs/apply", { method: "POST", body: { job_id: id } });
       successAlert.show({
         title: "Application Submitted",
-        message: "Your job application has been submitted successfully.",
-        onOk: () => router.back(),
+        message: "Your application has been submitted successfully. 99 credits have been deducted from your wallet.",
+        onOk: () => load(),
       });
-      load();
     } catch (e: any) {
       const msg = e.message || "";
       const detail = (e as any).detail;
@@ -82,11 +95,19 @@ export default function JobDetail() {
       } else if (/insufficient credit/i.test(msg)) {
         Alert.alert(
           "Insufficient Credits",
-          "You don't have enough credits to continue. Please purchase additional credits.",
+          "You don't have enough credits to apply for this job. Please add credits to your wallet to continue.",
           [
-            { text: "Buy Credits", onPress: () => router.push("/student/wallet") },
             { text: "Cancel", style: "cancel" },
+            { text: "Add Credits", onPress: () => router.push("/student/wallet") },
           ],
+        );
+      } else if (/already applied/i.test(msg)) {
+        Alert.alert("Already Applied", "You have already applied for this job.", [{ text: "OK" }]);
+      } else if (/applications closed|no longer accepting|job not available|not open|closed/i.test(msg)) {
+        Alert.alert(
+          "Job Unavailable",
+          "This job is no longer accepting applications.",
+          [{ text: "OK", onPress: () => load() }],
         );
       } else {
         Alert.alert("Cannot apply", msg);

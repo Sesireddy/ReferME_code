@@ -512,12 +512,11 @@ async def apply_job(body: ApplyJobBody, u: dict = Depends(require_role(["student
     per_action_cost = get_action_cost(u)
     if not use_free and u.get("credits", 0) < per_action_cost:
         raise HTTPException(status_code=402, detail="Insufficient credits. Please add credits to continue applying for this job.")
-    if use_free:
-        await db.users.update_one({"id": u["id"]}, {"$inc": {"free_uses_left": -1}})
-        charged = 0
-    else:
-        await _credit_user(u["id"], -per_action_cost, "job_application", {"job_id": job["id"], "cost": per_action_cost})
-        charged = per_action_cost
+    # Iter 75 — Insert application FIRST, then deduct credits. If deduction
+    # fails for any reason we roll back the application so the wallet and the
+    # applications collection stay in sync. Spec: "Credits are deducted only
+    # after the application is successfully created" + "If the application
+    # fails for any reason, the credit deduction must be rolled back."
     app_doc = {
         "id": new_id(),
         "job_id": job["id"],
@@ -528,10 +527,30 @@ async def apply_job(body: ApplyJobBody, u: dict = Depends(require_role(["student
         "referrer_pro_id": None,
         "status": "applied",
         "status_history": [{"status": "applied", "at": now_iso(), "by": u["id"]}],
-        "credits_charged": charged,
+        "credits_charged": 0,  # set after successful deduction
         "created_at": now_iso(),
     }
     await db.applications.insert_one(app_doc)
+    try:
+        if use_free:
+            await db.users.update_one({"id": u["id"]}, {"$inc": {"free_uses_left": -1}})
+            charged = 0
+        else:
+            # Descriptive label so wallet history reads
+            # "Job Application – <Title> at <Company>".
+            label = f"Job Application – {job.get('title', 'Job')} at {job.get('company', job.get('employer_name', 'Company'))}"
+            await _credit_user(
+                u["id"],
+                -per_action_cost,
+                "job_application",
+                {"job_id": job["id"], "cost": per_action_cost, "application_id": app_doc["id"], "label": label},
+            )
+            charged = per_action_cost
+        await db.applications.update_one({"id": app_doc["id"]}, {"$set": {"credits_charged": charged}})
+    except Exception:
+        # Rollback the application row if deduction fails.
+        await db.applications.delete_one({"id": app_doc["id"]})
+        raise
     await push_notification(u["id"], "Application sent ✉️", f"Applied to {job['title']}", "success")
     await push_notification(job["employer_id"], "New applicant", f"For {job['title']}", "info")
 

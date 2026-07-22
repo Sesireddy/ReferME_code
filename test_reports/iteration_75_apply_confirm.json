@@ -1,0 +1,74 @@
+{
+  "summary": "Iter 75 backend contract verified end-to-end: /api/jobs/apply now inserts the applications row first, then deducts 99 credits via _credit_user with meta.label='Job Application – <title> at <company>', then sets credits_charged=99. All 8 backend tests pass (happy path, insufficient credits, already applied, closed job, admin walk-in, incomplete profile, free-pass, +200 job-post reward regression). Frontend testing skipped per request.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter75_apply_credit_rollback.py",
+    "/app/test_reports/pytest/iter75_apply.xml"
+  ],
+  "exact_rejection_details": {
+    "insufficient_credits": {
+      "http_status": 402,
+      "detail": "Insufficient credits. Please add credits to continue applying for this job."
+    },
+    "already_applied": {
+      "http_status": 400,
+      "detail": "Already applied"
+    },
+    "closed_job": {
+      "http_status": 400,
+      "detail": "Applications Closed. The last date to apply has passed."
+    },
+    "admin_walkin": {
+      "http_status": 400,
+      "detail": "This is an Admin Walk-in & Direct Job. Please contact the recruiter directly using the details on the job page — no in-app application needed."
+    },
+    "incomplete_profile": {
+      "http_status": 400,
+      "detail_shape": "structured dict",
+      "detail_code": "PROFILE_INCOMPLETE",
+      "detail_message": "Please complete your profile before applying for jobs.",
+      "detail_missing_fields_example": ["Profile Category", "Verify Mobile Number", "Gender", "Date of Birth", "Education Qualification", "Passed Out Year", "Add Skills", "Current Location", "Upload Resume"]
+    },
+    "happy_path_response": {
+      "http_status": 200,
+      "body": {"message": "Applied", "used_free": false},
+      "transaction": {"delta": -99, "reason": "job_application", "meta.label": "Job Application – CapJob hp at AcmeCorp", "meta_keys": ["application_id", "cost", "job_id", "label"]}
+    }
+  },
+  "contract_checks_verified": [
+    "applications row inserted BEFORE _credit_user is called (credits_charged starts at 0, then flipped to 99)",
+    "transactions row: reason='job_application', delta=-99, meta.label starts with 'Job Application – ' and contains title + company",
+    "meta.job_id, meta.cost, meta.application_id also present in transaction",
+    "Happy path: users.credits goes from 500 → 401",
+    "Insufficient credits (402): no applications row, no transaction, wallet unchanged",
+    "Already applied (400): only one applications row and one transaction after 2 calls (no double charge)",
+    "Closed job (400, 'Applications Closed. The last date to apply has passed.'): no applications row, no transaction",
+    "Admin walk-in (400, 'This is an Admin Walk-in & Direct Job. …'): no applications row, no transaction",
+    "Incomplete profile (400, structured {code:'PROFILE_INCOMPLETE', message, missing_fields[]}): no side effects",
+    "Free-pass (200, used_free=true): credits_charged=0, no transaction inserted, users.free_uses_left decremented to 0, credits untouched",
+    "+200 job_post_reward fires exactly once when 4 fresh students apply to a pro-posted job (idempotency via posting_reward_paid flag)"
+  ],
+  "action_items": [
+    "No backend fixes required. Frontend regex matchers on the rejection detail strings should key on: 'Insufficient credits', exact 'Already applied', 'Applications Closed', 'Admin Walk-in', and the structured PROFILE_INCOMPLETE code (already wired per review_request)."
+  ],
+  "critical_code_review_comments": [
+    "Rollback path in routers/jobs.py apply_job (L534-553) is correct: except → applications.delete_one({id: app_doc.id}) then re-raise. However, since _credit_user in server.py only does a single find_one_and_update + insert_one, real-world failure surface for the try-block is narrow (Mongo down, disk full). No compensating logic beyond delete_one exists — if _credit_user succeeds but the subsequent update to credits_charged fails, the transaction row would exist with meta.application_id but the applications row would be deleted. Consider ordering: update credits_charged BEFORE _credit_user, or use motor's transaction session. Non-blocking for this iteration.",
+    "student_missing_fields still requires is_email_verified for students — signup path already flips this on verify-otp, so behaviour is consistent, but incomplete-profile 400 currently omits 'Verify Email Address' from missing_fields when the user hasn't verified email (because require_role passes only after login, and login pre-req is unclear). Not covered by this iter."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (8/8)", "frontend": "n/a — skipped per request"},
+  "seed_data_creation": "All test data is disposable and created inline in the test module via _make_complete_student / _make_pro / _post_verified_job helpers. Nothing persisted needing cleanup outside the test-generated referme.io / acmecorp.io emails.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Reusable test file at /app/backend/tests/test_iter75_apply_credit_rollback.py covers all 8 apply-endpoint cases in ~22s. Helpers _make_complete_student / _make_pro / _post_verified_job in that file are the fastest way to spin up a profile-complete student + a phone-verified pro + a verified open job without going through the OTP + PUT /profile dance. Direct DB writes are used to bypass profile completeness UX flow.",
+  "rca_of_issue": "No bug found. Refactor from Iter 75 (insert-first, deduct-later, rollback on failure, meta.label on wallet txn) is correctly implemented in /app/backend/routers/jobs.py apply_job (L482+). All contract clauses verified via pytest."
+}
