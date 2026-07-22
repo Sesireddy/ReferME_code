@@ -46,28 +46,34 @@ router = APIRouter()
 # ------------------- Professional discovery -------------------
 @router.get("/professionals")
 async def list_professionals(
-    skill: Optional[str] = Query(None, description="Case-insensitive partial match across expertise"),
+    skill: Optional[str] = Query(None, description="Case-insensitive partial match across the slot's skill_set (or the pro's expertise when no slot filter is active)"),
     location: Optional[str] = Query(None),
     category: Optional[str] = Query(None, description="fresher | experienced"),
     date: Optional[str] = Query(None, description="YYYY-MM-DD — show only pros with an available slot starting that day"),
+    topic: Optional[str] = Query(None, description="Career Guidance | Technical Discussion | HR Discussion — restrict to pros with a slot of this topic"),
     has_available_slots: bool = Query(True, description="Hide pros with no future, available slot"),
     u: dict = Depends(current_user),
 ):
     # ------------------------------------------------------------------
-    # Iter 76 — fix: previously the endpoint pulled the first 500 pros
-    # (`db.users.find(...).to_list(500)`) then aggregated slots. In a large
-    # user base (4k+ pros), pros whose row lives beyond the 500-cap silently
-    # disappeared from the Mock Interviews list even if they had active
-    # slots. We now do the reverse: aggregate the slot table first to find
-    # which pros have future availability, then look up ONLY those users.
+    # Iter 76/77 — fix history:
+    #   Iter 76: aggregate slots first, then look up users (fixed 500-cap bug).
+    #   Iter 77: apply `topic` (and `skill` when applicable) at the SLOT
+    #     aggregation step, so a pro who ONLY posted "HR Discussion" slots
+    #     does not surface when the student picks "Technical Discussion".
     # ------------------------------------------------------------------
     now_dt = datetime.now(timezone.utc)
     slot_agg: dict[str, dict] = {}
+    ALLOWED_TOPICS = {"Career Guidance", "Technical Discussion", "HR Discussion"}
+    active_topic = topic if topic in ALLOWED_TOPICS else None
+    skill_norm = (skill or "").strip().lower()
+
     if has_available_slots:
         slot_q: dict = {"status": {"$in": ["available", "booked"]}}
+        if active_topic:
+            slot_q["topic"] = active_topic
         slots = await db.interview_slots.find(
             slot_q,
-            {"_id": 0, "pro_id": 1, "status": 1, "start_at": 1, "skill_set": 1},
+            {"_id": 0, "pro_id": 1, "status": 1, "start_at": 1, "skill_set": 1, "topic": 1},
         ).to_list(20000)
         for s in slots:
             try:
@@ -78,6 +84,14 @@ async def list_professionals(
                 continue
             if date and sd.strftime("%Y-%m-%d") != date:
                 continue
+            # Skill filter: only meaningful when the topic is technical (or
+            # when no topic is selected). For Career/HR topics, the skill
+            # filter is intentionally ignored — the frontend already clears
+            # it in that case (Iter 72) but we defensively re-check here.
+            if skill_norm and active_topic in (None, "Technical Discussion"):
+                slot_skills = [str(x).lower() for x in (s.get("skill_set") or [])]
+                if not any(skill_norm in ss for ss in slot_skills):
+                    continue
             d = slot_agg.setdefault(s["pro_id"], {"total": 0, "available": 0})
             d["total"] += 1
             if s.get("status") == "available":
@@ -94,11 +108,12 @@ async def list_professionals(
 
     pros = await db.users.find(user_filter, {"_id": 0, "password_hash": 0}).to_list(2000)
 
-    if skill:
-        sk = skill.lower().strip()
+    # When has_available_slots=False (rare, admin-style discovery) we still
+    # apply skill against the pro's expertise as before.
+    if skill_norm and not has_available_slots:
         pros = [
             p for p in pros
-            if any(sk in (s or "").lower() for s in (p.get("profile", {}).get("expertise", []) or p.get("profile", {}).get("skills", []) or []))
+            if any(skill_norm in (s or "").lower() for s in (p.get("profile", {}).get("expertise", []) or p.get("profile", {}).get("skills", []) or []))
         ]
     if location:
         loc = location.lower().strip()

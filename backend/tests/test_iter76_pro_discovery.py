@@ -70,6 +70,9 @@ def scenario(db):
     now = datetime.now(timezone.utc)
 
     pros = []
+    # Assign a different topic to each pro to ensure per-topic isolation:
+    #   i=0 → Technical Discussion, i=1 → HR Discussion, i=2 → Career Guidance
+    topics_by_i = ["Technical Discussion", "HR Discussion", "Career Guidance"]
     for i in range(3):
         pid = f"iter76-pro-{tag}-{i}"
         db.users.update_one(
@@ -104,8 +107,8 @@ def scenario(db):
                 "start_at": slot_start.isoformat(),
                 "end_at": slot_end.isoformat(),
                 "duration_min": 30,
-                "topic": "Technical Discussion",
-                "skill_set": ["Python"],
+                "topic": topics_by_i[i],
+                "skill_set": ["Python"] if topics_by_i[i] == "Technical Discussion" else [],
                 "experience_years": 5,
                 "created_at": now.isoformat(),
             }},
@@ -198,3 +201,66 @@ def test_has_available_slots_false_does_not_use_slot_join(scenario):
     )
     assert r.status_code == 200
     assert len(r.json()) >= 3
+
+
+# ============================================================
+# Iter 77 — topic filter must restrict pros to the selected topic
+# ============================================================
+def test_topic_filter_technical_only_returns_technical_pros(scenario):
+    """Pro at index 0 has ONLY a Technical Discussion slot; pros 1 & 2 do not."""
+    tok = scenario["student_token"]
+    r = requests.get(
+        f"{BASE_URL}/api/professionals?has_available_slots=true&topic=Technical%20Discussion",
+        headers={"Authorization": f"Bearer {tok}"},
+        timeout=15,
+    )
+    assert r.status_code == 200
+    returned = {p["id"] for p in r.json()}
+    tech_pro, hr_pro, career_pro = scenario["pros"]
+    assert tech_pro in returned, "Technical pro must appear for topic=Technical Discussion"
+    assert hr_pro not in returned, "HR pro must NOT appear for topic=Technical Discussion"
+    assert career_pro not in returned, "Career pro must NOT appear for topic=Technical Discussion"
+
+
+def test_topic_filter_hr_only_returns_hr_pros(scenario):
+    tok = scenario["student_token"]
+    r = requests.get(
+        f"{BASE_URL}/api/professionals?has_available_slots=true&topic=HR%20Discussion",
+        headers={"Authorization": f"Bearer {tok}"},
+        timeout=15,
+    )
+    assert r.status_code == 200
+    returned = {p["id"] for p in r.json()}
+    tech_pro, hr_pro, career_pro = scenario["pros"]
+    assert hr_pro in returned
+    assert tech_pro not in returned
+    assert career_pro not in returned
+
+
+def test_topic_filter_career_only_returns_career_pros(scenario):
+    tok = scenario["student_token"]
+    r = requests.get(
+        f"{BASE_URL}/api/professionals?has_available_slots=true&topic=Career%20Guidance",
+        headers={"Authorization": f"Bearer {tok}"},
+        timeout=15,
+    )
+    assert r.status_code == 200
+    returned = {p["id"] for p in r.json()}
+    tech_pro, hr_pro, career_pro = scenario["pros"]
+    assert career_pro in returned
+    assert tech_pro not in returned
+    assert hr_pro not in returned
+
+
+def test_topic_filter_no_topic_returns_all(scenario):
+    tok = scenario["student_token"]
+    r = requests.get(
+        f"{BASE_URL}/api/professionals?has_available_slots=true",
+        headers={"Authorization": f"Bearer {tok}"},
+        timeout=15,
+    )
+    assert r.status_code == 200
+    returned = {p["id"] for p in r.json()}
+    for pid in scenario["pros"]:
+        assert pid in returned
+
