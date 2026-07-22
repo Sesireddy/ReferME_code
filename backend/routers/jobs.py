@@ -53,7 +53,47 @@ async def list_professionals(
     has_available_slots: bool = Query(True, description="Hide pros with no future, available slot"),
     u: dict = Depends(current_user),
 ):
-    pros = await db.users.find({"role": "professional", "profile_complete": True}, {"_id": 0, "password_hash": 0}).to_list(500)
+    # ------------------------------------------------------------------
+    # Iter 76 — fix: previously the endpoint pulled the first 500 pros
+    # (`db.users.find(...).to_list(500)`) then aggregated slots. In a large
+    # user base (4k+ pros), pros whose row lives beyond the 500-cap silently
+    # disappeared from the Mock Interviews list even if they had active
+    # slots. We now do the reverse: aggregate the slot table first to find
+    # which pros have future availability, then look up ONLY those users.
+    # ------------------------------------------------------------------
+    now_dt = datetime.now(timezone.utc)
+    slot_agg: dict[str, dict] = {}
+    if has_available_slots:
+        slot_q: dict = {"status": {"$in": ["available", "booked"]}}
+        slots = await db.interview_slots.find(
+            slot_q,
+            {"_id": 0, "pro_id": 1, "status": 1, "start_at": 1, "skill_set": 1},
+        ).to_list(20000)
+        for s in slots:
+            try:
+                sd = datetime.fromisoformat((s.get("start_at") or "").replace("Z", "+00:00"))
+            except Exception:
+                continue
+            if sd <= now_dt:
+                continue
+            if date and sd.strftime("%Y-%m-%d") != date:
+                continue
+            d = slot_agg.setdefault(s["pro_id"], {"total": 0, "available": 0})
+            d["total"] += 1
+            if s.get("status") == "available":
+                d["available"] += 1
+        if not slot_agg:
+            return []
+        user_filter: dict = {
+            "role": "professional",
+            "profile_complete": True,
+            "id": {"$in": list(slot_agg.keys())},
+        }
+    else:
+        user_filter = {"role": "professional", "profile_complete": True}
+
+    pros = await db.users.find(user_filter, {"_id": 0, "password_hash": 0}).to_list(2000)
+
     if skill:
         sk = skill.lower().strip()
         pros = [
@@ -70,26 +110,8 @@ async def list_professionals(
         pros = [p for p in pros if _cat(p) == category]
 
     if has_available_slots:
-        now_dt = datetime.now(timezone.utc)
-        slot_q: dict = {"status": {"$in": ["available", "booked"]}}
-        slots = await db.interview_slots.find(slot_q, {"_id": 0, "pro_id": 1, "status": 1, "start_at": 1, "skill_set": 1}).to_list(5000)
-        agg: dict[str, dict] = {}
-        for s in slots:
-            try:
-                sd = datetime.fromisoformat((s.get("start_at") or "").replace("Z", "+00:00"))
-            except Exception:
-                continue
-            if sd <= now_dt:
-                continue
-            if date and sd.strftime("%Y-%m-%d") != date:
-                continue
-            d = agg.setdefault(s["pro_id"], {"total": 0, "available": 0})
-            d["total"] += 1
-            if s.get("status") == "available":
-                d["available"] += 1
-        pros = [p for p in pros if p["id"] in agg]
         for p in pros:
-            stats = agg.get(p["id"], {"total": 0, "available": 0})
+            stats = slot_agg.get(p["id"], {"total": 0, "available": 0})
             p["_slots_total"] = stats["total"]
             p["_slots_available"] = stats["available"]
 
