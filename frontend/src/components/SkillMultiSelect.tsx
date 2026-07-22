@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { View, StyleSheet, TouchableOpacity, TextInput, FlatList, ActivityIndicator } from "react-native";
+import { View, StyleSheet, TouchableOpacity, TextInput, ScrollView, ActivityIndicator } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { colors, radius } from "@/src/theme/tokens";
 import { Txt } from "@/src/components/Txt";
@@ -152,34 +152,21 @@ export function SkillMultiSelect({
               <ActivityIndicator size="small" color={colors.primary} />
             </View>
           ) : (
-            <FlatList
+            <ScrollView
               testID="skill-multiselect-list"
-              data={listData}
-              keyExtractor={(s) => s}
+              style={styles.listScroll}
+              nestedScrollEnabled
               keyboardShouldPersistTaps="handled"
-              ListEmptyComponent={
-                !showCustomAdd ? (
-                  <View style={{ padding: 12 }}>
-                    <Txt variant="muted">No matches.</Txt>
-                  </View>
-                ) : null
-              }
-              ListFooterComponent={
-                showCustomAdd ? (
-                  <TouchableOpacity
-                    onPress={() => addSkill(query)}
-                    style={[styles.row, { backgroundColor: "#7C3AED0A" }]}
-                    testID="skill-add-custom"
-                  >
-                    <Ionicons name="add-circle" size={16} color="#7C3AED" />
-                    <Txt style={{ marginLeft: 8, color: "#7C3AED", fontWeight: "700" }}>
-                      {`Add "${query.trim()}"`}
-                    </Txt>
-                  </TouchableOpacity>
-                ) : null
-              }
-              renderItem={({ item }) => (
+              showsVerticalScrollIndicator
+            >
+              {listData.length === 0 && !showCustomAdd ? (
+                <View style={{ padding: 12 }}>
+                  <Txt variant="muted">No matches.</Txt>
+                </View>
+              ) : null}
+              {listData.map((item) => (
                 <TouchableOpacity
+                  key={item}
                   onPress={() => addSkill(item)}
                   style={styles.row}
                   testID={`skill-suggest-${item}`}
@@ -187,8 +174,20 @@ export function SkillMultiSelect({
                   <Ionicons name="pricetag-outline" size={14} color={colors.primary} />
                   <Txt style={{ marginLeft: 8 }}>{item}</Txt>
                 </TouchableOpacity>
-              )}
-            />
+              ))}
+              {showCustomAdd ? (
+                <TouchableOpacity
+                  onPress={() => addSkill(query)}
+                  style={[styles.row, { backgroundColor: "#7C3AED0A" }]}
+                  testID="skill-add-custom"
+                >
+                  <Ionicons name="add-circle" size={16} color="#7C3AED" />
+                  <Txt style={{ marginLeft: 8, color: "#7C3AED", fontWeight: "700" }}>
+                    {`Add "${query.trim()}"`}
+                  </Txt>
+                </TouchableOpacity>
+              ) : null}
+            </ScrollView>
           )}
           <View style={styles.dropdownFooter}>
             <TouchableOpacity onPress={() => setOpen(false)} testID="skill-close">
@@ -219,6 +218,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface, gap: 6,
   },
   input: { flex: 1, color: colors.textPrimary, fontSize: 15, paddingVertical: 0 },
+  listScroll: { maxHeight: 220 },
   dropdown: {
     marginTop: 4, maxHeight: 260,
     borderWidth: 1, borderColor: colors.border, borderRadius: radius.md,

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { View, StyleSheet, TouchableOpacity, TextInput, FlatList, ActivityIndicator } from "react-native";
+import { View, StyleSheet, TouchableOpacity, TextInput, ScrollView, ActivityIndicator } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { colors, radius } from "@/src/theme/tokens";
 import { Txt } from "@/src/components/Txt";
@@ -109,13 +109,16 @@ export function SkillAutocomplete({ value, onChange, onSelect, placeholder = "Se
               ) : null}
             </View>
           ) : (
-            <FlatList
+            <ScrollView
               testID="skill-autocomplete-list"
-              data={listData}
-              keyExtractor={(s) => s}
+              style={styles.listScroll}
+              nestedScrollEnabled
               keyboardShouldPersistTaps="handled"
-              renderItem={({ item }) => (
+              showsVerticalScrollIndicator
+            >
+              {listData.map((item) => (
                 <TouchableOpacity
+                  key={item}
                   onPress={() => handleSelect(item)}
                   style={styles.row}
                   testID={`skill-suggest-${item}`}
@@ -123,8 +126,8 @@ export function SkillAutocomplete({ value, onChange, onSelect, placeholder = "Se
                   <Ionicons name="pricetag" size={14} color={colors.primary} />
                   <Txt style={{ marginLeft: 8 }}>{item}</Txt>
                 </TouchableOpacity>
-              )}
-            />
+              ))}
+            </ScrollView>
           )}
           <View style={styles.dropdownFooter}>
             <TouchableOpacity onPress={() => setOpen(false)} testID="skill-close">
@@ -150,6 +153,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   input: { flex: 1, color: colors.textPrimary, fontSize: 15, paddingVertical: 0 },
+  listScroll: { maxHeight: 220 },
   dropdown: {
     marginTop: 4,
     maxHeight: 260,

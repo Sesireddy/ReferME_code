@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { View, StyleSheet, TouchableOpacity, TextInput, FlatList } from "react-native";
+import { View, StyleSheet, TouchableOpacity, TextInput, ScrollView } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { colors, radius } from "@/src/theme/tokens";
 import { Txt } from "@/src/components/Txt";
@@ -141,34 +141,21 @@ export function LocationMultiSelect({
       {/* Dropdown */}
       {open && !disabled ? (
         <View style={styles.dropdown}>
-          <FlatList
+          <ScrollView
             testID="loc-multiselect-list"
-            data={listData.slice(0, 40)}
-            keyExtractor={(c) => c}
+            style={styles.listScroll}
+            nestedScrollEnabled
             keyboardShouldPersistTaps="handled"
-            ListEmptyComponent={
-              !showCustomAdd ? (
-                <View style={{ padding: 12 }}>
-                  <Txt variant="muted">No matches.</Txt>
-                </View>
-              ) : null
-            }
-            ListFooterComponent={
-              showCustomAdd ? (
-                <TouchableOpacity
-                  onPress={() => addCity(query)}
-                  style={[styles.row, { backgroundColor: "#7C3AED0A" }]}
-                  testID="loc-add-custom"
-                >
-                  <Ionicons name="add-circle" size={16} color="#7C3AED" />
-                  <Txt style={{ marginLeft: 8, color: "#7C3AED", fontWeight: "700" }}>
-                    {`Add "${query.trim()}"`}
-                  </Txt>
-                </TouchableOpacity>
-              ) : null
-            }
-            renderItem={({ item }) => (
+            showsVerticalScrollIndicator
+          >
+            {listData.length === 0 && !showCustomAdd ? (
+              <View style={{ padding: 12 }}>
+                <Txt variant="muted">No matches.</Txt>
+              </View>
+            ) : null}
+            {listData.slice(0, 40).map((item) => (
               <TouchableOpacity
+                key={item}
                 onPress={() => addCity(item)}
                 style={styles.row}
                 testID={`loc-suggest-${item}`}
@@ -176,8 +163,20 @@ export function LocationMultiSelect({
                 <Ionicons name="location-outline" size={14} color={colors.primary} />
                 <Txt style={{ marginLeft: 8 }}>{item}</Txt>
               </TouchableOpacity>
-            )}
-          />
+            ))}
+            {showCustomAdd ? (
+              <TouchableOpacity
+                onPress={() => addCity(query)}
+                style={[styles.row, { backgroundColor: "#7C3AED0A" }]}
+                testID="loc-add-custom"
+              >
+                <Ionicons name="add-circle" size={16} color="#7C3AED" />
+                <Txt style={{ marginLeft: 8, color: "#7C3AED", fontWeight: "700" }}>
+                  {`Add "${query.trim()}"`}
+                </Txt>
+              </TouchableOpacity>
+            ) : null}
+          </ScrollView>
           <View style={styles.dropdownFooter}>
             <TouchableOpacity onPress={() => setOpen(false)} testID="loc-close">
               <Txt variant="small" style={{ color: colors.primary, fontWeight: "700" }}>Done</Txt>
@@ -221,6 +220,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   input: { flex: 1, color: colors.textPrimary, fontSize: 15, paddingVertical: 0 },
+  listScroll: { maxHeight: 220 },
   dropdown: {
     marginTop: 4,
     maxHeight: 260,
